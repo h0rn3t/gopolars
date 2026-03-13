@@ -138,18 +138,18 @@ Status values are explicit: `реализовано` or `не реализова
 
 | Объект | Реализовано | Всего в Python Polars |
 | --- | --- | --- |
-| DataFrame | 61 | 141 |
-| LazyFrame | 25 | 89 |
-| Expr | 27 | 217 |
-| Series | 13 | 226 |
-| SQLContext | 4 | 7 |
-| Итого | 130 | 680 |
+| DataFrame | 136 | 141 |
+| LazyFrame | 33 | 89 |
+| Expr | 135 | 217 |
+| Series | 34 | 226 |
+| SQLContext | 7 | 7 |
+| Итого | 345 | 680 |
 
 | Приоритет среди нереализованных | Количество |
 | --- | --- |
-| high | 9 |
-| medium | 27 |
-| low | 514 |
+| high | 0 |
+| medium | 0 |
+| low | 335 |
 
 ## What is still needed to replace Python Polars
 

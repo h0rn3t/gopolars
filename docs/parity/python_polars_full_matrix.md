@@ -2,7 +2,7 @@
 Источник: официальная документация Python Polars (stable), выгрузка на 2026-03-13.
 Статус рассчитан по публичному API gopolars. Приоритет присваивается только нереализованным методам.
 
-Покрытие по этой автоматической матрице: 130/680.
+Покрытие по этой автоматической матрице: 345/680.
 
 ## DataFrame (141 методов)
 | Python Polars method | gopolars equivalent | Статус | Приоритет |
@@ -50,114 +50,114 @@
 | `hstack` | DataFrame.hstack | реализовано | — |
 | `insert_column` | DataFrame.insert_column | реализовано | — |
 | `interpolate` | DataFrame.interpolate | реализовано | — |
-| `is_duplicated` | — | не реализовано | low |
+| `is_duplicated` | DataFrame.is_duplicated | реализовано | — |
 | `is_empty` | DataFrame.is_empty | реализовано | — |
-| `is_unique` | — | не реализовано | low |
-| `item` | — | не реализовано | low |
-| `iter_columns` | — | не реализовано | low |
-| `iter_rows` | — | не реализовано | low |
-| `iter_slices` | — | не реализовано | low |
+| `is_unique` | DataFrame.is_unique | реализовано | — |
+| `item` | DataFrame.item | реализовано | — |
+| `iter_columns` | DataFrame.iter_columns | реализовано | — |
+| `iter_rows` | DataFrame.iter_rows | реализовано | — |
+| `iter_slices` | DataFrame.iter_slices | реализовано | — |
 | `join` | DataFrame.join | реализовано | — |
-| `join_asof` | — | не реализовано | low |
-| `join_where` | — | не реализовано | low |
+| `join_asof` | DataFrame.join_asof | реализовано | — |
+| `join_where` | DataFrame.join_where | реализовано | — |
 | `lazy` | DataFrame.lazy | реализовано | — |
 | `limit` | DataFrame.limit | реализовано | — |
-| `map_columns` | — | не реализовано | low |
-| `map_rows` | — | не реализовано | low |
-| `match_to_schema` | — | не реализовано | low |
-| `max` | — | не реализовано | low |
-| `max_horizontal` | — | не реализовано | low |
-| `mean` | — | не реализовано | low |
-| `mean_horizontal` | — | не реализовано | low |
-| `median` | — | не реализовано | low |
+| `map_columns` | DataFrame.map_columns | реализовано | — |
+| `map_rows` | DataFrame.map_rows | реализовано | — |
+| `match_to_schema` | DataFrame.match_to_schema | реализовано | — |
+| `max` | DataFrame.max | реализовано | — |
+| `max_horizontal` | DataFrame.max_horizontal | реализовано | — |
+| `mean` | DataFrame.mean | реализовано | — |
+| `mean_horizontal` | DataFrame.mean_horizontal | реализовано | — |
+| `median` | DataFrame.median | реализовано | — |
 | `melt` | DataFrame.melt | реализовано | — |
-| `merge_sorted` | — | не реализовано | low |
-| `min` | — | не реализовано | low |
-| `min_horizontal` | — | не реализовано | low |
-| `n_chunks` | — | не реализовано | low |
+| `merge_sorted` | DataFrame.merge_sorted | реализовано | — |
+| `min` | DataFrame.min | реализовано | — |
+| `min_horizontal` | DataFrame.min_horizontal | реализовано | — |
+| `n_chunks` | DataFrame.n_chunks | реализовано | — |
 | `n_unique` | DataFrame.n_unique | реализовано | — |
 | `null_count` | DataFrame.null_count | реализовано | — |
-| `partition_by` | — | не реализовано | medium |
-| `pipe` | — | не реализовано | low |
+| `partition_by` | DataFrame.partition_by | реализовано | — |
+| `pipe` | DataFrame.pipe | реализовано | — |
 | `pivot` | DataFrame.pivot | реализовано | — |
-| `plot` | — | не реализовано | low |
-| `product` | — | не реализовано | low |
-| `quantile` | — | не реализовано | low |
-| `rechunk` | — | не реализовано | medium |
-| `remove` | — | не реализовано | low |
+| `plot` | DataFrame.plot | реализовано | — |
+| `product` | DataFrame.product | реализовано | — |
+| `quantile` | DataFrame.quantile | реализовано | — |
+| `rechunk` | DataFrame.rechunk | реализовано | — |
+| `remove` | DataFrame.remove | реализовано | — |
 | `rename` | DataFrame.rename | реализовано | — |
-| `replace_column` | — | не реализовано | low |
-| `reverse` | — | не реализовано | low |
-| `rolling` | — | не реализовано | low |
-| `row` | — | не реализовано | low |
-| `rows` | — | не реализовано | low |
-| `rows_by_key` | — | не реализовано | low |
+| `replace_column` | DataFrame.replace_column | реализовано | — |
+| `reverse` | DataFrame.reverse | реализовано | — |
+| `rolling` | DataFrame.rolling | реализовано | — |
+| `row` | DataFrame.row | реализовано | — |
+| `rows` | DataFrame.rows | реализовано | — |
+| `rows_by_key` | DataFrame.rows_by_key | реализовано | — |
 | `sample` | DataFrame.sample | реализовано | — |
 | `schema` | DataFrame.schema | реализовано | — |
 | `select` | DataFrame.select | реализовано | — |
-| `select_seq` | — | не реализовано | low |
-| `serialize` | — | не реализовано | low |
-| `set_sorted` | — | не реализовано | low |
-| `shape` | — | не реализовано | low |
-| `shift` | — | не реализовано | low |
-| `show` | — | не реализовано | low |
-| `shrink_to_fit` | — | не реализовано | low |
+| `select_seq` | DataFrame.select_seq | реализовано | — |
+| `serialize` | DataFrame.serialize | реализовано | — |
+| `set_sorted` | DataFrame.set_sorted | реализовано | — |
+| `shape` | DataFrame.shape | реализовано | — |
+| `shift` | DataFrame.shift | реализовано | — |
+| `show` | DataFrame.show | реализовано | — |
+| `shrink_to_fit` | DataFrame.shrink_to_fit | реализовано | — |
 | `slice` | DataFrame.slice | реализовано | — |
 | `sort` | DataFrame.sort | реализовано | — |
-| `sql` | — | не реализовано | low |
-| `std` | — | не реализовано | low |
-| `style` | — | не реализовано | low |
-| `sum` | — | не реализовано | low |
-| `sum_horizontal` | — | не реализовано | low |
+| `sql` | DataFrame.sql | реализовано | — |
+| `std` | DataFrame.std | реализовано | — |
+| `style` | DataFrame.style | реализовано | — |
+| `sum` | DataFrame.sum | реализовано | — |
+| `sum_horizontal` | DataFrame.sum_horizontal | реализовано | — |
 | `tail` | DataFrame.tail | реализовано | — |
 | `to_arrow` | DataFrame.to_arrow | реализовано | — |
-| `to_dict` | — | не реализовано | low |
+| `to_dict` | DataFrame.to_dict | реализовано | — |
 | `to_dicts` | DataFrame.to_dicts | реализовано | — |
-| `to_dummies` | — | не реализовано | low |
-| `to_init_repr` | — | не реализовано | low |
-| `to_jax` | — | не реализовано | low |
-| `to_numpy` | — | не реализовано | medium |
-| `to_pandas` | — | не реализовано | medium |
-| `to_series` | — | не реализовано | low |
-| `to_struct` | — | не реализовано | low |
-| `to_torch` | — | не реализовано | low |
-| `top_k` | — | не реализовано | low |
-| `transpose` | — | не реализовано | low |
+| `to_dummies` | DataFrame.to_dummies | реализовано | — |
+| `to_init_repr` | DataFrame.to_init_repr | реализовано | — |
+| `to_jax` | DataFrame.to_jax | реализовано | — |
+| `to_numpy` | DataFrame.to_numpy | реализовано | — |
+| `to_pandas` | DataFrame.to_pandas | реализовано | — |
+| `to_series` | DataFrame.to_series | реализовано | — |
+| `to_struct` | DataFrame.to_struct | реализовано | — |
+| `to_torch` | DataFrame.to_torch | реализовано | — |
+| `top_k` | DataFrame.top_k | реализовано | — |
+| `transpose` | DataFrame.transpose | реализовано | — |
 | `unique` | DataFrame.unique | реализовано | — |
-| `unnest` | — | не реализовано | low |
-| `unpivot` | — | не реализовано | low |
-| `unstack` | — | не реализовано | low |
-| `update` | — | не реализовано | low |
-| `upsample` | — | не реализовано | medium |
-| `var` | — | не реализовано | low |
-| `vstack` | — | не реализовано | low |
+| `unnest` | DataFrame.unnest | реализовано | — |
+| `unpivot` | DataFrame.unpivot | реализовано | — |
+| `unstack` | DataFrame.unstack | реализовано | — |
+| `update` | DataFrame.update | реализовано | — |
+| `upsample` | DataFrame.upsample | реализовано | — |
+| `var` | DataFrame.var | реализовано | — |
+| `vstack` | DataFrame.vstack | реализовано | — |
 | `width` | DataFrame.width | реализовано | — |
 | `with_columns` | DataFrame.with_columns | реализовано | — |
-| `with_columns_seq` | — | не реализовано | low |
+| `with_columns_seq` | DataFrame.with_columns_seq | реализовано | — |
 | `with_row_count` | DataFrame.with_row_count | реализовано | — |
 | `with_row_index` | DataFrame.with_row_index | реализовано | — |
-| `write_avro` | — | не реализовано | low |
-| `write_clipboard` | — | не реализовано | low |
-| `write_csv` | — | не реализовано | low |
-| `write_database` | — | не реализовано | low |
-| `write_delta` | — | не реализовано | low |
-| `write_excel` | — | не реализовано | low |
-| `write_iceberg` | — | не реализовано | low |
-| `write_ipc` | — | не реализовано | low |
-| `write_ipc_stream` | — | не реализовано | low |
-| `write_json` | — | не реализовано | low |
-| `write_ndjson` | — | не реализовано | low |
+| `write_avro` | DataFrame.write_avro | реализовано | — |
+| `write_clipboard` | DataFrame.write_clipboard | реализовано | — |
+| `write_csv` | DataFrame.write_csv | реализовано | — |
+| `write_database` | DataFrame.write_database | реализовано | — |
+| `write_delta` | DataFrame.write_delta | реализовано | — |
+| `write_excel` | DataFrame.write_excel | реализовано | — |
+| `write_iceberg` | DataFrame.write_iceberg | реализовано | — |
+| `write_ipc` | DataFrame.write_ipc | реализовано | — |
+| `write_ipc_stream` | DataFrame.write_ipc_stream | реализовано | — |
+| `write_json` | DataFrame.write_json | реализовано | — |
+| `write_ndjson` | DataFrame.write_ndjson | реализовано | — |
 | `write_parquet` | DataFrame.write_parquet | реализовано | — |
 
-Итог для DataFrame: реализовано 61 из 141.
+Итог для DataFrame: реализовано 136 из 141.
 
 ## LazyFrame (89 методов)
 | Python Polars method | gopolars equivalent | Статус | Приоритет |
 | --- | --- | --- | --- |
 | `__getitem__` | — | не реализовано | low |
-| `approx_n_unique` | — | не реализовано | low |
-| `bottom_k` | — | не реализовано | low |
-| `cache` | — | не реализовано | medium |
+| `approx_n_unique` | LazyFrame.approx_n_unique | реализовано | — |
+| `bottom_k` | LazyFrame.bottom_k | реализовано | — |
+| `cache` | LazyFrame.cache | реализовано | — |
 | `cast` | — | не реализовано | low |
 | `clear` | — | не реализовано | low |
 | `clone` | — | не реализовано | low |
@@ -168,7 +168,7 @@
 | `columns` | — | не реализовано | low |
 | `count` | — | не реализовано | low |
 | `describe` | — | не реализовано | low |
-| `deserialize` | — | не реализовано | medium |
+| `deserialize` | LazyFrame.deserialize | реализовано | — |
 | `drop` | — | не реализовано | low |
 | `drop_nans` | — | не реализовано | low |
 | `drop_nulls` | LazyFrame.drop_nulls | реализовано | — |
@@ -205,7 +205,7 @@
 | `pivot` | LazyFrame.pivot | реализовано | — |
 | `profile` | LazyFrame.profile | реализовано | — |
 | `quantile` | — | не реализовано | low |
-| `remote` | — | не реализовано | medium |
+| `remote` | LazyFrame.remote | реализовано | — |
 | `remove` | — | не реализовано | low |
 | `rename` | — | не реализовано | low |
 | `reverse` | — | не реализовано | low |
@@ -213,12 +213,12 @@
 | `schema` | — | не реализовано | low |
 | `select` | LazyFrame.select | реализовано | — |
 | `select_seq` | — | не реализовано | low |
-| `serialize` | — | не реализовано | medium |
+| `serialize` | LazyFrame.serialize | реализовано | — |
 | `set_sorted` | — | не реализовано | low |
 | `shift` | — | не реализовано | low |
 | `show` | — | не реализовано | low |
-| `show_graph` | — | не реализовано | medium |
-| `sink_batches` | — | не реализовано | medium |
+| `show_graph` | LazyFrame.show_graph | реализовано | — |
+| `sink_batches` | LazyFrame.sink_batches | реализовано | — |
 | `sink_csv` | — | не реализовано | low |
 | `sink_delta` | — | не реализовано | low |
 | `sink_iceberg` | — | не реализовано | low |
@@ -244,129 +244,129 @@
 | `with_row_count` | — | не реализовано | low |
 | `with_row_index` | — | не реализовано | low |
 
-Итог для LazyFrame: реализовано 25 из 89.
+Итог для LazyFrame: реализовано 33 из 89.
 
 ## Expr (217 методов)
 | Python Polars method | gopolars equivalent | Статус | Приоритет |
 | --- | --- | --- | --- |
-| `abs` | — | не реализовано | low |
+| `abs` | Expr.abs | реализовано | — |
 | `add` | Expr.add | реализовано | — |
-| `agg_groups` | — | не реализовано | low |
+| `agg_groups` | Expr.agg_groups | реализовано | — |
 | `alias` | Expr.alias | реализовано | — |
-| `all` | — | не реализовано | low |
-| `and_` | — | не реализовано | low |
-| `any` | — | не реализовано | low |
-| `append` | — | не реализовано | low |
-| `approx_n_unique` | — | не реализовано | low |
-| `arccos` | — | не реализовано | low |
-| `arccosh` | — | не реализовано | low |
-| `arcsin` | — | не реализовано | low |
-| `arcsinh` | — | не реализовано | low |
-| `arctan` | — | не реализовано | low |
-| `arctanh` | — | не реализовано | low |
-| `arg_max` | — | не реализовано | low |
-| `arg_min` | — | не реализовано | low |
-| `arg_sort` | — | не реализовано | low |
-| `arg_true` | — | не реализовано | low |
-| `arg_unique` | — | не реализовано | low |
-| `arr` | — | не реализовано | low |
-| `backward_fill` | — | не реализовано | low |
-| `bin` | — | не реализовано | low |
-| `bitwise_and` | — | не реализовано | low |
-| `bitwise_count_ones` | — | не реализовано | low |
-| `bitwise_count_zeros` | — | не реализовано | low |
-| `bitwise_leading_ones` | — | не реализовано | low |
-| `bitwise_leading_zeros` | — | не реализовано | low |
-| `bitwise_or` | — | не реализовано | low |
-| `bitwise_trailing_ones` | — | не реализовано | low |
-| `bitwise_trailing_zeros` | — | не реализовано | low |
-| `bitwise_xor` | — | не реализовано | low |
-| `bottom_k` | — | не реализовано | low |
-| `bottom_k_by` | — | не реализовано | low |
+| `all` | Expr.all | реализовано | — |
+| `and_` | Expr.and_ | реализовано | — |
+| `any` | Expr.any | реализовано | — |
+| `append` | Expr.append | реализовано | — |
+| `approx_n_unique` | Expr.approx_n_unique | реализовано | — |
+| `arccos` | Expr.arccos | реализовано | — |
+| `arccosh` | Expr.arccosh | реализовано | — |
+| `arcsin` | Expr.arcsin | реализовано | — |
+| `arcsinh` | Expr.arcsinh | реализовано | — |
+| `arctan` | Expr.arctan | реализовано | — |
+| `arctanh` | Expr.arctanh | реализовано | — |
+| `arg_max` | Expr.arg_max | реализовано | — |
+| `arg_min` | Expr.arg_min | реализовано | — |
+| `arg_sort` | Expr.arg_sort | реализовано | — |
+| `arg_true` | Expr.arg_true | реализовано | — |
+| `arg_unique` | Expr.arg_unique | реализовано | — |
+| `arr` | Expr.arr | реализовано | — |
+| `backward_fill` | Expr.backward_fill | реализовано | — |
+| `bin` | Expr.bin | реализовано | — |
+| `bitwise_and` | Expr.bitwise_and | реализовано | — |
+| `bitwise_count_ones` | Expr.bitwise_count_ones | реализовано | — |
+| `bitwise_count_zeros` | Expr.bitwise_count_zeros | реализовано | — |
+| `bitwise_leading_ones` | Expr.bitwise_leading_ones | реализовано | — |
+| `bitwise_leading_zeros` | Expr.bitwise_leading_zeros | реализовано | — |
+| `bitwise_or` | Expr.bitwise_or | реализовано | — |
+| `bitwise_trailing_ones` | Expr.bitwise_trailing_ones | реализовано | — |
+| `bitwise_trailing_zeros` | Expr.bitwise_trailing_zeros | реализовано | — |
+| `bitwise_xor` | Expr.bitwise_xor | реализовано | — |
+| `bottom_k` | Expr.bottom_k | реализовано | — |
+| `bottom_k_by` | Expr.bottom_k_by | реализовано | — |
 | `cast` | Expr.cast | реализовано | — |
-| `cat` | — | не реализовано | low |
-| `cbrt` | — | не реализовано | low |
-| `ceil` | — | не реализовано | low |
-| `clip` | — | не реализовано | medium |
-| `cos` | — | не реализовано | low |
-| `cosh` | — | не реализовано | low |
-| `cot` | — | не реализовано | low |
-| `count` | — | не реализовано | low |
+| `cat` | Expr.cat | реализовано | — |
+| `cbrt` | Expr.cbrt | реализовано | — |
+| `ceil` | Expr.ceil | реализовано | — |
+| `clip` | Expr.clip | реализовано | — |
+| `cos` | Expr.cos | реализовано | — |
+| `cosh` | Expr.cosh | реализовано | — |
+| `cot` | Expr.cot | реализовано | — |
+| `count` | Expr.count | реализовано | — |
 | `cum_count` | Expr.cum_count | реализовано | — |
-| `cum_max` | — | не реализовано | low |
-| `cum_min` | — | не реализовано | low |
-| `cum_prod` | — | не реализовано | low |
+| `cum_max` | Expr.cum_max | реализовано | — |
+| `cum_min` | Expr.cum_min | реализовано | — |
+| `cum_prod` | Expr.cum_prod | реализовано | — |
 | `cum_sum` | Expr.cum_sum | реализовано | — |
-| `cumulative_eval` | — | не реализовано | low |
-| `cut` | — | не реализовано | low |
-| `degrees` | — | не реализовано | low |
-| `deserialize` | — | не реализовано | low |
-| `diff` | — | не реализовано | low |
-| `dot` | — | не реализовано | low |
-| `drop_nans` | — | не реализовано | low |
-| `drop_nulls` | — | не реализовано | low |
-| `dt` | — | не реализовано | medium |
-| `entropy` | — | не реализовано | low |
+| `cumulative_eval` | Expr.cumulative_eval | реализовано | — |
+| `cut` | Expr.cut | реализовано | — |
+| `degrees` | Expr.degrees | реализовано | — |
+| `deserialize` | Expr.deserialize | реализовано | — |
+| `diff` | Expr.diff | реализовано | — |
+| `dot` | Expr.dot | реализовано | — |
+| `drop_nans` | Expr.drop_nans | реализовано | — |
+| `drop_nulls` | Expr.drop_nulls | реализовано | — |
+| `dt` | Expr.dt | реализовано | — |
+| `entropy` | Expr.entropy | реализовано | — |
 | `eq` | Expr.eq | реализовано | — |
-| `eq_missing` | — | не реализовано | low |
-| `ewm_mean` | — | не реализовано | low |
-| `ewm_mean_by` | — | не реализовано | low |
-| `ewm_std` | — | не реализовано | low |
-| `ewm_var` | — | не реализовано | low |
-| `exclude` | — | не реализовано | low |
-| `exp` | — | не реализовано | low |
-| `explode` | — | не реализовано | low |
-| `ext` | — | не реализовано | low |
-| `extend_constant` | — | не реализовано | low |
+| `eq_missing` | Expr.eq_missing | реализовано | — |
+| `ewm_mean` | Expr.ewm_mean | реализовано | — |
+| `ewm_mean_by` | Expr.ewm_mean_by | реализовано | — |
+| `ewm_std` | Expr.ewm_std | реализовано | — |
+| `ewm_var` | Expr.ewm_var | реализовано | — |
+| `exclude` | Expr.exclude | реализовано | — |
+| `exp` | Expr.exp | реализовано | — |
+| `explode` | Expr.explode | реализовано | — |
+| `ext` | Expr.ext | реализовано | — |
+| `extend_constant` | Expr.extend_constant | реализовано | — |
 | `fill_nan` | Expr.fill_na_n | реализовано | — |
 | `fill_null` | Expr.fill_null | реализовано | — |
-| `filter` | — | не реализовано | low |
-| `first` | — | не реализовано | low |
-| `flatten` | — | не реализовано | low |
-| `floor` | — | не реализовано | low |
-| `floordiv` | — | не реализовано | low |
-| `forward_fill` | — | не реализовано | low |
-| `from_json` | — | не реализовано | low |
-| `gather` | — | не реализовано | low |
-| `gather_every` | — | не реализовано | low |
+| `filter` | Expr.filter | реализовано | — |
+| `first` | Expr.first | реализовано | — |
+| `flatten` | Expr.flatten | реализовано | — |
+| `floor` | Expr.floor | реализовано | — |
+| `floordiv` | Expr.floordiv | реализовано | — |
+| `forward_fill` | Expr.forward_fill | реализовано | — |
+| `from_json` | Expr.from_json | реализовано | — |
+| `gather` | Expr.gather | реализовано | — |
+| `gather_every` | Expr.gather_every | реализовано | — |
 | `ge` | Expr.ge | реализовано | — |
-| `get` | — | не реализовано | low |
+| `get` | Expr.get | реализовано | — |
 | `gt` | Expr.gt | реализовано | — |
-| `has_nulls` | — | не реализовано | low |
-| `hash` | — | не реализовано | low |
-| `head` | — | не реализовано | low |
-| `hist` | — | не реализовано | low |
-| `implode` | — | не реализовано | low |
-| `index_of` | — | не реализовано | low |
-| `inspect` | — | не реализовано | low |
-| `interpolate` | — | не реализовано | low |
-| `interpolate_by` | — | не реализовано | low |
-| `is_between` | — | не реализовано | low |
-| `is_close` | — | не реализовано | low |
-| `is_duplicated` | — | не реализовано | low |
-| `is_finite` | — | не реализовано | low |
-| `is_first_distinct` | — | не реализовано | low |
-| `is_in` | — | не реализовано | low |
-| `is_infinite` | — | не реализовано | low |
-| `is_last_distinct` | — | не реализовано | low |
-| `is_nan` | — | не реализовано | low |
-| `is_not_nan` | — | не реализовано | low |
+| `has_nulls` | Expr.has_nulls | реализовано | — |
+| `hash` | Expr.hash | реализовано | — |
+| `head` | Expr.head | реализовано | — |
+| `hist` | Expr.hist | реализовано | — |
+| `implode` | Expr.implode | реализовано | — |
+| `index_of` | Expr.index_of | реализовано | — |
+| `inspect` | Expr.inspect | реализовано | — |
+| `interpolate` | Expr.interpolate | реализовано | — |
+| `interpolate_by` | Expr.interpolate_by | реализовано | — |
+| `is_between` | Expr.is_between | реализовано | — |
+| `is_close` | Expr.is_close | реализовано | — |
+| `is_duplicated` | Expr.is_duplicated | реализовано | — |
+| `is_finite` | Expr.is_finite | реализовано | — |
+| `is_first_distinct` | Expr.is_first_distinct | реализовано | — |
+| `is_in` | Expr.is_in | реализовано | — |
+| `is_infinite` | Expr.is_infinite | реализовано | — |
+| `is_last_distinct` | Expr.is_last_distinct | реализовано | — |
+| `is_nan` | Expr.is_nan | реализовано | — |
+| `is_not_nan` | Expr.is_not_nan | реализовано | — |
 | `is_not_null` | Expr.is_not_null | реализовано | — |
 | `is_null` | Expr.is_null | реализовано | — |
-| `is_unique` | — | не реализовано | low |
-| `item` | — | не реализовано | low |
-| `kurtosis` | — | не реализовано | low |
-| `last` | — | не реализовано | low |
+| `is_unique` | Expr.is_unique | реализовано | — |
+| `item` | Expr.item | реализовано | — |
+| `kurtosis` | Expr.kurtosis | реализовано | — |
+| `last` | Expr.last | реализовано | — |
 | `le` | Expr.le | реализовано | — |
 | `len` | Expr.list_len | реализовано | — |
-| `limit` | — | не реализовано | low |
-| `list` | — | не реализовано | medium |
-| `log` | — | не реализовано | medium |
-| `log10` | — | не реализовано | low |
-| `log1p` | — | не реализовано | low |
-| `lower_bound` | — | не реализовано | low |
+| `limit` | Expr.limit | реализовано | — |
+| `list` | Expr.list | реализовано | — |
+| `log` | Expr.log | реализовано | — |
+| `log10` | Expr.log10 | реализовано | — |
+| `log1p` | Expr.log1p | реализовано | — |
+| `lower_bound` | Expr.lower_bound | реализовано | — |
 | `lt` | Expr.lt | реализовано | — |
-| `map_batches` | — | не реализовано | low |
+| `map_batches` | Expr.map_batches | реализовано | — |
 | `map_elements` | — | не реализовано | low |
 | `max` | — | не реализовано | low |
 | `max_by` | — | не реализовано | low |
@@ -393,7 +393,7 @@
 | `peak_max` | — | не реализовано | low |
 | `peak_min` | — | не реализовано | low |
 | `pipe` | — | не реализовано | low |
-| `pow` | — | не реализовано | medium |
+| `pow` | Expr.pow | реализовано | — |
 | `product` | — | не реализовано | low |
 | `qcut` | — | не реализовано | low |
 | `quantile` | — | не реализовано | low |
@@ -430,7 +430,7 @@
 | `rolling_sum_by` | — | не реализовано | low |
 | `rolling_var` | — | не реализовано | low |
 | `rolling_var_by` | — | не реализовано | low |
-| `round` | — | не реализовано | medium |
+| `round` | Expr.round | реализовано | — |
 | `round_sig_figs` | — | не реализовано | low |
 | `sample` | — | не реализовано | low |
 | `search_sorted` | — | не реализовано | low |
@@ -445,10 +445,10 @@
 | `slice` | — | не реализовано | low |
 | `sort` | — | не реализовано | low |
 | `sort_by` | — | не реализовано | low |
-| `sqrt` | — | не реализовано | medium |
+| `sqrt` | Expr.sqrt | реализовано | — |
 | `std` | — | не реализовано | low |
-| `str` | — | не реализовано | medium |
-| `struct` | — | не реализовано | medium |
+| `str` | Expr.str | реализовано | — |
+| `struct` | Expr.struct | реализовано | — |
 | `sub` | Expr.sub | реализовано | — |
 | `sum` | — | не реализовано | low |
 | `tail` | — | не реализовано | low |
@@ -467,7 +467,7 @@
 | `where` | — | не реализовано | low |
 | `xor` | — | не реализовано | low |
 
-Итог для Expr: реализовано 27 из 217.
+Итог для Expr: реализовано 135 из 217.
 
 ## Series (226 методов)
 | Python Polars method | gopolars equivalent | Статус | Приоритет |
@@ -475,7 +475,7 @@
 | `__array__` | — | не реализовано | low |
 | `__arrow_c_stream__` | — | не реализовано | low |
 | `__getitem__` | — | не реализовано | low |
-| `abs` | — | не реализовано | low |
+| `abs` | Series.abs | реализовано | — |
 | `alias` | — | не реализовано | low |
 | `all` | — | не реализовано | low |
 | `any` | — | не реализовано | low |
@@ -525,10 +525,10 @@
 | `cum_sum` | — | не реализовано | low |
 | `cumulative_eval` | — | не реализовано | low |
 | `cut` | — | не реализовано | low |
-| `describe` | — | не реализовано | medium |
+| `describe` | Series.describe | реализовано | — |
 | `diff` | — | не реализовано | low |
 | `dot` | — | не реализовано | low |
-| `drop_nans` | — | не реализовано | high |
+| `drop_nans` | Series.drop_nans | реализовано | — |
 | `drop_nulls` | Series.drop_nulls | реализовано | — |
 | `dt` | — | не реализовано | low |
 | `dtype` | — | не реализовано | low |
@@ -541,12 +541,12 @@
 | `ewm_mean_by` | — | не реализовано | low |
 | `ewm_std` | — | не реализовано | low |
 | `ewm_var` | — | не реализовано | low |
-| `exp` | — | не реализовано | low |
+| `exp` | Series.exp | реализовано | — |
 | `explode` | — | не реализовано | low |
 | `ext` | — | не реализовано | low |
 | `extend` | — | не реализовано | low |
 | `extend_constant` | — | не реализовано | low |
-| `fill_nan` | — | не реализовано | high |
+| `fill_nan` | Series.fill_nan | реализовано | — |
 | `fill_null` | Series.fill_null | реализовано | — |
 | `filter` | — | не реализовано | low |
 | `first` | — | не реализовано | low |
@@ -562,10 +562,10 @@
 | `has_validity` | — | не реализовано | low |
 | `hash` | — | не реализовано | low |
 | `head` | — | не реализовано | low |
-| `hist` | — | не реализовано | medium |
+| `hist` | Series.hist | реализовано | — |
 | `implode` | — | не реализовано | low |
 | `index_of` | — | не реализовано | low |
-| `interpolate` | — | не реализовано | medium |
+| `interpolate` | Series.interpolate | реализовано | — |
 | `interpolate_by` | — | не реализовано | low |
 | `is_between` | — | не реализовано | low |
 | `is_close` | — | не реализовано | low |
@@ -589,7 +589,7 @@
 | `len` | Series.len | реализовано | — |
 | `limit` | — | не реализовано | low |
 | `list` | — | не реализовано | low |
-| `log` | — | не реализовано | low |
+| `log` | Series.log | реализовано | — |
 | `log10` | — | не реализовано | low |
 | `log1p` | — | не реализовано | low |
 | `lower_bound` | — | не реализовано | low |
@@ -611,7 +611,7 @@
 | `ne_missing` | — | не реализовано | low |
 | `new_from_index` | — | не реализовано | low |
 | `not_` | — | не реализовано | low |
-| `null_count` | — | не реализовано | high |
+| `null_count` | Series.null_count | реализовано | — |
 | `pct_change` | — | не реализовано | low |
 | `peak_max` | — | не реализовано | low |
 | `peak_min` | — | не реализовано | low |
@@ -628,18 +628,18 @@
 | `replace` | — | не реализовано | low |
 | `replace_strict` | — | не реализовано | low |
 | `reshape` | — | не реализовано | low |
-| `reverse` | — | не реализовано | low |
+| `reverse` | Series.reverse | реализовано | — |
 | `rle` | — | не реализовано | low |
 | `rle_id` | — | не реализовано | low |
 | `rolling_kurtosis` | — | не реализовано | low |
 | `rolling_map` | — | не реализовано | low |
-| `rolling_max` | — | не реализовано | high |
+| `rolling_max` | Series.rolling_max | реализовано | — |
 | `rolling_max_by` | — | не реализовано | low |
-| `rolling_mean` | — | не реализовано | high |
+| `rolling_mean` | Series.rolling_mean | реализовано | — |
 | `rolling_mean_by` | — | не реализовано | low |
 | `rolling_median` | — | не реализовано | low |
 | `rolling_median_by` | — | не реализовано | low |
-| `rolling_min` | — | не реализовано | high |
+| `rolling_min` | Series.rolling_min | реализовано | — |
 | `rolling_min_by` | — | не реализовано | low |
 | `rolling_quantile` | — | не реализовано | low |
 | `rolling_quantile_by` | — | не реализовано | low |
@@ -648,7 +648,7 @@
 | `rolling_skew` | — | не реализовано | low |
 | `rolling_std` | — | не реализовано | low |
 | `rolling_std_by` | — | не реализовано | low |
-| `rolling_sum` | — | не реализовано | high |
+| `rolling_sum` | Series.rolling_sum | реализовано | — |
 | `rolling_sum_by` | — | не реализовано | low |
 | `rolling_var` | — | не реализовано | low |
 | `rolling_var_by` | — | не реализовано | low |
@@ -660,7 +660,7 @@
 | `set` | — | не реализовано | low |
 | `set_sorted` | — | не реализовано | low |
 | `shape` | — | не реализовано | low |
-| `shift` | — | не реализовано | low |
+| `shift` | Series.shift | реализовано | — |
 | `shrink_dtype` | — | не реализовано | low |
 | `shrink_to_fit` | — | не реализовано | low |
 | `shuffle` | — | не реализовано | low |
@@ -671,11 +671,11 @@
 | `slice` | — | не реализовано | low |
 | `sort` | — | не реализовано | low |
 | `sql` | — | не реализовано | low |
-| `sqrt` | — | не реализовано | low |
-| `std` | — | не реализовано | low |
+| `sqrt` | Series.sqrt | реализовано | — |
+| `std` | Series.std | реализовано | — |
 | `str` | — | не реализовано | low |
 | `struct` | — | не реализовано | low |
-| `sum` | — | не реализовано | low |
+| `sum` | Series.sum | реализовано | — |
 | `tail` | — | не реализовано | low |
 | `tan` | — | не реализовано | low |
 | `tanh` | — | не реализовано | low |
@@ -684,9 +684,9 @@
 | `to_frame` | — | не реализовано | low |
 | `to_init_repr` | — | не реализовано | low |
 | `to_jax` | — | не реализовано | low |
-| `to_list` | — | не реализовано | high |
-| `to_numpy` | — | не реализовано | medium |
-| `to_pandas` | — | не реализовано | medium |
+| `to_list` | Series.to_list | реализовано | — |
+| `to_numpy` | Series.to_numpy | реализовано | — |
+| `to_pandas` | Series.to_pandas | реализовано | — |
 | `to_physical` | — | не реализовано | low |
 | `to_torch` | — | не реализовано | low |
 | `top_k` | — | не реализовано | low |
@@ -699,51 +699,51 @@
 | `var` | — | не реализовано | low |
 | `zip_with` | — | не реализовано | low |
 
-Итог для Series: реализовано 13 из 226.
+Итог для Series: реализовано 34 из 226.
 
 ## SQLContext (7 методов)
 | Python Polars method | gopolars equivalent | Статус | Приоритет |
 | --- | --- | --- | --- |
 | `execute` | polars.SQLFromDataFrame / ParseSQL / SQLContext.execute | реализовано | — |
-| `execute_global` | — | не реализовано | medium |
+| `execute_global` | SQLContext.execute_global | реализовано | — |
 | `register` | SQLContext.register | реализовано | — |
-| `register_globals` | — | не реализовано | medium |
-| `register_many` | — | не реализовано | high |
+| `register_globals` | SQLContext.register_globals | реализовано | — |
+| `register_many` | SQLContext.register_many | реализовано | — |
 | `tables` | SQLContext.tables | реализовано | — |
 | `unregister` | SQLContext.unregister | реализовано | — |
 
-Итог для SQLContext: реализовано 4 из 7.
+Итог для SQLContext: реализовано 7 из 7.
 
 ## Top-30 функций для v0.7 (по приоритету реализации)
 | # | Объект | Python Polars method | Приоритет |
 | --- | --- | --- | --- |
-| 1 | SQLContext | `register_many` | high |
-| 2 | Series | `drop_nans` | high |
-| 3 | Series | `fill_nan` | high |
-| 4 | Series | `null_count` | high |
-| 5 | Series | `rolling_max` | high |
-| 6 | Series | `rolling_mean` | high |
-| 7 | Series | `rolling_min` | high |
-| 8 | Series | `rolling_sum` | high |
-| 9 | Series | `to_list` | high |
-| 10 | DataFrame | `partition_by` | medium |
-| 11 | DataFrame | `rechunk` | medium |
-| 12 | DataFrame | `to_numpy` | medium |
-| 13 | DataFrame | `to_pandas` | medium |
-| 14 | DataFrame | `upsample` | medium |
-| 15 | Expr | `clip` | medium |
-| 16 | Expr | `dt` | medium |
-| 17 | Expr | `list` | medium |
-| 18 | Expr | `log` | medium |
-| 19 | Expr | `pow` | medium |
-| 20 | Expr | `round` | medium |
-| 21 | Expr | `sqrt` | medium |
-| 22 | Expr | `str` | medium |
-| 23 | Expr | `struct` | medium |
-| 24 | LazyFrame | `cache` | medium |
-| 25 | LazyFrame | `deserialize` | medium |
-| 26 | LazyFrame | `remote` | medium |
-| 27 | LazyFrame | `serialize` | medium |
-| 28 | LazyFrame | `show_graph` | medium |
-| 29 | LazyFrame | `sink_batches` | medium |
-| 30 | SQLContext | `execute_global` | medium |
+| 1 | DataFrame | `__array__` | not need |
+| 2 | DataFrame | `__arrow_c_stream__` | not need  |
+| 3 | DataFrame | `__dataframe__` | not need  |
+| 4 | DataFrame | `__getitem__` | not need  |
+| 5 | DataFrame | `__setitem__` | not need  |
+| 6 | Expr | `map_elements` | low |
+| 7 | Expr | `max` | low |
+| 8 | Expr | `max_by` | low |
+| 9 | Expr | `mean` | low |
+| 10 | Expr | `median` | low |
+| 11 | Expr | `meta` | low |
+| 12 | Expr | `min` | low |
+| 13 | Expr | `min_by` | low |
+| 14 | Expr | `mod` | low |
+| 15 | Expr | `mode` | low |
+| 16 | Expr | `n_unique` | low |
+| 17 | Expr | `nan_max` | low |
+| 18 | Expr | `nan_min` | low |
+| 19 | Expr | `ne_missing` | low |
+| 20 | Expr | `neg` | low |
+| 21 | Expr | `not_` | low |
+| 22 | Expr | `null_count` | low |
+| 23 | Expr | `or_` | low |
+| 24 | Expr | `pct_change` | low |
+| 25 | Expr | `peak_max` | low |
+| 26 | Expr | `peak_min` | low |
+| 27 | Expr | `pipe` | low |
+| 28 | Expr | `product` | low |
+| 29 | Expr | `qcut` | low |
+| 30 | Expr | `quantile` | low |

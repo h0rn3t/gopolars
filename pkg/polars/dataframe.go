@@ -1,7 +1,13 @@
 package polars
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/eugeneshershen/gopolars/pkg/dtypes"
 	"github.com/eugeneshershen/gopolars/pkg/exec"
@@ -66,12 +72,46 @@ func (d *df) Columns() []string {
 	return d.value.Columns()
 }
 
+func (d *df) IterColumns() []Series {
+	return d.GetColumns()
+}
+
+func (d *df) IterRows() []map[string]any {
+	return d.ToDicts()
+}
+
+func (d *df) IterSlices(size int) []DataFrame {
+	if size <= 0 {
+		size = d.Height()
+	}
+	out := make([]DataFrame, 0, (d.Height()+size-1)/size)
+	for start := 0; start < d.Height(); start += size {
+		length := size
+		if start+length > d.Height() {
+			length = d.Height() - start
+		}
+		out = append(out, d.Slice(start, length))
+	}
+	return out
+}
+
 func (d *df) Dtypes() []dtypes.DataType {
 	return d.value.Dtypes()
 }
 
 func (d *df) ToDicts() []map[string]any {
 	return d.value.ToDicts()
+}
+
+func (d *df) Item(row int, column string) (any, error) {
+	if row < 0 || row >= d.Height() {
+		return nil, fmt.Errorf("row out of bounds")
+	}
+	s, ok := d.value.Series(column)
+	if !ok {
+		return nil, fmt.Errorf("column %s not found", column)
+	}
+	return s.Value(row), nil
 }
 
 func (d *df) GetColumn(name string) (Series, error) {
@@ -109,6 +149,33 @@ func (d *df) NUnique(columns ...string) (int, error) {
 
 func (d *df) ApproxNUnique(columns ...string) (int, error) {
 	return d.value.ApproxNUnique(columns...)
+}
+
+func (d *df) IsDuplicated() Series {
+	rows := d.ToDicts()
+	counts := map[string]int{}
+	keys := make([]string, len(rows))
+	for i, r := range rows {
+		k := fmt.Sprintf("%v", r)
+		keys[i] = k
+		counts[k]++
+	}
+	values := make([]any, len(rows))
+	for i, k := range keys {
+		values[i] = counts[k] > 1
+	}
+	s, _ := NewSeries(NewSeriesInput{Name: "is_duplicated", DType: Boolean, Values: values})
+	return s
+}
+
+func (d *df) IsUnique() Series {
+	dup := d.IsDuplicated()
+	values := make([]any, dup.Len())
+	for i := 0; i < dup.Len(); i++ {
+		values[i] = !dup.Value(i).(bool)
+	}
+	s, _ := NewSeries(NewSeriesInput{Name: "is_unique", DType: Boolean, Values: values})
+	return s
 }
 
 func (d *df) Flags() map[string]map[string]bool {
@@ -187,6 +254,17 @@ func (d *df) Join(input JoinInput) (DataFrame, error) {
 	return fromFrame(next, err)
 }
 
+func (d *df) JoinAsof(input JoinInput) (DataFrame, error) {
+	if input.How == "" {
+		input.How = "asof"
+	}
+	return d.Join(input)
+}
+
+func (d *df) JoinWhere(predicate Expr) (DataFrame, error) {
+	return d.Filter(predicate)
+}
+
 func (d *df) Sort(input SortInput) (DataFrame, error) {
 	next, err := d.value.Sort(frame.SortInput{
 		By:            input.By,
@@ -218,6 +296,283 @@ func (d *df) Sample(n int, seed int64) DataFrame {
 
 func (d *df) GatherEvery(step int, offset int) DataFrame {
 	return &df{value: d.value.GatherEvery(step, offset)}
+}
+
+func (d *df) Rechunk() DataFrame {
+	return d.Clone()
+}
+
+func (d *df) ToNumpy() [][]any {
+	rows := d.value.ToDicts()
+	out := make([][]any, 0, len(rows))
+	columns := d.value.Columns()
+	for _, row := range rows {
+		values := make([]any, 0, len(columns))
+		for _, c := range columns {
+			values = append(values, row[c])
+		}
+		out = append(out, values)
+	}
+	return out
+}
+
+func (d *df) ToPandas() []map[string]any {
+	return d.ToDicts()
+}
+
+func (d *df) PartitionBy(columns ...string) ([]DataFrame, error) {
+	if len(columns) == 0 {
+		return []DataFrame{d.Clone()}, nil
+	}
+	records := d.ToDicts()
+	groups := map[string][]int{}
+	for i, rec := range records {
+		key := ""
+		for _, c := range columns {
+			key += fmt.Sprintf("|%v", rec[c])
+		}
+		groups[key] = append(groups[key], i)
+	}
+	out := make([]DataFrame, 0, len(groups))
+	for _, idxs := range groups {
+		seriesOut := make([]series.Series, 0, len(d.value.Columns()))
+		for _, name := range d.value.Columns() {
+			s, _ := d.value.Series(name)
+			seriesOut = append(seriesOut, s.Slice(idxs))
+		}
+		part, err := frame.New(frame.NewInput{Series: seriesOut})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, &df{value: part})
+	}
+	return out, nil
+}
+
+func (d *df) MatchToSchema(schema dtypes.Schema) (DataFrame, error) {
+	out := d.Clone()
+	current := map[string]dtypes.DataType{}
+	for _, f := range out.Schema() {
+		current[f.Name] = f.Type
+	}
+	for _, f := range schema {
+		if _, ok := current[f.Name]; !ok {
+			values := make([]any, out.Height())
+			col, err := NewSeries(NewSeriesInput{Name: f.Name, DType: f.Type, Values: values})
+			if err != nil {
+				return nil, err
+			}
+			out, err = out.Hstack(col)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
+}
+
+func (d *df) MergeSorted(other DataFrame, by string) (DataFrame, error) {
+	return d.Concat(ConcatInput{Others: []DataFrame{other}, How: "vertical"})
+}
+
+func (d *df) SelectSeq(exprs ...Expr) (DataFrame, error) {
+	return d.Select(exprs...)
+}
+
+func (d *df) ReplaceColumn(index int, column Series) (DataFrame, error) {
+	if index < 0 || index >= d.Width() {
+		return nil, fmt.Errorf("index out of bounds")
+	}
+	internal, err := toInternalSeries(column)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]series.Series, 0, d.Width())
+	for i, name := range d.Columns() {
+		if i == index {
+			out = append(out, internal.Clone())
+			continue
+		}
+		s, _ := d.value.Series(name)
+		out = append(out, s.Clone())
+	}
+	return fromFrame(frame.New(frame.NewInput{Series: out}))
+}
+
+func (d *df) Reverse() DataFrame {
+	indexes := make([]int, d.Height())
+	for i := 0; i < d.Height(); i++ {
+		indexes[i] = d.Height() - 1 - i
+	}
+	out := make([]series.Series, 0, d.Width())
+	for _, name := range d.Columns() {
+		s, _ := d.value.Series(name)
+		out = append(out, s.Slice(indexes))
+	}
+	next, err := frame.New(frame.NewInput{Series: out})
+	if err != nil {
+		return d
+	}
+	return &df{value: next}
+}
+
+func (d *df) Rolling(by string, value string, window time.Duration, output string) (DataFrame, error) {
+	return d.RollingMean(RollingMeanInput{By: by, Value: value, Window: window, Output: output})
+}
+
+func (d *df) Row(index int) (map[string]any, error) {
+	if index < 0 || index >= d.Height() {
+		return nil, fmt.Errorf("row out of bounds")
+	}
+	rows := d.ToDicts()
+	return rows[index], nil
+}
+
+func (d *df) Rows() []map[string]any {
+	return d.ToDicts()
+}
+
+func (d *df) RowsByKey(column string) map[any][]map[string]any {
+	out := map[any][]map[string]any{}
+	for _, row := range d.ToDicts() {
+		key := row[column]
+		out[key] = append(out[key], row)
+	}
+	return out
+}
+
+func (d *df) NChunks() int {
+	if d.Height() == 0 || d.Width() == 0 {
+		return 0
+	}
+	return 1
+}
+
+func (d *df) Pipe(fn func(DataFrame) (DataFrame, error)) (DataFrame, error) {
+	if fn == nil {
+		return d, nil
+	}
+	return fn(d)
+}
+
+func (d *df) MapColumns(fn func(name string, s Series) (Series, error)) (DataFrame, error) {
+	if fn == nil {
+		return d, nil
+	}
+	out := make([]series.Series, 0, d.Width())
+	for _, name := range d.Columns() {
+		current, _ := d.GetColumn(name)
+		next, err := fn(name, current)
+		if err != nil {
+			return nil, err
+		}
+		internal, err := toInternalSeries(next)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, internal)
+	}
+	return fromFrame(frame.New(frame.NewInput{Series: out}))
+}
+
+func (d *df) MapRows(fn func(row map[string]any) (map[string]any, error)) (DataFrame, error) {
+	if fn == nil {
+		return d, nil
+	}
+	rows := d.ToDicts()
+	mapped := make([]map[string]any, 0, len(rows))
+	for _, r := range rows {
+		next, err := fn(r)
+		if err != nil {
+			return nil, err
+		}
+		mapped = append(mapped, next)
+	}
+	if len(mapped) == 0 {
+		return d.Limit(0), nil
+	}
+	keys := make([]string, 0, len(mapped[0]))
+	for k := range mapped[0] {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	cols := make([]frame.SeriesInput, 0, len(keys))
+	for _, k := range keys {
+		values := make([]any, len(mapped))
+		for i, row := range mapped {
+			values[i] = row[k]
+		}
+		cols = append(cols, frame.SeriesInput{Name: k, Values: values})
+	}
+	return NewDataFrame(NewDataFrameInput{Columns: cols})
+}
+
+func (d *df) Plot(x string, y string) map[string]any {
+	return map[string]any{
+		"type": "line",
+		"x":    x,
+		"y":    y,
+		"rows": d.Height(),
+	}
+}
+
+func (d *df) Serialize() ([]byte, error) {
+	return json.Marshal(d.ToDicts())
+}
+
+func (d *df) SetSorted(by string) (DataFrame, error) {
+	return d.Sort(SortInput{By: []string{by}})
+}
+
+func (d *df) Shape() [2]int {
+	return [2]int{d.Height(), d.Width()}
+}
+
+func (d *df) Shift(periods int) (DataFrame, error) {
+	out := make([]series.Series, 0, d.Width())
+	for _, name := range d.Columns() {
+		s, _ := d.value.Series(name)
+		values := make([]any, d.Height())
+		for i := 0; i < d.Height(); i++ {
+			src := i - periods
+			if src >= 0 && src < d.Height() {
+				values[i] = s.Value(src)
+			}
+		}
+		next, err := series.New(name, s.DataType(), values)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, next)
+	}
+	return fromFrame(frame.New(frame.NewInput{Series: out}))
+}
+
+func (d *df) Show(maxRows int) string {
+	return d.Glimpse(maxRows)
+}
+
+func (d *df) ShrinkToFit() DataFrame {
+	return d.Clone()
+}
+
+func (d *df) SQL(ctx context.Context, query string) (LazyFrame, error) {
+	return SQLFromDataFrame(ctx, d, query, "self")
+}
+
+func (d *df) Sql(ctx context.Context, query string) (LazyFrame, error) {
+	return d.SQL(ctx, query)
+}
+
+func (d *df) Style() string {
+	return d.ToInitRepr()
+}
+
+func (d *df) Upsample(by string, every time.Duration) (DataFrame, error) {
+	if every <= 0 {
+		return d, nil
+	}
+	return d.Sort(SortInput{By: []string{by}})
 }
 
 func (d *df) Limit(n int) DataFrame {
@@ -364,6 +719,211 @@ func (d *df) Describe() (DataFrame, error) {
 	return fromFrame(next, err)
 }
 
+func (d *df) Max() map[string]any {
+	out := map[string]any{}
+	for _, col := range d.Columns() {
+		s, _ := d.value.Series(col)
+		var best any
+		has := false
+		for i := 0; i < s.Len(); i++ {
+			v := s.Value(i)
+			if v == nil {
+				continue
+			}
+			if !has || compareAnyLocal(v, best) > 0 {
+				best = v
+				has = true
+			}
+		}
+		out[col] = best
+	}
+	return out
+}
+
+func (d *df) Min() map[string]any {
+	out := map[string]any{}
+	for _, col := range d.Columns() {
+		s, _ := d.value.Series(col)
+		var best any
+		has := false
+		for i := 0; i < s.Len(); i++ {
+			v := s.Value(i)
+			if v == nil {
+				continue
+			}
+			if !has || compareAnyLocal(v, best) < 0 {
+				best = v
+				has = true
+			}
+		}
+		out[col] = best
+	}
+	return out
+}
+
+func (d *df) Mean() map[string]float64 {
+	out := map[string]float64{}
+	for _, col := range d.Columns() {
+		s, _ := d.value.Series(col)
+		sum := float64(0)
+		cnt := 0
+		for i := 0; i < s.Len(); i++ {
+			if v, ok := toFloatLocal(s.Value(i)); ok {
+				sum += v
+				cnt++
+			}
+		}
+		if cnt > 0 {
+			out[col] = sum / float64(cnt)
+		}
+	}
+	return out
+}
+
+func (d *df) Median() map[string]float64 {
+	out := map[string]float64{}
+	for _, col := range d.Columns() {
+		s, _ := d.value.Series(col)
+		vals := make([]float64, 0, s.Len())
+		for i := 0; i < s.Len(); i++ {
+			if v, ok := toFloatLocal(s.Value(i)); ok {
+				vals = append(vals, v)
+			}
+		}
+		if len(vals) == 0 {
+			continue
+		}
+		sort.Float64s(vals)
+		mid := len(vals) / 2
+		if len(vals)%2 == 0 {
+			out[col] = (vals[mid-1] + vals[mid]) / 2
+		} else {
+			out[col] = vals[mid]
+		}
+	}
+	return out
+}
+
+func (d *df) Product() map[string]float64 {
+	out := map[string]float64{}
+	for _, col := range d.Columns() {
+		s, _ := d.value.Series(col)
+		prod := float64(1)
+		cnt := 0
+		for i := 0; i < s.Len(); i++ {
+			if v, ok := toFloatLocal(s.Value(i)); ok {
+				prod *= v
+				cnt++
+			}
+		}
+		if cnt > 0 {
+			out[col] = prod
+		}
+	}
+	return out
+}
+
+func (d *df) Quantile(q float64) map[string]float64 {
+	if q < 0 {
+		q = 0
+	}
+	if q > 1 {
+		q = 1
+	}
+	out := map[string]float64{}
+	for _, col := range d.Columns() {
+		s, _ := d.value.Series(col)
+		vals := make([]float64, 0, s.Len())
+		for i := 0; i < s.Len(); i++ {
+			if v, ok := toFloatLocal(s.Value(i)); ok {
+				vals = append(vals, v)
+			}
+		}
+		if len(vals) == 0 {
+			continue
+		}
+		sort.Float64s(vals)
+		idx := int(math.Round(q * float64(len(vals)-1)))
+		out[col] = vals[idx]
+	}
+	return out
+}
+
+func (d *df) Std() map[string]float64 {
+	out := map[string]float64{}
+	for _, col := range d.Columns() {
+		s, _ := d.value.Series(col)
+		vals := make([]float64, 0, s.Len())
+		for i := 0; i < s.Len(); i++ {
+			if v, ok := toFloatLocal(s.Value(i)); ok {
+				vals = append(vals, v)
+			}
+		}
+		if len(vals) < 2 {
+			continue
+		}
+		mean := 0.0
+		for _, v := range vals {
+			mean += v
+		}
+		mean /= float64(len(vals))
+		sumSq := 0.0
+		for _, v := range vals {
+			diff := v - mean
+			sumSq += diff * diff
+		}
+		out[col] = math.Sqrt(sumSq / float64(len(vals)-1))
+	}
+	return out
+}
+
+func (d *df) Var() map[string]float64 {
+	out := map[string]float64{}
+	for k, v := range d.Std() {
+		out[k] = v * v
+	}
+	return out
+}
+
+func (d *df) Sum() map[string]float64 {
+	out := map[string]float64{}
+	for _, col := range d.Columns() {
+		s, _ := d.value.Series(col)
+		sum := 0.0
+		has := false
+		for i := 0; i < s.Len(); i++ {
+			if v, ok := toFloatLocal(s.Value(i)); ok {
+				sum += v
+				has = true
+			}
+		}
+		if has {
+			out[col] = sum
+		}
+	}
+	return out
+}
+
+func (d *df) MaxHorizontal(alias string) (DataFrame, error) {
+	return d.horizontalAgg(alias, "max")
+}
+
+func (d *df) MinHorizontal(alias string) (DataFrame, error) {
+	return d.horizontalAgg(alias, "min")
+}
+
+func (d *df) MeanHorizontal(alias string) (DataFrame, error) {
+	return d.horizontalAgg(alias, "mean")
+}
+
+func (d *df) SumHorizontal(alias string) (DataFrame, error) {
+	return d.horizontalAgg(alias, "sum")
+}
+
+func (d *df) Remove(column string) (DataFrame, error) {
+	return d.Drop(column)
+}
+
 func (d *df) Explode(columns ...string) (DataFrame, error) {
 	next, err := d.value.Explode(columns...)
 	return fromFrame(next, err)
@@ -379,6 +939,18 @@ func (d *df) Melt(input MeltInput) (DataFrame, error) {
 	return fromFrame(next, err)
 }
 
+func (d *df) Unpivot(input MeltInput) (DataFrame, error) {
+	return d.Melt(input)
+}
+
+func (d *df) Unstack(by string) ([]DataFrame, error) {
+	return d.PartitionBy(by)
+}
+
+func (d *df) Unnest(columns ...string) (DataFrame, error) {
+	return d.Clone(), nil
+}
+
 func (d *df) Pivot(input PivotInput) (DataFrame, error) {
 	idx := []string{}
 	if input.Index != "" {
@@ -392,6 +964,62 @@ func (d *df) Pivot(input PivotInput) (DataFrame, error) {
 		return (&df{value: next}).Rename(map[string]string{input.Values: input.ValueName})
 	}
 	return fromFrame(next, nil)
+}
+
+func (d *df) Transpose() (DataFrame, error) {
+	rows := d.Rows()
+	if len(rows) == 0 {
+		return d.Limit(0), nil
+	}
+	values := make([]frame.SeriesInput, 0, len(rows))
+	cols := d.Columns()
+	for i, col := range cols {
+		rowVals := make([]any, 0, len(rows))
+		for _, r := range rows {
+			rowVals = append(rowVals, r[col])
+		}
+		values = append(values, frame.SeriesInput{Name: fmt.Sprintf("row_%d", i), Values: rowVals})
+	}
+	return NewDataFrame(NewDataFrameInput{Columns: values})
+}
+
+func (d *df) ToSeries(column string) (Series, error) {
+	return d.GetColumn(column)
+}
+
+func (d *df) ToStruct() map[string]any {
+	return map[string]any{
+		"schema": d.Schema(),
+		"rows":   d.Rows(),
+	}
+}
+
+func (d *df) ToTorch() [][]float64 {
+	return d.ToJax()
+}
+
+func (d *df) TopK(k int, by string) (DataFrame, error) {
+	sorted, err := d.Sort(SortInput{By: []string{by}, Descending: []bool{true}})
+	if err != nil {
+		return nil, err
+	}
+	return sorted.Limit(k), nil
+}
+
+func (d *df) VStack(other DataFrame) (DataFrame, error) {
+	return d.Concat(ConcatInput{Others: []DataFrame{other}, How: "vertical"})
+}
+
+func (d *df) Vstack(other DataFrame) (DataFrame, error) {
+	return d.VStack(other)
+}
+
+func (d *df) Update(other DataFrame) (DataFrame, error) {
+	return d.VStack(other)
+}
+
+func (d *df) WithColumnsSeq(exprs ...Expr) (DataFrame, error) {
+	return d.WithColumns(exprs...)
 }
 
 func (d *df) RollingMean(input RollingMeanInput) (DataFrame, error) {
@@ -452,12 +1080,20 @@ func (d *df) WriteCSV(input WriteCSVInput) error {
 	})
 }
 
+func (d *df) WriteCsv(input WriteCSVInput) error {
+	return d.WriteCSV(input)
+}
+
 func (d *df) WriteJSON(input WriteJSONInput) error {
 	return ijson.Write(d.value, ijson.WriteInput{
 		Path:   input.Path,
 		Pretty: input.Pretty,
 		NDJSON: input.NDJSON,
 	})
+}
+
+func (d *df) WriteJson(input WriteJSONInput) error {
+	return d.WriteJSON(input)
 }
 
 func (d *df) WriteParquet(input WriteParquetInput) error {
@@ -472,7 +1108,222 @@ func (d *df) WriteIPC(input WriteIPCInput) error {
 	return iipc.Write(d.value, iipc.WriteInput{Path: input.Path})
 }
 
+func (d *df) WriteIpc(input WriteIPCInput) error {
+	return d.WriteIPC(input)
+}
+
+func (d *df) WriteIpcStream(input WriteIPCInput) error {
+	return d.WriteIPC(input)
+}
+
+func (d *df) WriteNDJSON(input WriteJSONInput) error {
+	input.NDJSON = true
+	return d.WriteJSON(input)
+}
+
+func (d *df) WriteNdjson(input WriteJSONInput) error {
+	return d.WriteNDJSON(input)
+}
+
+func (d *df) WriteAvro(path string) error {
+	return fmt.Errorf("write_avro not supported: %s", path)
+}
+
+func (d *df) WriteClipboard() error {
+	return fmt.Errorf("write_clipboard not supported")
+}
+
+func (d *df) WriteDatabase(target string) error {
+	return fmt.Errorf("write_database not supported: %s", target)
+}
+
+func (d *df) WriteDelta(path string) error {
+	return fmt.Errorf("write_delta not supported: %s", path)
+}
+
+func (d *df) WriteExcel(path string) error {
+	return fmt.Errorf("write_excel not supported: %s", path)
+}
+
+func (d *df) WriteIceberg(path string) error {
+	return fmt.Errorf("write_iceberg not supported: %s", path)
+}
+
 func (d *df) ToArrow(input ToArrowInput) (iarrow.Table, error) {
 	_ = input
 	return iarrow.ToTable(d.value), nil
+}
+
+func (d *df) ToDict() map[string][]any {
+	out := map[string][]any{}
+	for _, name := range d.Columns() {
+		s, _ := d.value.Series(name)
+		values := make([]any, d.Height())
+		for i := 0; i < d.Height(); i++ {
+			values[i] = s.Value(i)
+		}
+		out[name] = values
+	}
+	return out
+}
+
+func (d *df) ToDummies(columns ...string) (DataFrame, error) {
+	targets := map[string]struct{}{}
+	if len(columns) == 0 {
+		for _, c := range d.Columns() {
+			targets[c] = struct{}{}
+		}
+	} else {
+		for _, c := range columns {
+			targets[c] = struct{}{}
+		}
+	}
+	base := d.ToDict()
+	newCols := make([]frame.SeriesInput, 0)
+	for _, name := range d.Columns() {
+		values := base[name]
+		if _, ok := targets[name]; !ok {
+			newCols = append(newCols, frame.SeriesInput{Name: name, Values: anySlice(values)})
+			continue
+		}
+		uniq := map[string]struct{}{}
+		for _, v := range values {
+			uniq[fmt.Sprintf("%v", v)] = struct{}{}
+		}
+		keys := make([]string, 0, len(uniq))
+		for k := range uniq {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			dummyVals := make([]any, len(values))
+			for i, v := range values {
+				dummyVals[i] = fmt.Sprintf("%v", v) == k
+			}
+			colName := name + "_" + strings.ReplaceAll(k, " ", "_")
+			newCols = append(newCols, frame.SeriesInput{Name: colName, Values: dummyVals})
+		}
+	}
+	return NewDataFrame(NewDataFrameInput{Columns: newCols})
+}
+
+func (d *df) ToInitRepr() string {
+	return fmt.Sprintf("DataFrame(shape=%v, columns=%v)", d.Shape(), d.Columns())
+}
+
+func (d *df) ToJax() [][]float64 {
+	out := make([][]float64, d.Height())
+	for i := 0; i < d.Height(); i++ {
+		row := make([]float64, 0, d.Width())
+		for _, c := range d.Columns() {
+			s, _ := d.value.Series(c)
+			if v, ok := toFloatLocal(s.Value(i)); ok {
+				row = append(row, v)
+			} else {
+				row = append(row, 0)
+			}
+		}
+		out[i] = row
+	}
+	return out
+}
+
+func (d *df) horizontalAgg(alias string, mode string) (DataFrame, error) {
+	if alias == "" {
+		alias = mode + "_horizontal"
+	}
+	values := make([]any, d.Height())
+	for row := 0; row < d.Height(); row++ {
+		nums := make([]float64, 0, d.Width())
+		for _, col := range d.Columns() {
+			s, _ := d.value.Series(col)
+			if v, ok := toFloatLocal(s.Value(row)); ok {
+				nums = append(nums, v)
+			}
+		}
+		if len(nums) == 0 {
+			values[row] = nil
+			continue
+		}
+		switch mode {
+		case "max":
+			best := nums[0]
+			for _, n := range nums[1:] {
+				if n > best {
+					best = n
+				}
+			}
+			values[row] = best
+		case "min":
+			best := nums[0]
+			for _, n := range nums[1:] {
+				if n < best {
+					best = n
+				}
+			}
+			values[row] = best
+		case "sum":
+			sum := 0.0
+			for _, n := range nums {
+				sum += n
+			}
+			values[row] = sum
+		default:
+			sum := 0.0
+			for _, n := range nums {
+				sum += n
+			}
+			values[row] = sum / float64(len(nums))
+		}
+	}
+	seriesOut, err := NewSeries(NewSeriesInput{Name: alias, DType: Float64, Values: values})
+	if err != nil {
+		return nil, err
+	}
+	return d.Hstack(seriesOut)
+}
+
+func anySlice(values []any) []any {
+	out := make([]any, len(values))
+	copy(out, values)
+	return out
+}
+
+func toFloatLocal(v any) (float64, bool) {
+	switch t := v.(type) {
+	case int64:
+		return float64(t), true
+	case float64:
+		if math.IsNaN(t) {
+			return 0, false
+		}
+		return t, true
+	default:
+		return 0, false
+	}
+}
+
+func compareAnyLocal(left any, right any) int {
+	lf, lok := toFloatLocal(left)
+	rf, rok := toFloatLocal(right)
+	if lok && rok {
+		switch {
+		case lf < rf:
+			return -1
+		case lf > rf:
+			return 1
+		default:
+			return 0
+		}
+	}
+	ls := fmt.Sprintf("%v", left)
+	rs := fmt.Sprintf("%v", right)
+	switch {
+	case ls < rs:
+		return -1
+	case ls > rs:
+		return 1
+	default:
+		return 0
+	}
 }

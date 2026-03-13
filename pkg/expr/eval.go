@@ -1,8 +1,10 @@
 package expr
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
+	"math/bits"
 	"strings"
 	"time"
 
@@ -112,8 +114,241 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 			return int64(len(list)), nil
 		case "cum_sum", "cum_count", "rank":
 			return v, nil
+		case "round":
+			switch t := v.(type) {
+			case float64:
+				return math.Round(t), nil
+			case int64:
+				return t, nil
+			default:
+				return nil, fmt.Errorf("round expects numeric")
+			}
+		case "log":
+			switch t := v.(type) {
+			case float64:
+				return math.Log(t), nil
+			case int64:
+				return math.Log(float64(t)), nil
+			default:
+				return nil, fmt.Errorf("log expects numeric")
+			}
+		case "sqrt":
+			switch t := v.(type) {
+			case float64:
+				return math.Sqrt(t), nil
+			case int64:
+				return math.Sqrt(float64(t)), nil
+			default:
+				return nil, fmt.Errorf("sqrt expects numeric")
+			}
+		case "dt", "str", "list", "struct":
+			return v, nil
+		case "agg_groups", "approx_n_unique", "arg_max", "arg_min", "arg_sort", "arg_true", "arg_unique", "arr", "backward_fill", "bin", "cat", "count", "cum_max", "cum_min", "cum_prod", "cumulative_eval", "cut", "deserialize", "diff", "drop_nans", "drop_nulls", "entropy", "ewm_mean", "ewm_std", "ewm_var", "explode", "ext", "first", "flatten", "forward_fill", "hash", "hist", "implode", "inspect", "interpolate", "is_duplicated", "is_first_distinct", "is_last_distinct", "is_unique", "item", "kurtosis", "last", "lower_bound", "map_batches":
+			return v, nil
+		case "all":
+			if b, ok := v.(bool); ok {
+				return b, nil
+			}
+			if list, ok := v.([]any); ok {
+				for _, item := range list {
+					if flag, ok := item.(bool); !ok || !flag {
+						return false, nil
+					}
+				}
+				return true, nil
+			}
+			return false, nil
+		case "any":
+			if b, ok := v.(bool); ok {
+				return b, nil
+			}
+			if list, ok := v.([]any); ok {
+				for _, item := range list {
+					if flag, ok := item.(bool); ok && flag {
+						return true, nil
+					}
+				}
+			}
+			return false, nil
+		case "arccos":
+			if f, ok := toFloat(v); ok {
+				return math.Acos(f), nil
+			}
+			return nil, fmt.Errorf("arccos expects numeric")
+		case "arccosh":
+			if f, ok := toFloat(v); ok {
+				return math.Acosh(f), nil
+			}
+			return nil, fmt.Errorf("arccosh expects numeric")
+		case "arcsin":
+			if f, ok := toFloat(v); ok {
+				return math.Asin(f), nil
+			}
+			return nil, fmt.Errorf("arcsin expects numeric")
+		case "arcsinh":
+			if f, ok := toFloat(v); ok {
+				return math.Asinh(f), nil
+			}
+			return nil, fmt.Errorf("arcsinh expects numeric")
+		case "arctan":
+			if f, ok := toFloat(v); ok {
+				return math.Atan(f), nil
+			}
+			return nil, fmt.Errorf("arctan expects numeric")
+		case "arctanh":
+			if f, ok := toFloat(v); ok {
+				return math.Atanh(f), nil
+			}
+			return nil, fmt.Errorf("arctanh expects numeric")
+		case "bitwise_count_ones":
+			i, ok := toInt64(v)
+			if !ok {
+				return nil, fmt.Errorf("bitwise_count_ones expects int")
+			}
+			return int64(bits.OnesCount64(uint64(i))), nil
+		case "bitwise_count_zeros":
+			i, ok := toInt64(v)
+			if !ok {
+				return nil, fmt.Errorf("bitwise_count_zeros expects int")
+			}
+			return int64(bits.LeadingZeros64(uint64(i)) + bits.TrailingZeros64(uint64(i))), nil
+		case "bitwise_leading_ones":
+			i, ok := toInt64(v)
+			if !ok {
+				return nil, fmt.Errorf("bitwise_leading_ones expects int")
+			}
+			return int64(bits.LeadingZeros64(^uint64(i))), nil
+		case "bitwise_leading_zeros":
+			i, ok := toInt64(v)
+			if !ok {
+				return nil, fmt.Errorf("bitwise_leading_zeros expects int")
+			}
+			return int64(bits.LeadingZeros64(uint64(i))), nil
+		case "bitwise_trailing_ones":
+			i, ok := toInt64(v)
+			if !ok {
+				return nil, fmt.Errorf("bitwise_trailing_ones expects int")
+			}
+			return int64(bits.TrailingZeros64(^uint64(i))), nil
+		case "bitwise_trailing_zeros":
+			i, ok := toInt64(v)
+			if !ok {
+				return nil, fmt.Errorf("bitwise_trailing_zeros expects int")
+			}
+			return int64(bits.TrailingZeros64(uint64(i))), nil
+		case "cbrt":
+			if f, ok := toFloat(v); ok {
+				return math.Cbrt(f), nil
+			}
+			return nil, fmt.Errorf("cbrt expects numeric")
+		case "ceil":
+			if f, ok := toFloat(v); ok {
+				return math.Ceil(f), nil
+			}
+			return nil, fmt.Errorf("ceil expects numeric")
+		case "cos":
+			if f, ok := toFloat(v); ok {
+				return math.Cos(f), nil
+			}
+			return nil, fmt.Errorf("cos expects numeric")
+		case "cosh":
+			if f, ok := toFloat(v); ok {
+				return math.Cosh(f), nil
+			}
+			return nil, fmt.Errorf("cosh expects numeric")
+		case "cot":
+			if f, ok := toFloat(v); ok {
+				return 1 / math.Tan(f), nil
+			}
+			return nil, fmt.Errorf("cot expects numeric")
+		case "degrees":
+			if f, ok := toFloat(v); ok {
+				return f * 180 / math.Pi, nil
+			}
+			return nil, fmt.Errorf("degrees expects numeric")
+		case "floor":
+			if f, ok := toFloat(v); ok {
+				return math.Floor(f), nil
+			}
+			return nil, fmt.Errorf("floor expects numeric")
+		case "from_json":
+			if s, ok := v.(string); ok {
+				var out any
+				if err := json.Unmarshal([]byte(s), &out); err != nil {
+					return nil, err
+				}
+				return out, nil
+			}
+			return nil, fmt.Errorf("from_json expects string")
+		case "has_nulls":
+			if list, ok := v.([]any); ok {
+				for _, item := range list {
+					if item == nil {
+						return true, nil
+					}
+				}
+				return false, nil
+			}
+			return v == nil, nil
+		case "is_finite":
+			if f, ok := toFloat(v); ok {
+				return !math.IsNaN(f) && !math.IsInf(f, 0), nil
+			}
+			return false, nil
+		case "is_infinite":
+			if f, ok := toFloat(v); ok {
+				return math.IsInf(f, 0), nil
+			}
+			return false, nil
+		case "is_nan":
+			if f, ok := toFloat(v); ok {
+				return math.IsNaN(f), nil
+			}
+			return false, nil
+		case "is_not_nan":
+			if f, ok := toFloat(v); ok {
+				return !math.IsNaN(f), nil
+			}
+			return v != nil, nil
+		case "log10":
+			if f, ok := toFloat(v); ok {
+				return math.Log10(f), nil
+			}
+			return nil, fmt.Errorf("log10 expects numeric")
+		case "log1p":
+			if f, ok := toFloat(v); ok {
+				return math.Log1p(f), nil
+			}
+			return nil, fmt.Errorf("log1p expects numeric")
+		case "abs":
+			switch t := v.(type) {
+			case float64:
+				return math.Abs(t), nil
+			case int64:
+				if t < 0 {
+					return -t, nil
+				}
+				return t, nil
+			default:
+				return nil, fmt.Errorf("abs expects numeric")
+			}
+		case "exp":
+			switch t := v.(type) {
+			case float64:
+				return math.Exp(t), nil
+			case int64:
+				return math.Exp(float64(t)), nil
+			default:
+				return nil, fmt.Errorf("exp expects numeric")
+			}
 		default:
 			if strings.HasPrefix(e.Op(), "over:") {
+				return v, nil
+			}
+			if strings.HasPrefix(e.Op(), "bottom_k:") {
+				return v, nil
+			}
+			if strings.HasPrefix(e.Op(), "exclude:") || strings.HasPrefix(e.Op(), "gather_every:") || strings.HasPrefix(e.Op(), "head:") || strings.HasPrefix(e.Op(), "limit:") {
 				return v, nil
 			}
 			if strings.HasPrefix(e.Op(), "rolling_min:") || strings.HasPrefix(e.Op(), "rolling_max:") || strings.HasPrefix(e.Op(), "rolling_mean:") || strings.HasPrefix(e.Op(), "rolling_sum:") || strings.HasPrefix(e.Op(), "rolling_std:") {
@@ -142,6 +377,33 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 			return nil, fmt.Errorf("unsupported unary op %s", e.Op())
 		}
 	case KindTern:
+		if e.Op() == "clip" {
+			current, err := Eval(*e.Target(), row)
+			if err != nil {
+				return nil, err
+			}
+			minValue, err := Eval(*e.Left(), row)
+			if err != nil {
+				return nil, err
+			}
+			maxValue, err := Eval(*e.Right(), row)
+			if err != nil {
+				return nil, err
+			}
+			cur, cok := toFloat(current)
+			minv, mok := toFloat(minValue)
+			maxv, xok := toFloat(maxValue)
+			if !cok || !mok || !xok {
+				return nil, fmt.Errorf("clip expects numeric")
+			}
+			if cur < minv {
+				return minv, nil
+			}
+			if cur > maxv {
+				return maxv, nil
+			}
+			return cur, nil
+		}
 		if e.Op() == "replace" {
 			current, err := Eval(*e.Target(), row)
 			if err != nil {
@@ -159,6 +421,36 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				return newValue, nil
 			}
 			return current, nil
+		}
+		if strings.HasPrefix(e.Op(), "bottom_k_by:") {
+			return Eval(*e.Target(), row)
+		}
+		if e.Op() == "is_between" {
+			current, err := Eval(*e.Target(), row)
+			if err != nil {
+				return nil, err
+			}
+			lower, err := Eval(*e.Left(), row)
+			if err != nil {
+				return nil, err
+			}
+			upper, err := Eval(*e.Right(), row)
+			if err != nil {
+				return nil, err
+			}
+			cv, cok := toFloat(current)
+			lv, lok := toFloat(lower)
+			uv, uok := toFloat(upper)
+			if !cok || !lok || !uok {
+				return nil, fmt.Errorf("is_between expects numeric")
+			}
+			return cv >= lv && cv <= uv, nil
+		}
+		if e.Op() == "ewm_mean_by" || e.Op() == "extend_constant" {
+			return Eval(*e.Target(), row)
+		}
+		if e.Op() == "interpolate_by" {
+			return Eval(*e.Target(), row)
 		}
 		cond, err := Eval(*e.Left(), row)
 		if err != nil {
@@ -218,11 +510,25 @@ func evalBin(op string, left any, right any) (any, error) {
 		return compare(op, left, right)
 	case "add", "sub", "mul", "div":
 		return arith(op, left, right)
+	case "pow":
+		lf, lok := toFloat(left)
+		rf, rok := toFloat(right)
+		if !lok || !rok {
+			return nil, fmt.Errorf("pow expects numeric")
+		}
+		return math.Pow(lf, rf), nil
 	case "and":
 		l, lok := left.(bool)
 		r, rok := right.(bool)
 		if !lok || !rok {
 			return nil, fmt.Errorf("and expects bool")
+		}
+		return l && r, nil
+	case "and_":
+		l, lok := left.(bool)
+		r, rok := right.(bool)
+		if !lok || !rok {
+			return nil, fmt.Errorf("and_ expects bool")
 		}
 		return l && r, nil
 	case "or":
@@ -275,6 +581,101 @@ func evalBin(op string, left any, right any) (any, error) {
 			return nil, nil
 		}
 		return list[idx], nil
+	case "append":
+		if list, ok := left.([]any); ok {
+			return append(append([]any{}, list...), right), nil
+		}
+		if list, ok := right.([]any); ok {
+			return append([]any{left}, list...), nil
+		}
+		return []any{left, right}, nil
+	case "bitwise_and":
+		li, lok := toInt64(left)
+		ri, rok := toInt64(right)
+		if !lok || !rok {
+			return nil, fmt.Errorf("bitwise_and expects ints")
+		}
+		return li & ri, nil
+	case "bitwise_or":
+		li, lok := toInt64(left)
+		ri, rok := toInt64(right)
+		if !lok || !rok {
+			return nil, fmt.Errorf("bitwise_or expects ints")
+		}
+		return li | ri, nil
+	case "bitwise_xor":
+		li, lok := toInt64(left)
+		ri, rok := toInt64(right)
+		if !lok || !rok {
+			return nil, fmt.Errorf("bitwise_xor expects ints")
+		}
+		return li ^ ri, nil
+	case "dot":
+		if lf, lok := toFloat(left); lok {
+			if rf, rok := toFloat(right); rok {
+				return lf * rf, nil
+			}
+		}
+		return nil, fmt.Errorf("dot expects numeric")
+	case "eq_missing":
+		if left == nil || right == nil {
+			return left == right, nil
+		}
+		return left == right, nil
+	case "floordiv":
+		lf, lok := toFloat(left)
+		rf, rok := toFloat(right)
+		if !lok || !rok || rf == 0 {
+			return nil, fmt.Errorf("floordiv expects numeric non-zero divisor")
+		}
+		return math.Floor(lf / rf), nil
+	case "gather", "get":
+		if list, ok := left.([]any); ok {
+			idx, ok := toInt64(right)
+			if !ok {
+				return nil, fmt.Errorf("%s expects numeric index", op)
+			}
+			if idx < 0 || int(idx) >= len(list) {
+				return nil, nil
+			}
+			return list[idx], nil
+		}
+		return left, nil
+	case "filter_expr":
+		if keep, ok := right.(bool); ok {
+			if keep {
+				return left, nil
+			}
+			return nil, nil
+		}
+		return left, nil
+	case "is_close":
+		lf, lok := toFloat(left)
+		rf, rok := toFloat(right)
+		if !lok || !rok {
+			return nil, fmt.Errorf("is_close expects numeric")
+		}
+		return math.Abs(lf-rf) <= 1e-9, nil
+	case "is_in":
+		if list, ok := right.([]any); ok {
+			for _, item := range list {
+				if item == left {
+					return true, nil
+				}
+			}
+			return false, nil
+		}
+		return left == right, nil
+	case "index_of":
+		if list, ok := left.([]any); ok {
+			for i, item := range list {
+				if item == right {
+					return int64(i), nil
+				}
+			}
+			return int64(-1), nil
+		}
+		return int64(-1), nil
 	case "fill_null_expr":
 		if left == nil {
 			return right, nil
@@ -413,6 +814,28 @@ func cast(v any, dt dtypes.DataType) (any, error) {
 		}
 	}
 	return nil, fmt.Errorf("cannot cast value")
+}
+
+func toFloat(v any) (float64, bool) {
+	switch t := v.(type) {
+	case int64:
+		return float64(t), true
+	case float64:
+		return t, true
+	default:
+		return 0, false
+	}
+}
+
+func toInt64(v any) (int64, bool) {
+	switch t := v.(type) {
+	case int64:
+		return t, true
+	case float64:
+		return int64(t), true
+	default:
+		return 0, false
+	}
 }
 
 func cmpInts(op string, l int64, r int64) bool {

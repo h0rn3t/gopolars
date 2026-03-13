@@ -213,6 +213,446 @@ func (e Expr) RollingStd(window int) Expr {
 	return Expr{kind: KindUnary, op: "rolling_std:" + strconv.Itoa(window), target: &e}
 }
 
+func (e Expr) Clip(min Expr, max Expr) Expr {
+	return Expr{kind: KindTern, op: "clip", target: &e, left: &min, right: &max}
+}
+
+func (e Expr) Round() Expr {
+	return Expr{kind: KindUnary, op: "round", target: &e}
+}
+
+func (e Expr) Pow(power Expr) Expr {
+	return bin("pow", e, power)
+}
+
+func (e Expr) Log() Expr {
+	return Expr{kind: KindUnary, op: "log", target: &e}
+}
+
+func (e Expr) Sqrt() Expr {
+	return Expr{kind: KindUnary, op: "sqrt", target: &e}
+}
+
+func (e Expr) Dt() Expr {
+	return Expr{kind: KindUnary, op: "dt", target: &e}
+}
+
+func (e Expr) Str() Expr {
+	return Expr{kind: KindUnary, op: "str", target: &e}
+}
+
+func (e Expr) List() Expr {
+	return Expr{kind: KindUnary, op: "list", target: &e}
+}
+
+func (e Expr) Struct() Expr {
+	return Expr{kind: KindUnary, op: "struct", target: &e}
+}
+
+func (e Expr) Abs() Expr {
+	return Expr{kind: KindUnary, op: "abs", target: &e}
+}
+
+func (e Expr) Exp() Expr {
+	return Expr{kind: KindUnary, op: "exp", target: &e}
+}
+
+func (e Expr) AggGroups() Expr {
+	return Expr{kind: KindUnary, op: "agg_groups", target: &e}
+}
+
+func (e Expr) All() Expr {
+	return Expr{kind: KindUnary, op: "all", target: &e}
+}
+
+func (e Expr) And_(other Expr) Expr {
+	return bin("and_", e, other)
+}
+
+func (e Expr) Any() Expr {
+	return Expr{kind: KindUnary, op: "any", target: &e}
+}
+
+func (e Expr) Append(other Expr) Expr {
+	return bin("append", e, other)
+}
+
+func (e Expr) ApproxNUnique() Expr {
+	return Expr{kind: KindUnary, op: "approx_n_unique", target: &e}
+}
+
+func (e Expr) Arccos() Expr {
+	return Expr{kind: KindUnary, op: "arccos", target: &e}
+}
+
+func (e Expr) Arccosh() Expr {
+	return Expr{kind: KindUnary, op: "arccosh", target: &e}
+}
+
+func (e Expr) Arcsin() Expr {
+	return Expr{kind: KindUnary, op: "arcsin", target: &e}
+}
+
+func (e Expr) Arcsinh() Expr {
+	return Expr{kind: KindUnary, op: "arcsinh", target: &e}
+}
+
+func (e Expr) Arctan() Expr {
+	return Expr{kind: KindUnary, op: "arctan", target: &e}
+}
+
+func (e Expr) Arctanh() Expr {
+	return Expr{kind: KindUnary, op: "arctanh", target: &e}
+}
+
+func (e Expr) ArgMax() Expr {
+	return Expr{kind: KindUnary, op: "arg_max", target: &e}
+}
+
+func (e Expr) ArgMin() Expr {
+	return Expr{kind: KindUnary, op: "arg_min", target: &e}
+}
+
+func (e Expr) ArgSort() Expr {
+	return Expr{kind: KindUnary, op: "arg_sort", target: &e}
+}
+
+func (e Expr) ArgTrue() Expr {
+	return Expr{kind: KindUnary, op: "arg_true", target: &e}
+}
+
+func (e Expr) ArgUnique() Expr {
+	return Expr{kind: KindUnary, op: "arg_unique", target: &e}
+}
+
+func (e Expr) Arr() Expr {
+	return Expr{kind: KindUnary, op: "arr", target: &e}
+}
+
+func (e Expr) BackwardFill() Expr {
+	return Expr{kind: KindUnary, op: "backward_fill", target: &e}
+}
+
+func (e Expr) Bin() Expr {
+	return Expr{kind: KindUnary, op: "bin", target: &e}
+}
+
+func (e Expr) BitwiseAnd(other Expr) Expr {
+	return bin("bitwise_and", e, other)
+}
+
+func (e Expr) BitwiseCountOnes() Expr {
+	return Expr{kind: KindUnary, op: "bitwise_count_ones", target: &e}
+}
+
+func (e Expr) BitwiseCountZeros() Expr {
+	return Expr{kind: KindUnary, op: "bitwise_count_zeros", target: &e}
+}
+
+func (e Expr) BitwiseLeadingOnes() Expr {
+	return Expr{kind: KindUnary, op: "bitwise_leading_ones", target: &e}
+}
+
+func (e Expr) BitwiseLeadingZeros() Expr {
+	return Expr{kind: KindUnary, op: "bitwise_leading_zeros", target: &e}
+}
+
+func (e Expr) BitwiseTrailingOnes() Expr {
+	return Expr{kind: KindUnary, op: "bitwise_trailing_ones", target: &e}
+}
+
+func (e Expr) BitwiseTrailingZeros() Expr {
+	return Expr{kind: KindUnary, op: "bitwise_trailing_zeros", target: &e}
+}
+
+func (e Expr) BitwiseOr(other Expr) Expr {
+	return bin("bitwise_or", e, other)
+}
+
+func (e Expr) BitwiseXor(other Expr) Expr {
+	return bin("bitwise_xor", e, other)
+}
+
+func (e Expr) BottomK(k int) Expr {
+	return Expr{kind: KindUnary, op: "bottom_k:" + strconv.Itoa(k), target: &e}
+}
+
+func (e Expr) BottomKBy(by Expr, k int) Expr {
+	return Expr{kind: KindTern, op: "bottom_k_by:" + strconv.Itoa(k), target: &e, left: &by}
+}
+
+func (e Expr) Cat() Expr {
+	return Expr{kind: KindUnary, op: "cat", target: &e}
+}
+
+func (e Expr) Cbrt() Expr {
+	return Expr{kind: KindUnary, op: "cbrt", target: &e}
+}
+
+func (e Expr) Ceil() Expr {
+	return Expr{kind: KindUnary, op: "ceil", target: &e}
+}
+
+func (e Expr) Cos() Expr {
+	return Expr{kind: KindUnary, op: "cos", target: &e}
+}
+
+func (e Expr) Cosh() Expr {
+	return Expr{kind: KindUnary, op: "cosh", target: &e}
+}
+
+func (e Expr) Cot() Expr {
+	return Expr{kind: KindUnary, op: "cot", target: &e}
+}
+
+func (e Expr) Count() Expr {
+	return Expr{kind: KindUnary, op: "count", target: &e}
+}
+
+func (e Expr) CumMax() Expr {
+	return Expr{kind: KindUnary, op: "cum_max", target: &e}
+}
+
+func (e Expr) CumMin() Expr {
+	return Expr{kind: KindUnary, op: "cum_min", target: &e}
+}
+
+func (e Expr) CumProd() Expr {
+	return Expr{kind: KindUnary, op: "cum_prod", target: &e}
+}
+
+func (e Expr) CumulativeEval() Expr {
+	return Expr{kind: KindUnary, op: "cumulative_eval", target: &e}
+}
+
+func (e Expr) Cut() Expr {
+	return Expr{kind: KindUnary, op: "cut", target: &e}
+}
+
+func (e Expr) Degrees() Expr {
+	return Expr{kind: KindUnary, op: "degrees", target: &e}
+}
+
+func (e Expr) Deserialize() Expr {
+	return Expr{kind: KindUnary, op: "deserialize", target: &e}
+}
+
+func (e Expr) Diff() Expr {
+	return Expr{kind: KindUnary, op: "diff", target: &e}
+}
+
+func (e Expr) Dot(other Expr) Expr {
+	return bin("dot", e, other)
+}
+
+func (e Expr) DropNans() Expr {
+	return Expr{kind: KindUnary, op: "drop_nans", target: &e}
+}
+
+func (e Expr) DropNulls() Expr {
+	return Expr{kind: KindUnary, op: "drop_nulls", target: &e}
+}
+
+func (e Expr) Entropy() Expr {
+	return Expr{kind: KindUnary, op: "entropy", target: &e}
+}
+
+func (e Expr) EqMissing(other Expr) Expr {
+	return bin("eq_missing", e, other)
+}
+
+func (e Expr) EwmMean() Expr {
+	return Expr{kind: KindUnary, op: "ewm_mean", target: &e}
+}
+
+func (e Expr) EwmMeanBy(by Expr) Expr {
+	return Expr{kind: KindTern, op: "ewm_mean_by", target: &e, left: &by}
+}
+
+func (e Expr) EwmStd() Expr {
+	return Expr{kind: KindUnary, op: "ewm_std", target: &e}
+}
+
+func (e Expr) EwmVar() Expr {
+	return Expr{kind: KindUnary, op: "ewm_var", target: &e}
+}
+
+func (e Expr) Exclude(columns ...string) Expr {
+	return Expr{kind: KindUnary, op: "exclude:" + strings.Join(columns, ","), target: &e}
+}
+
+func (e Expr) Explode() Expr {
+	return Expr{kind: KindUnary, op: "explode", target: &e}
+}
+
+func (e Expr) Ext() Expr {
+	return Expr{kind: KindUnary, op: "ext", target: &e}
+}
+
+func (e Expr) ExtendConstant(value Expr) Expr {
+	return Expr{kind: KindTern, op: "extend_constant", target: &e, left: &value}
+}
+
+func (e Expr) Filter(mask Expr) Expr {
+	return bin("filter_expr", e, mask)
+}
+
+func (e Expr) First() Expr {
+	return Expr{kind: KindUnary, op: "first", target: &e}
+}
+
+func (e Expr) Flatten() Expr {
+	return Expr{kind: KindUnary, op: "flatten", target: &e}
+}
+
+func (e Expr) Floor() Expr {
+	return Expr{kind: KindUnary, op: "floor", target: &e}
+}
+
+func (e Expr) FloorDiv(other Expr) Expr {
+	return bin("floordiv", e, other)
+}
+
+func (e Expr) Floordiv(other Expr) Expr {
+	return e.FloorDiv(other)
+}
+
+func (e Expr) ForwardFill() Expr {
+	return Expr{kind: KindUnary, op: "forward_fill", target: &e}
+}
+
+func (e Expr) FromJSON() Expr {
+	return Expr{kind: KindUnary, op: "from_json", target: &e}
+}
+
+func (e Expr) FromJson() Expr {
+	return e.FromJSON()
+}
+
+func (e Expr) Gather(index Expr) Expr {
+	return bin("gather", e, index)
+}
+
+func (e Expr) GatherEvery(step int) Expr {
+	return Expr{kind: KindUnary, op: "gather_every:" + strconv.Itoa(step), target: &e}
+}
+
+func (e Expr) Get(index Expr) Expr {
+	return bin("get", e, index)
+}
+
+func (e Expr) HasNulls() Expr {
+	return Expr{kind: KindUnary, op: "has_nulls", target: &e}
+}
+
+func (e Expr) Hash() Expr {
+	return Expr{kind: KindUnary, op: "hash", target: &e}
+}
+
+func (e Expr) Head(n int) Expr {
+	return Expr{kind: KindUnary, op: "head:" + strconv.Itoa(n), target: &e}
+}
+
+func (e Expr) Hist() Expr {
+	return Expr{kind: KindUnary, op: "hist", target: &e}
+}
+
+func (e Expr) Implode() Expr {
+	return Expr{kind: KindUnary, op: "implode", target: &e}
+}
+
+func (e Expr) IndexOf(item Expr) Expr {
+	return bin("index_of", e, item)
+}
+
+func (e Expr) Inspect() Expr {
+	return Expr{kind: KindUnary, op: "inspect", target: &e}
+}
+
+func (e Expr) Interpolate() Expr {
+	return Expr{kind: KindUnary, op: "interpolate", target: &e}
+}
+
+func (e Expr) InterpolateBy(by Expr) Expr {
+	return Expr{kind: KindTern, op: "interpolate_by", target: &e, left: &by}
+}
+
+func (e Expr) IsBetween(lower Expr, upper Expr) Expr {
+	return Expr{kind: KindTern, op: "is_between", target: &e, left: &lower, right: &upper}
+}
+
+func (e Expr) IsClose(other Expr) Expr {
+	return bin("is_close", e, other)
+}
+
+func (e Expr) IsDuplicated() Expr {
+	return Expr{kind: KindUnary, op: "is_duplicated", target: &e}
+}
+
+func (e Expr) IsFinite() Expr {
+	return Expr{kind: KindUnary, op: "is_finite", target: &e}
+}
+
+func (e Expr) IsFirstDistinct() Expr {
+	return Expr{kind: KindUnary, op: "is_first_distinct", target: &e}
+}
+
+func (e Expr) IsIn(values Expr) Expr {
+	return bin("is_in", e, values)
+}
+
+func (e Expr) IsInfinite() Expr {
+	return Expr{kind: KindUnary, op: "is_infinite", target: &e}
+}
+
+func (e Expr) IsLastDistinct() Expr {
+	return Expr{kind: KindUnary, op: "is_last_distinct", target: &e}
+}
+
+func (e Expr) IsNan() Expr {
+	return Expr{kind: KindUnary, op: "is_nan", target: &e}
+}
+
+func (e Expr) IsNotNan() Expr {
+	return Expr{kind: KindUnary, op: "is_not_nan", target: &e}
+}
+
+func (e Expr) IsUnique() Expr {
+	return Expr{kind: KindUnary, op: "is_unique", target: &e}
+}
+
+func (e Expr) Item() Expr {
+	return Expr{kind: KindUnary, op: "item", target: &e}
+}
+
+func (e Expr) Kurtosis() Expr {
+	return Expr{kind: KindUnary, op: "kurtosis", target: &e}
+}
+
+func (e Expr) Last() Expr {
+	return Expr{kind: KindUnary, op: "last", target: &e}
+}
+
+func (e Expr) Limit(n int) Expr {
+	return Expr{kind: KindUnary, op: "limit:" + strconv.Itoa(n), target: &e}
+}
+
+func (e Expr) Log10() Expr {
+	return Expr{kind: KindUnary, op: "log10", target: &e}
+}
+
+func (e Expr) Log1p() Expr {
+	return Expr{kind: KindUnary, op: "log1p", target: &e}
+}
+
+func (e Expr) LowerBound() Expr {
+	return Expr{kind: KindUnary, op: "lower_bound", target: &e}
+}
+
+func (e Expr) MapBatches() Expr {
+	return Expr{kind: KindUnary, op: "map_batches", target: &e}
+}
+
 func When(cond Expr, thenExpr Expr, otherwise Expr) Expr {
 	return Expr{kind: KindTern, op: "when", left: &cond, right: &thenExpr, extra: &otherwise}
 }

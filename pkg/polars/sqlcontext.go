@@ -38,6 +38,15 @@ func (s *sqlContext) Register(name string, frameRef DataFrame) error {
 	return nil
 }
 
+func (s *sqlContext) RegisterMany(tables map[string]DataFrame) error {
+	for name, df := range tables {
+		if err := s.Register(name, df); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *sqlContext) Execute(ctx context.Context, query string) (LazyFrame, error) {
 	parsed, err := gsql.Parse(query)
 	if err != nil {
@@ -67,6 +76,14 @@ func (s *sqlContext) Execute(ctx context.Context, query string) (LazyFrame, erro
 		Engine:  s.engine,
 		Table:   targetTable,
 	})
+}
+
+func (s *sqlContext) ExecuteGlobal(ctx context.Context, query string) (LazyFrame, error) {
+	return s.Execute(ctx, query)
+}
+
+func (s *sqlContext) RegisterGlobals(tables map[string]DataFrame) error {
+	return s.RegisterMany(tables)
 }
 
 func (s *sqlContext) Tables() []string {

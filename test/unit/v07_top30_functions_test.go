@@ -146,7 +146,10 @@ func TestV07LazyTop30MethodsAndSQLContext(t *testing.T) {
 	if err := sqlCtx.Register("t", df); err != nil {
 		t.Fatalf("sqlcontext register failed: %v", err)
 	}
-	if len(sqlCtx.Tables()) != 1 {
+	if err := sqlCtx.RegisterMany(map[string]polars.DataFrame{"t2": df}); err != nil {
+		t.Fatalf("sqlcontext register_many failed: %v", err)
+	}
+	if len(sqlCtx.Tables()) != 2 {
 		t.Fatalf("sqlcontext tables mismatch")
 	}
 	ctxLF, err := sqlCtx.Execute(ctx, "SELECT id FROM t WHERE v >= 30")
@@ -158,7 +161,48 @@ func TestV07LazyTop30MethodsAndSQLContext(t *testing.T) {
 		t.Fatalf("sqlcontext collect mismatch")
 	}
 	sqlCtx.Unregister("t")
+	sqlCtx.Unregister("t2")
 	if len(sqlCtx.Tables()) != 0 {
 		t.Fatalf("sqlcontext unregister failed")
+	}
+}
+
+func TestV09SeriesHighPriorityMethods(t *testing.T) {
+	s, err := polars.NewSeries(polars.NewSeriesInput{
+		Name:   "s",
+		DType:  polars.Float64,
+		Values: []any{1.0, math.NaN(), nil, 4.0},
+	})
+	if err != nil {
+		t.Fatalf("new series failed: %v", err)
+	}
+	if s.NullCount() != 1 {
+		t.Fatalf("expected null_count=1")
+	}
+	filled, err := s.FillNan(0.0)
+	if err != nil {
+		t.Fatalf("fill_nan failed: %v", err)
+	}
+	if v := filled.Value(1); v == nil || v.(float64) != 0.0 {
+		t.Fatalf("fill_nan result mismatch")
+	}
+	dropped := s.DropNans()
+	if dropped.Len() != 3 {
+		t.Fatalf("drop_nans result mismatch")
+	}
+	if len(s.ToList()) != s.Len() {
+		t.Fatalf("to_list mismatch")
+	}
+	if s.RollingMean(2).Len() != s.Len() {
+		t.Fatalf("rolling_mean len mismatch")
+	}
+	if s.RollingSum(2).Len() != s.Len() {
+		t.Fatalf("rolling_sum len mismatch")
+	}
+	if s.RollingMin(2).Len() != s.Len() {
+		t.Fatalf("rolling_min len mismatch")
+	}
+	if s.RollingMax(2).Len() != s.Len() {
+		t.Fatalf("rolling_max len mismatch")
 	}
 }

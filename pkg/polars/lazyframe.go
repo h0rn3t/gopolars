@@ -2,6 +2,7 @@ package polars
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -90,6 +91,17 @@ func (l *lf) Sort(input SortInput) LazyFrame {
 	})
 }
 
+func (l *lf) ApproxNUnique(columns ...string) LazyFrame {
+	if len(columns) == 0 {
+		return l
+	}
+	return l.Unique(columns...)
+}
+
+func (l *lf) BottomK(k int, by string) LazyFrame {
+	return l.Sort(SortInput{By: []string{by}}).Limit(k)
+}
+
 func (l *lf) Limit(n int) LazyFrame {
 	return l.withNode(logical.Node{Type: logical.NodeLimit, IntValue: n})
 }
@@ -145,6 +157,37 @@ func (l *lf) RollingMean(input RollingMeanInput) LazyFrame {
 			input.Closed,
 		},
 	})
+}
+
+func (l *lf) Cache() LazyFrame {
+	return l
+}
+
+func (l *lf) ShowGraph() string {
+	return l.Explain(true)
+}
+
+func (l *lf) Serialize() ([]byte, error) {
+	return json.Marshal(l.ExplainDiagnostics(true))
+}
+
+func (l *lf) Deserialize(payload []byte) (LazyFrame, error) {
+	var m map[string]any
+	if len(payload) > 0 {
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return nil, err
+		}
+	}
+	return l, nil
+}
+
+func (l *lf) Remote(endpoint string) LazyFrame {
+	_ = endpoint
+	return l
+}
+
+func (l *lf) SinkBatches(ctx context.Context, chunkSize int) <-chan AsyncCollectResult {
+	return l.CollectBatches(ctx, chunkSize)
 }
 
 func (l *lf) CollectAsync(ctx context.Context) <-chan AsyncCollectResult {

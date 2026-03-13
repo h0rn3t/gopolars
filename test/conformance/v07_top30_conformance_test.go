@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -64,6 +65,9 @@ func TestTop30LazyAndSQLContextConformanceV07(t *testing.T) {
 	if err := sqlCtx.Register("t", df); err != nil {
 		t.Fatalf("register conformance failed: %v", err)
 	}
+	if err := sqlCtx.RegisterMany(map[string]polars.DataFrame{"t2": df}); err != nil {
+		t.Fatalf("register_many conformance failed: %v", err)
+	}
 	lf2, err := sqlCtx.Execute(ctx, "SELECT id FROM t WHERE id >= 2")
 	if err != nil {
 		t.Fatalf("sqlcontext execute conformance failed: %v", err)
@@ -71,5 +75,17 @@ func TestTop30LazyAndSQLContextConformanceV07(t *testing.T) {
 	out2, err := lf2.Collect(ctx)
 	if err != nil || out2.Height() != 2 {
 		t.Fatalf("sqlcontext output mismatch")
+	}
+
+	s, err := polars.NewSeries(polars.NewSeriesInput{
+		Name:   "s",
+		DType:  polars.Float64,
+		Values: []any{1.0, math.NaN(), nil, 4.0},
+	})
+	if err != nil {
+		t.Fatalf("series create failed: %v", err)
+	}
+	if s.NullCount() != 1 || s.DropNans().Len() != 3 || len(s.ToList()) != 4 {
+		t.Fatalf("series high-priority parity mismatch")
 	}
 }
