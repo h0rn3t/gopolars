@@ -2,6 +2,8 @@ package expr
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/eugeneshershen/gopolars/pkg/dtypes"
 )
@@ -159,6 +161,56 @@ func (e Expr) StartsWith(prefix Expr) Expr {
 
 func (e Expr) Contains(substr Expr) Expr {
 	return bin("contains", e, substr)
+}
+
+func (e Expr) CumSum() Expr {
+	return Expr{kind: KindUnary, op: "cum_sum", target: &e}
+}
+
+func (e Expr) CumCount() Expr {
+	return Expr{kind: KindUnary, op: "cum_count", target: &e}
+}
+
+func (e Expr) Rank() Expr {
+	return Expr{kind: KindUnary, op: "rank", target: &e}
+}
+
+func (e Expr) Over(partitionBy ...string) Expr {
+	return Expr{kind: KindUnary, op: "over:" + strings.Join(partitionBy, ","), target: &e}
+}
+
+func (e Expr) Replace(old Expr, new Expr) Expr {
+	oldCopy := old
+	newCopy := new
+	return Expr{kind: KindTern, op: "replace", target: &e, left: &oldCopy, right: &newCopy}
+}
+
+func (e Expr) FillNull(value Expr) Expr {
+	return bin("fill_null_expr", e, value)
+}
+
+func (e Expr) FillNaN(value Expr) Expr {
+	return bin("fill_nan_expr", e, value)
+}
+
+func (e Expr) RollingMin(window int) Expr {
+	return Expr{kind: KindUnary, op: "rolling_min:" + strconv.Itoa(window), target: &e}
+}
+
+func (e Expr) RollingMax(window int) Expr {
+	return Expr{kind: KindUnary, op: "rolling_max:" + strconv.Itoa(window), target: &e}
+}
+
+func (e Expr) RollingMean(window int) Expr {
+	return Expr{kind: KindUnary, op: "rolling_mean:" + strconv.Itoa(window), target: &e}
+}
+
+func (e Expr) RollingSum(window int) Expr {
+	return Expr{kind: KindUnary, op: "rolling_sum:" + strconv.Itoa(window), target: &e}
+}
+
+func (e Expr) RollingStd(window int) Expr {
+	return Expr{kind: KindUnary, op: "rolling_std:" + strconv.Itoa(window), target: &e}
 }
 
 func When(cond Expr, thenExpr Expr, otherwise Expr) Expr {

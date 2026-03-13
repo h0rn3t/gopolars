@@ -1,8 +1,5 @@
-# api-parity-surface Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change plan-v0-2-python-polars-parity. Update Purpose after archive.
-## Requirements
 ### Requirement: DataFrame API SHALL match Python Polars core method surface
 Система SHALL расширить DataFrame API v0.7 high-priority utility методами: `drop_nans`, `fill_nan`, `is_empty`, `n_unique`, `null_count`, `sample`, `to_dicts`, `with_row_count`, `with_row_index`, `estimated_size`.
 
@@ -16,11 +13,3 @@ TBD - created by archiving change plan-v0-2-python-polars-parity. Update Purpose
 #### Scenario: Lazy ergonomics parity
 - **WHEN** пользователь запускает Top-30 lazy функции в реальном pipeline
 - **THEN** система сохраняет deferred execution semantics и корректную materialization behavior
-
-### Requirement: Series API SHALL provide parity for scalar, vector and namespace ops
-Система SHALL підтримувати parity операцій Series, включно з numeric/string/datetime/list/struct namespaces у межах v0.5 capability matrix.
-
-#### Scenario: Series namespace parity
-- **WHEN** користувач виконує namespace-операції Series у відповідних типах
-- **THEN** система повертає результати й помилки, сумісні з Polars Python semantics
-

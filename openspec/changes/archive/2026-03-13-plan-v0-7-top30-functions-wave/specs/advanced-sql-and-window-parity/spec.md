@@ -1,8 +1,5 @@
-# advanced-sql-and-window-parity Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - synced from change plan-v0-4-next-feature-wave. Update Purpose if needed.
-## Requirements
 ### Requirement: SQL Layer SHALL support advanced analytical constructs
 Система SHALL добавить SQLContext `register` flow как обязательный baseline для v0.7 Top-30.
 
@@ -16,11 +13,3 @@ TBD - synced from change plan-v0-4-next-feature-wave. Update Purpose if needed.
 #### Scenario: SQL/API window equivalence for Top-30
 - **WHEN** эквивалентная аналитика выполняется через SQL и через Expr API
 - **THEN** результаты и semantics остаются совместимыми
-
-### Requirement: SQL parity evidence SHALL be testable
-Система SHALL мати набір перевірок, що доводить semantic parity SQL/window поведінки відносно затвердженого profile.
-
-#### Scenario: Validate SQL/window fixtures in conformance suite
-- **WHEN** CI запускає SQL/window conformance fixtures
-- **THEN** будь-яке відхилення від затвердженої семантики детектується як failure
-

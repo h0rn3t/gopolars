@@ -42,8 +42,20 @@ func (d *df) Schema() dtypes.Schema {
 	return d.value.Schema()
 }
 
+func (d *df) CollectSchema() dtypes.Schema {
+	return d.value.CollectSchema()
+}
+
 func (d *df) Height() int {
 	return d.value.Height()
+}
+
+func (d *df) IsEmpty() bool {
+	return d.value.IsEmpty()
+}
+
+func (d *df) EstimatedSize() int64 {
+	return d.value.EstimatedSize()
 }
 
 func (d *df) Width() int {
@@ -52,6 +64,59 @@ func (d *df) Width() int {
 
 func (d *df) Columns() []string {
 	return d.value.Columns()
+}
+
+func (d *df) Dtypes() []dtypes.DataType {
+	return d.value.Dtypes()
+}
+
+func (d *df) ToDicts() []map[string]any {
+	return d.value.ToDicts()
+}
+
+func (d *df) GetColumn(name string) (Series, error) {
+	s, err := d.value.GetColumn(name)
+	if err != nil {
+		return nil, err
+	}
+	return fromInternalSeries(s), nil
+}
+
+func (d *df) GetColumnIndex(name string) int {
+	return d.value.GetColumnIndex(name)
+}
+
+func (d *df) GetColumns() []Series {
+	cols := d.value.GetColumns()
+	out := make([]Series, 0, len(cols))
+	for _, c := range cols {
+		out = append(out, fromInternalSeries(c))
+	}
+	return out
+}
+
+func (d *df) NullCount() map[string]int {
+	return d.value.NullCount()
+}
+
+func (d *df) Count() map[string]int {
+	return d.value.Count()
+}
+
+func (d *df) NUnique(columns ...string) (int, error) {
+	return d.value.NUnique(columns...)
+}
+
+func (d *df) ApproxNUnique(columns ...string) (int, error) {
+	return d.value.ApproxNUnique(columns...)
+}
+
+func (d *df) Flags() map[string]map[string]bool {
+	return d.value.Flags()
+}
+
+func (d *df) Glimpse(maxRows int) string {
+	return d.value.Glimpse(maxRows)
 }
 
 func (d *df) Series(name string) (Series, bool) {
@@ -74,6 +139,16 @@ func (d *df) Filter(predicate Expr) (DataFrame, error) {
 
 func (d *df) WithColumns(exprs ...Expr) (DataFrame, error) {
 	next, err := d.value.WithColumns(exprs...)
+	return fromFrame(next, err)
+}
+
+func (d *df) WithRowCount(name string, offset int64) (DataFrame, error) {
+	next, err := d.value.WithRowCount(name, offset)
+	return fromFrame(next, err)
+}
+
+func (d *df) WithRowIndex(name string, offset int64) (DataFrame, error) {
+	next, err := d.value.WithRowCount(name, offset)
 	return fromFrame(next, err)
 }
 
@@ -137,6 +212,14 @@ func (d *df) Concat(input ConcatInput) (DataFrame, error) {
 	return fromFrame(frame.ConcatVertical(d.value, others...))
 }
 
+func (d *df) Sample(n int, seed int64) DataFrame {
+	return &df{value: d.value.Sample(n, seed)}
+}
+
+func (d *df) GatherEvery(step int, offset int) DataFrame {
+	return &df{value: d.value.GatherEvery(step, offset)}
+}
+
 func (d *df) Limit(n int) DataFrame {
 	return &df{value: d.value.Limit(n)}
 }
@@ -173,8 +256,70 @@ func (d *df) Tail(n int) DataFrame {
 	return &df{value: next}
 }
 
+func (d *df) BottomK(k int, by string) (DataFrame, error) {
+	next, err := d.value.BottomK(k, by)
+	return fromFrame(next, err)
+}
+
 func (d *df) Unique(columns ...string) (DataFrame, error) {
 	next, err := d.value.Unique(columns...)
+	return fromFrame(next, err)
+}
+
+func (d *df) Cast(mapping map[string]dtypes.DataType) (DataFrame, error) {
+	next, err := d.value.Cast(mapping)
+	return fromFrame(next, err)
+}
+
+func (d *df) Clear() DataFrame {
+	return &df{value: d.value.Clear()}
+}
+
+func (d *df) Clone() DataFrame {
+	return &df{value: d.value.Clone()}
+}
+
+func (d *df) DropInPlace(column string) (DataFrame, error) {
+	next, err := d.value.DropInPlace(column)
+	return fromFrame(next, err)
+}
+
+func (d *df) Equals(other DataFrame) (bool, error) {
+	otherDF, ok := other.(*df)
+	if !ok {
+		return false, fmt.Errorf("unsupported dataframe implementation")
+	}
+	return d.value.Equals(otherDF.value)
+}
+
+func (d *df) Extend(other DataFrame) (DataFrame, error) {
+	otherDF, ok := other.(*df)
+	if !ok {
+		return nil, fmt.Errorf("unsupported dataframe implementation")
+	}
+	next, err := d.value.Extend(otherDF.value)
+	return fromFrame(next, err)
+}
+
+func (d *df) Hstack(columns ...Series) (DataFrame, error) {
+	internal := make([]series.Series, 0, len(columns))
+	for _, c := range columns {
+		v, err := toInternalSeries(c)
+		if err != nil {
+			return nil, err
+		}
+		internal = append(internal, v)
+	}
+	next, err := d.value.Hstack(internal...)
+	return fromFrame(next, err)
+}
+
+func (d *df) InsertColumn(index int, column Series) (DataFrame, error) {
+	internal, err := toInternalSeries(column)
+	if err != nil {
+		return nil, err
+	}
+	next, err := d.value.InsertColumn(index, internal)
 	return fromFrame(next, err)
 }
 
@@ -183,8 +328,40 @@ func (d *df) FillNull(value any) (DataFrame, error) {
 	return fromFrame(next, err)
 }
 
+func (d *df) FillNaN(value float64) (DataFrame, error) {
+	next, err := d.value.FillNaN(value)
+	return fromFrame(next, err)
+}
+
+func (d *df) Interpolate(columns ...string) (DataFrame, error) {
+	next, err := d.value.Interpolate(columns...)
+	return fromFrame(next, err)
+}
+
+func (d *df) DropNaNs(columns ...string) DataFrame {
+	return &df{value: d.value.DropNaNs(columns...)}
+}
+
 func (d *df) DropNulls(columns ...string) DataFrame {
 	return &df{value: d.value.DropNulls(columns...)}
+}
+
+func (d *df) Fold(op string, columns []string, alias string) (DataFrame, error) {
+	next, err := d.value.Fold(op, columns, alias)
+	return fromFrame(next, err)
+}
+
+func (d *df) HashRows(seed uint64) ([]uint64, error) {
+	return d.value.HashRows(seed)
+}
+
+func (d *df) Corr(columnA string, columnB string) (float64, error) {
+	return d.value.Corr(columnA, columnB)
+}
+
+func (d *df) Describe() (DataFrame, error) {
+	next, err := d.value.Describe()
+	return fromFrame(next, err)
 }
 
 func (d *df) Explode(columns ...string) (DataFrame, error) {
@@ -219,6 +396,11 @@ func (d *df) Pivot(input PivotInput) (DataFrame, error) {
 
 func (d *df) RollingMean(input RollingMeanInput) (DataFrame, error) {
 	next, err := d.value.RollingMean(input.By, input.Value, input.Window, input.MinRows, input.Output, input.Closed)
+	return fromFrame(next, err)
+}
+
+func (d *df) Deserialize(payload []byte) (DataFrame, error) {
+	next, err := d.value.Deserialize(payload)
 	return fromFrame(next, err)
 }
 

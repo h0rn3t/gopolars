@@ -110,7 +110,15 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				return nil, fmt.Errorf("list_len expects list")
 			}
 			return int64(len(list)), nil
+		case "cum_sum", "cum_count", "rank":
+			return v, nil
 		default:
+			if strings.HasPrefix(e.Op(), "over:") {
+				return v, nil
+			}
+			if strings.HasPrefix(e.Op(), "rolling_min:") || strings.HasPrefix(e.Op(), "rolling_max:") || strings.HasPrefix(e.Op(), "rolling_mean:") || strings.HasPrefix(e.Op(), "rolling_sum:") || strings.HasPrefix(e.Op(), "rolling_std:") {
+				return v, nil
+			}
 			if strings.HasPrefix(e.Op(), "str_replace:") {
 				spec := strings.TrimPrefix(e.Op(), "str_replace:")
 				parts := strings.SplitN(spec, ":", 2)
@@ -134,6 +142,24 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 			return nil, fmt.Errorf("unsupported unary op %s", e.Op())
 		}
 	case KindTern:
+		if e.Op() == "replace" {
+			current, err := Eval(*e.Target(), row)
+			if err != nil {
+				return nil, err
+			}
+			oldValue, err := Eval(*e.Left(), row)
+			if err != nil {
+				return nil, err
+			}
+			newValue, err := Eval(*e.Right(), row)
+			if err != nil {
+				return nil, err
+			}
+			if current == oldValue {
+				return newValue, nil
+			}
+			return current, nil
+		}
 		cond, err := Eval(*e.Left(), row)
 		if err != nil {
 			return nil, err
@@ -249,6 +275,16 @@ func evalBin(op string, left any, right any) (any, error) {
 			return nil, nil
 		}
 		return list[idx], nil
+	case "fill_null_expr":
+		if left == nil {
+			return right, nil
+		}
+		return left, nil
+	case "fill_nan_expr":
+		if lf, ok := left.(float64); ok && math.IsNaN(lf) {
+			return right, nil
+		}
+		return left, nil
 	default:
 		return nil, fmt.Errorf("unsupported binary op %s", op)
 	}

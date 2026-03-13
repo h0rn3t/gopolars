@@ -147,6 +147,101 @@ func (l *lf) RollingMean(input RollingMeanInput) LazyFrame {
 	})
 }
 
+func (l *lf) CollectAsync(ctx context.Context) <-chan AsyncCollectResult {
+	ch := make(chan AsyncCollectResult, 1)
+	go func() {
+		defer close(ch)
+		df, err := l.Collect(ctx)
+		ch <- AsyncCollectResult{DataFrame: df, Error: err}
+	}()
+	return ch
+}
+
+func (l *lf) CollectBatches(ctx context.Context, chunkSize int) <-chan AsyncCollectResult {
+	ch := make(chan AsyncCollectResult, 1)
+	go func() {
+		defer close(ch)
+		if chunkSize <= 0 {
+			chunkSize = 1024
+		}
+		collected, err := l.Collect(ctx)
+		if err != nil {
+			ch <- AsyncCollectResult{Error: err}
+			return
+		}
+		current, ok := collected.(*df)
+		if !ok {
+			ch <- AsyncCollectResult{DataFrame: collected}
+			return
+		}
+		for start := 0; start < current.value.Height(); start += chunkSize {
+			length := chunkSize
+			if start+length > current.value.Height() {
+				length = current.value.Height() - start
+			}
+			part := &df{value: current.value.Slice(start, length)}
+			ch <- AsyncCollectResult{DataFrame: part}
+		}
+	}()
+	return ch
+}
+
+func (l *lf) Inspect() LazyFrame {
+	return l
+}
+
+func (l *lf) Profile(ctx context.Context) (DataFrame, map[string]any, error) {
+	source, nodes, err := l.resolveSource()
+	if err != nil {
+		return nil, nil, err
+	}
+	out, report, err := l.engine.ExecuteWithReport(ctx, source, nodes)
+	if err != nil {
+		return nil, map[string]any{
+			"schema_version": report.SchemaVersion,
+			"operators":      report.Operators,
+			"duration_ms":    report.DurationMS,
+			"memory_bytes":   report.MemoryBytes,
+			"temporal_ops":   report.TemporalOps,
+		}, err
+	}
+	profile := map[string]any{
+		"schema_version": report.SchemaVersion,
+		"operators":      report.Operators,
+		"duration_ms":    report.DurationMS,
+		"memory_bytes":   report.MemoryBytes,
+		"temporal_ops":   report.TemporalOps,
+		"source_rows":    report.SourceRows,
+		"output_rows":    report.OutputRows,
+	}
+	wrapped, wrapErr := fromFrame(out, nil)
+	if wrapErr != nil {
+		return nil, nil, wrapErr
+	}
+	return wrapped, profile, nil
+}
+
+func (l *lf) JoinWhere(predicate Expr) LazyFrame {
+	return l.Filter(predicate)
+}
+
+func (l *lf) SinkNDJSON(ctx context.Context, input WriteJSONInput) error {
+	input.NDJSON = true
+	df, err := l.Collect(ctx)
+	if err != nil {
+		return err
+	}
+	return df.WriteJSON(input)
+}
+
+func (l *lf) SQL(ctx context.Context, query string, table string) (LazyFrame, error) {
+	df, err := l.Collect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return SQLFromDataFrame(ctx, df, query, table)
+}
+
 func (l *lf) Collect(ctx context.Context) (DataFrame, error) {
 	source, nodes, err := l.resolveSource()
 	if err != nil {

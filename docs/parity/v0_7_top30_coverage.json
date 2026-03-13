@@ -1,0 +1,7 @@
+{
+  "version": "v0.7",
+  "target_top30_total": 30,
+  "required_top30_implemented": 30,
+  "source_backlog": "docs/parity/v0_7_top30_functions.md",
+  "source_matrix": "docs/parity/python_polars_full_matrix.md"
+}

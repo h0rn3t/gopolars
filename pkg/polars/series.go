@@ -30,6 +30,14 @@ func fromInternalSeries(s iseries.Series) Series {
 	return seriesFacade{value: s}
 }
 
+func toInternalSeries(s Series) (iseries.Series, error) {
+	v, ok := s.(seriesFacade)
+	if !ok {
+		return iseries.Series{}, fmt.Errorf("unsupported series implementation")
+	}
+	return v.value, nil
+}
+
 func (s seriesFacade) Name() string {
 	return s.value.Name()
 }
