@@ -1,0 +1,8 @@
+{
+  "version": "v0.6",
+  "minimum_overall_coverage": 0.55,
+  "minimum_namespace_coverage": 0.6,
+  "minimum_temporal_window_coverage": 0.5,
+  "minimum_performance_evidence_coverage": 0.5,
+  "notes": "Coverage thresholds for v0.6 namespace, temporal windows, and performance hardening."
+}

@@ -1,0 +1,1 @@
+logical=[scan -> filter -> aggregate -> select -> sort -> limit] optimized=[scan -> filter -> aggregate -> select -> sort -> limit] physical=[scan -> filter -> aggregate -> select -> sort -> limit]

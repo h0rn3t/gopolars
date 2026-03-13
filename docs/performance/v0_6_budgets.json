@@ -1,0 +1,17 @@
+{
+  "version": "v0.6",
+  "pipelines": {
+    "namespace_mixed_pipeline": {
+      "max_duration_ms": 150,
+      "max_memory_bytes": 10000000
+    },
+    "temporal_window_pipeline": {
+      "max_duration_ms": 250,
+      "max_memory_bytes": 16000000
+    },
+    "window_heavy_mixed_pipeline": {
+      "max_duration_ms": 400,
+      "max_memory_bytes": 24000000
+    }
+  }
+}
