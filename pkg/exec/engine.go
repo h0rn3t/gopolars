@@ -100,6 +100,9 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 		case logical.NodeLimit:
 			current = current.Limit(n.IntValue)
 			return nil
+		case logical.NodeTail:
+			current = current.Tail(n.IntValue)
+			return nil
 		case logical.NodeSlice:
 			length := 0
 			if len(n.Strings) > 0 {
@@ -108,6 +111,29 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 				}
 			}
 			current = current.Slice(n.IntValue, length)
+			return nil
+		case logical.NodeGatherEvery:
+			step := 1
+			if len(n.Strings) > 0 {
+				if parsed, err := strconv.Atoi(n.Strings[0]); err == nil {
+					step = parsed
+				}
+			}
+			current = current.GatherEvery(step, n.IntValue)
+			return nil
+		case logical.NodeReverse:
+			current = current.Reverse()
+			return nil
+		case logical.NodeRename:
+			mapping := map[string]string{}
+			for i := 0; i < len(n.Strings)-1; i += 2 {
+				mapping[n.Strings[i]] = n.Strings[i+1]
+			}
+			next, err := current.Rename(mapping)
+			if err != nil {
+				return err
+			}
+			current = next
 			return nil
 		case logical.NodeUnique:
 			next, err := current.Unique(n.Columns...)
@@ -128,6 +154,16 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 			return nil
 		case logical.NodeDropNulls:
 			current = current.DropNulls(n.Columns...)
+			return nil
+		case logical.NodeDropNans:
+			current = current.DropNaNs(n.Columns...)
+			return nil
+		case logical.NodeDrop:
+			next, err := current.Drop(n.Columns...)
+			if err != nil {
+				return err
+			}
+			current = next
 			return nil
 		case logical.NodeWindow:
 			next, err := applyWindows(current, n.Windows)

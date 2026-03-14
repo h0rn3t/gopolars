@@ -106,8 +106,58 @@ func (l *lf) Limit(n int) LazyFrame {
 	return l.withNode(logical.Node{Type: logical.NodeLimit, IntValue: n})
 }
 
+func (l *lf) Head(n int) LazyFrame {
+	return l.Limit(n)
+}
+
+func (l *lf) Tail(n int) LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeTail, IntValue: n})
+}
+
+func (l *lf) First() LazyFrame {
+	return l.Head(1)
+}
+
+func (l *lf) Last() LazyFrame {
+	return l.Tail(1)
+}
+
 func (l *lf) Slice(offset int, length int) LazyFrame {
 	return l.withNode(logical.Node{Type: logical.NodeSlice, IntValue: offset, Strings: []string{fmt.Sprintf("%d", length)}})
+}
+
+func (l *lf) GatherEvery(step int, offset int) LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeGatherEvery, IntValue: offset, Strings: []string{fmt.Sprintf("%d", step)}})
+}
+
+func (l *lf) Clear() LazyFrame {
+	return l.Limit(0)
+}
+
+func (l *lf) Clone() LazyFrame {
+	next := &lf{
+		source: l.source,
+		engine: l.engine,
+		nodes:  make([]logical.Node, len(l.nodes)),
+		scan:   l.scan,
+	}
+	copy(next.nodes, l.nodes)
+	return next
+}
+
+func (l *lf) Reverse() LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeReverse})
+}
+
+func (l *lf) Rename(mapping map[string]string) LazyFrame {
+	if len(mapping) == 0 {
+		return l
+	}
+	stringsArr := make([]string, 0, len(mapping)*2)
+	for k, v := range mapping {
+		stringsArr = append(stringsArr, k, v)
+	}
+	return l.withNode(logical.Node{Type: logical.NodeRename, Strings: stringsArr})
 }
 
 func (l *lf) Unique(columns ...string) LazyFrame {
@@ -120,6 +170,14 @@ func (l *lf) FillNull(value any) LazyFrame {
 
 func (l *lf) DropNulls(columns ...string) LazyFrame {
 	return l.withNode(logical.Node{Type: logical.NodeDropNulls, Columns: columns})
+}
+
+func (l *lf) DropNaNs(columns ...string) LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeDropNans, Columns: columns})
+}
+
+func (l *lf) Drop(columns ...string) LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeDrop, Columns: columns})
 }
 
 func (l *lf) Explode(columns ...string) LazyFrame {
@@ -784,13 +842,6 @@ func (g lazyGroupBy) Agg(exprs ...Expr) LazyFrame {
 		Columns: g.keys,
 		Exprs:   internal,
 	})
-}
-
-func (l *lf) ensureState() error {
-	if l == nil {
-		return fmt.Errorf("lazyframe is nil")
-	}
-	return nil
 }
 
 func renderStage(nodes []logical.Node) string {

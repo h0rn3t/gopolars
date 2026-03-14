@@ -159,8 +159,8 @@
 | `bottom_k` | LazyFrame.bottom_k | реализовано | — |
 | `cache` | LazyFrame.cache | реализовано | — |
 | `cast` | — | не реализовано | low |
-| `clear` | — | не реализовано | low |
-| `clone` | — | не реализовано | low |
+| `clear` | `Clear` | реализовано | low |
+| `clone` | `Clone` | реализовано | low |
 | `collect` | LazyFrame.collect | реализовано | — |
 | `collect_async` | LazyFrame.collect_async | реализовано | — |
 | `collect_batches` | LazyFrame.collect_batches | реализовано | — |
@@ -169,8 +169,8 @@
 | `count` | — | не реализовано | low |
 | `describe` | — | не реализовано | low |
 | `deserialize` | LazyFrame.deserialize | реализовано | — |
-| `drop` | — | не реализовано | low |
-| `drop_nans` | — | не реализовано | low |
+| `drop` | `Drop` | реализовано | low |
+| `drop_nans` | `DropNaNs` | реализовано | low |
 | `drop_nulls` | LazyFrame.drop_nulls | реализовано | — |
 | `dtypes` | — | не реализовано | low |
 | `explain` | LazyFrame.explain | реализовано | — |
@@ -178,17 +178,17 @@
 | `fill_nan` | — | не реализовано | low |
 | `fill_null` | LazyFrame.fill_null | реализовано | — |
 | `filter` | LazyFrame.filter | реализовано | — |
-| `first` | — | не реализовано | low |
-| `gather_every` | — | не реализовано | low |
+| `first` | `First` | реализовано | low |
+| `gather_every` | `GatherEvery` | реализовано | low |
 | `group_by` | LazyFrame.group_by | реализовано | — |
 | `group_by_dynamic` | LazyFrame.group_by_dynamic | реализовано | — |
-| `head` | — | не реализовано | low |
+| `head` | `Head` | реализовано | low |
 | `inspect` | LazyFrame.inspect | реализовано | — |
 | `interpolate` | — | не реализовано | low |
 | `join` | LazyFrame.join | реализовано | — |
 | `join_asof` | — | не реализовано | low |
 | `join_where` | LazyFrame.join_where | реализовано | — |
-| `last` | — | не реализовано | low |
+| `last` | `Last` | реализовано | low |
 | `lazy` | — | не реализовано | low |
 | `limit` | LazyFrame.limit | реализовано | — |
 | `map_batches` | — | не реализовано | low |
@@ -207,8 +207,8 @@
 | `quantile` | — | не реализовано | low |
 | `remote` | LazyFrame.remote | реализовано | — |
 | `remove` | — | не реализовано | low |
-| `rename` | — | не реализовано | low |
-| `reverse` | — | не реализовано | low |
+| `rename` | `Rename` | реализовано | low |
+| `reverse` | `Reverse` | реализовано | low |
 | `rolling` | — | не реализовано | low |
 | `schema` | — | не реализовано | low |
 | `select` | LazyFrame.select | реализовано | — |
@@ -230,7 +230,7 @@
 | `sql` | LazyFrame.s_q_l | реализовано | — |
 | `std` | — | не реализовано | low |
 | `sum` | — | не реализовано | low |
-| `tail` | — | не реализовано | low |
+| `tail` | `Tail` | реализовано | low |
 | `top_k` | — | не реализовано | low |
 | `unique` | LazyFrame.unique | реализовано | — |
 | `unnest` | — | не реализовано | low |

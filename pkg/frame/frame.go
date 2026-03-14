@@ -380,6 +380,26 @@ func (d DataFrame) Limit(n int) DataFrame {
 	return df
 }
 
+func (d DataFrame) Tail(n int) DataFrame {
+	if n >= d.height {
+		return d
+	}
+	if n < 0 {
+		n = 0
+	}
+	start := d.height - n
+	indexes := make([]int, n)
+	for i := 0; i < n; i++ {
+		indexes[i] = start + i
+	}
+	out := make([]series.Series, 0, len(d.order))
+	for _, name := range d.order {
+		out = append(out, d.cols[name].Slice(indexes))
+	}
+	df, _ := New(NewInput{Series: out})
+	return df
+}
+
 func (d DataFrame) Slice(offset int, length int) DataFrame {
 	if offset < 0 {
 		offset = 0
@@ -404,6 +424,49 @@ func (d DataFrame) Slice(offset int, length int) DataFrame {
 	}
 	df, _ := New(NewInput{Series: out})
 	return df
+}
+
+func (d DataFrame) Drop(columns ...string) (DataFrame, error) {
+	dropSet := map[string]struct{}{}
+	for _, c := range columns {
+		dropSet[c] = struct{}{}
+	}
+	outSeries := make([]series.Series, 0, len(d.order))
+	for _, name := range d.order {
+		if _, ok := dropSet[name]; ok {
+			continue
+		}
+		outSeries = append(outSeries, d.cols[name].Clone())
+	}
+	return New(NewInput{Series: outSeries})
+}
+
+func (d DataFrame) Reverse() DataFrame {
+	indexes := make([]int, d.height)
+	for i := 0; i < d.height; i++ {
+		indexes[i] = d.height - 1 - i
+	}
+	out := make([]series.Series, 0, len(d.order))
+	for _, name := range d.order {
+		out = append(out, d.cols[name].Slice(indexes))
+	}
+	df, _ := New(NewInput{Series: out})
+	return df
+}
+
+func (d DataFrame) Rename(mapping map[string]string) (DataFrame, error) {
+	if len(mapping) == 0 {
+		return d, nil
+	}
+	out := make([]series.Series, 0, len(d.order))
+	for _, name := range d.order {
+		if newName, ok := mapping[name]; ok {
+			out = append(out, d.cols[name].Rename(newName))
+		} else {
+			out = append(out, d.cols[name].Clone())
+		}
+	}
+	return New(NewInput{Series: out})
 }
 
 func (d DataFrame) GatherEvery(step int, offset int) DataFrame {

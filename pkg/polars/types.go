@@ -168,10 +168,21 @@ type LazyFrame interface {
 	ApproxNUnique(columns ...string) LazyFrame
 	BottomK(k int, by string) LazyFrame
 	Limit(n int) LazyFrame
+	Head(n int) LazyFrame
+	Tail(n int) LazyFrame
+	First() LazyFrame
+	Last() LazyFrame
 	Slice(offset int, length int) LazyFrame
+	GatherEvery(step int, offset int) LazyFrame
+	Clear() LazyFrame
+	Clone() LazyFrame
+	Reverse() LazyFrame
+	Rename(mapping map[string]string) LazyFrame
 	Unique(columns ...string) LazyFrame
 	FillNull(value any) LazyFrame
 	DropNulls(columns ...string) LazyFrame
+	DropNaNs(columns ...string) LazyFrame
+	Drop(columns ...string) LazyFrame
 	Explode(columns ...string) LazyFrame
 	FlattenStruct(column string, prefix string) LazyFrame
 	Melt(input MeltInput) LazyFrame
