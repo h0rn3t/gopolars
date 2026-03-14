@@ -85,6 +85,34 @@ func (s Series) Slice(indexes []int) Series {
 	return out
 }
 
+func (s Series) Shift(periods int) Series {
+	if periods == 0 || s.Len() == 0 {
+		return s.Clone()
+	}
+	out := Series{
+		name:  s.name,
+		dtype: s.dtype,
+		data:  make([]any, s.Len()),
+		nulls: make([]bool, s.Len()),
+	}
+	for i := 0; i < s.Len(); i++ {
+		out.nulls[i] = true
+	}
+	if periods > 0 {
+		if periods < s.Len() {
+			copy(out.data[periods:], s.data[:s.Len()-periods])
+			copy(out.nulls[periods:], s.nulls[:s.Len()-periods])
+		}
+	} else {
+		absPeriods := -periods
+		if absPeriods < s.Len() {
+			copy(out.data[:s.Len()-absPeriods], s.data[absPeriods:])
+			copy(out.nulls[:s.Len()-absPeriods], s.nulls[absPeriods:])
+		}
+	}
+	return out
+}
+
 func validateType(dt dtypes.DataType, v any) error {
 	switch dt {
 	case dtypes.Int64:

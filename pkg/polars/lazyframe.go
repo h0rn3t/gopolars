@@ -184,6 +184,10 @@ func (l *lf) Explode(columns ...string) LazyFrame {
 	return l.withNode(logical.Node{Type: logical.NodeExplode, Columns: columns})
 }
 
+func (l *lf) Unnest(columns ...string) LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeUnnest, Columns: columns})
+}
+
 func (l *lf) FlattenStruct(column string, prefix string) LazyFrame {
 	return l.withNode(logical.Node{Type: logical.NodeFlatten, Columns: []string{column}, Prefix: prefix})
 }
@@ -194,6 +198,57 @@ func (l *lf) Melt(input MeltInput) LazyFrame {
 		Columns: append(append([]string{}, input.IDVars...), input.ValueVars...),
 		Strings: []string{input.VariableCol, input.ValueCol, fmt.Sprintf("%d", len(input.IDVars))},
 	})
+}
+
+func (l *lf) Unpivot(input MeltInput) LazyFrame {
+	return l.withNode(logical.Node{
+		Type:    logical.NodeUnpivot,
+		Columns: append(append([]string{}, input.IDVars...), input.ValueVars...),
+		Strings: []string{input.VariableCol, input.ValueCol, fmt.Sprintf("%d", len(input.IDVars))},
+	})
+}
+
+func (l *lf) WithRowIndex(name string, offset int64) LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeWithRowIdx, Strings: []string{name, fmt.Sprintf("%d", offset)}})
+}
+
+func (l *lf) WithRowCount(name string, offset int64) LazyFrame {
+	return l.WithRowIndex(name, offset)
+}
+
+func (l *lf) Shift(periods int) LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeShift, IntValue: periods})
+}
+
+func (l *lf) SetSorted(by string) LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeSetSorted, Columns: []string{by}})
+}
+
+func (l *lf) Cast(mapping map[string]dtypes.DataType) LazyFrame {
+	if len(mapping) == 0 {
+		return l
+	}
+	stringsArr := make([]string, 0, len(mapping)*2)
+	for k, v := range mapping {
+		stringsArr = append(stringsArr, k, string(v))
+	}
+	return l.withNode(logical.Node{Type: logical.NodeCast, Strings: stringsArr})
+}
+
+func (l *lf) FillNaN(value float64) LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeFillNaN, Strings: []string{fmt.Sprintf("%f", value)}})
+}
+
+func (l *lf) Interpolate(columns ...string) LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeInterpolate, Columns: columns})
+}
+
+func (l *lf) Update(other LazyFrame) LazyFrame {
+	otherLf, ok := other.(*lf)
+	if !ok {
+		return l
+	}
+	return l.withNode(logical.Node{Type: logical.NodeUpdate, Plan: otherLf.nodes})
 }
 
 func (l *lf) Pivot(input PivotInput) LazyFrame {

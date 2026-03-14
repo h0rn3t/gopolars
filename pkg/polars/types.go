@@ -183,6 +183,16 @@ type LazyFrame interface {
 	DropNulls(columns ...string) LazyFrame
 	DropNaNs(columns ...string) LazyFrame
 	Drop(columns ...string) LazyFrame
+	WithRowIndex(name string, offset int64) LazyFrame
+	WithRowCount(name string, offset int64) LazyFrame
+	Shift(periods int) LazyFrame
+	SetSorted(by string) LazyFrame
+	Cast(mapping map[string]dtypes.DataType) LazyFrame
+	FillNaN(value float64) LazyFrame
+	Interpolate(columns ...string) LazyFrame
+	Unnest(columns ...string) LazyFrame
+	Unpivot(input MeltInput) LazyFrame
+	Update(other LazyFrame) LazyFrame
 	Explode(columns ...string) LazyFrame
 	FlattenStruct(column string, prefix string) LazyFrame
 	Melt(input MeltInput) LazyFrame

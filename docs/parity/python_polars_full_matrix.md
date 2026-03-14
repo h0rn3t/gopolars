@@ -158,7 +158,7 @@
 | `approx_n_unique` | LazyFrame.approx_n_unique | реализовано | — |
 | `bottom_k` | LazyFrame.bottom_k | реализовано | — |
 | `cache` | LazyFrame.cache | реализовано | — |
-| `cast` | — | не реализовано | low |
+| `cast` | `Cast` | реализовано | low |
 | `clear` | `Clear` | реализовано | low |
 | `clone` | `Clone` | реализовано | low |
 | `collect` | LazyFrame.collect | реализовано | — |
@@ -175,7 +175,7 @@
 | `dtypes` | — | не реализовано | low |
 | `explain` | LazyFrame.explain | реализовано | — |
 | `explode` | LazyFrame.explode | реализовано | — |
-| `fill_nan` | — | не реализовано | low |
+| `fill_nan` | `FillNaN` | реализовано | low |
 | `fill_null` | LazyFrame.fill_null | реализовано | — |
 | `filter` | LazyFrame.filter | реализовано | — |
 | `first` | `First` | реализовано | low |
@@ -184,7 +184,7 @@
 | `group_by_dynamic` | LazyFrame.group_by_dynamic | реализовано | — |
 | `head` | `Head` | реализовано | low |
 | `inspect` | LazyFrame.inspect | реализовано | — |
-| `interpolate` | — | не реализовано | low |
+| `interpolate` | `Interpolate` | реализовано | low |
 | `join` | LazyFrame.join | реализовано | — |
 | `join_asof` | — | не реализовано | low |
 | `join_where` | LazyFrame.join_where | реализовано | — |
@@ -214,15 +214,15 @@
 | `select` | LazyFrame.select | реализовано | — |
 | `select_seq` | — | не реализовано | low |
 | `serialize` | LazyFrame.serialize | реализовано | — |
-| `set_sorted` | — | не реализовано | low |
-| `shift` | — | не реализовано | low |
+| `set_sorted` | `SetSorted` | реализовано | low |
+| `shift` | `Shift` | реализовано | low |
 | `show` | — | не реализовано | low |
 | `show_graph` | LazyFrame.show_graph | реализовано | — |
 | `sink_batches` | LazyFrame.sink_batches | реализовано | — |
-| `sink_csv` | — | не реализовано | low |
+| `sink_csv` | `SinkCSV` | реализовано | low |
 | `sink_delta` | — | не реализовано | low |
 | `sink_iceberg` | — | не реализовано | low |
-| `sink_ipc` | — | не реализовано | low |
+| `sink_ipc` | `SinkIPC` | реализовано | low |
 | `sink_ndjson` | LazyFrame.sink_n_d_j_s_o_n | реализовано | — |
 | `sink_parquet` | LazyFrame.sink_parquet | реализовано | — |
 | `slice` | LazyFrame.slice | реализовано | — |
@@ -233,16 +233,16 @@
 | `tail` | `Tail` | реализовано | low |
 | `top_k` | — | не реализовано | low |
 | `unique` | LazyFrame.unique | реализовано | — |
-| `unnest` | — | не реализовано | low |
-| `unpivot` | — | не реализовано | low |
-| `update` | — | не реализовано | low |
+| `unnest` | `Unnest` | реализовано | low |
+| `unpivot` | `Unpivot` | реализовано | low |
+| `update` | `Update` | реализовано | low |
 | `var` | — | не реализовано | low |
 | `width` | — | не реализовано | low |
 | `with_columns` | LazyFrame.with_columns | реализовано | — |
 | `with_columns_seq` | — | не реализовано | low |
 | `with_context` | — | не реализовано | low |
-| `with_row_count` | — | не реализовано | low |
-| `with_row_index` | — | не реализовано | low |
+| `with_row_count` | `WithRowCount` | реализовано | low |
+| `with_row_index` | `WithRowIndex` | реализовано | low |
 
 Итог для LazyFrame: реализовано 33 из 89.
 

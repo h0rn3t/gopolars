@@ -189,18 +189,108 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 			}
 			current = next
 			return nil
-		case logical.NodeMelt:
+		case logical.NodeUnnest:
+			next, err := current.Unnest(n.Columns...)
+			if err != nil {
+				return err
+			}
+			current = next
+			return nil
+		case logical.NodeMelt, logical.NodeUnpivot:
 			if len(n.Strings) < 3 {
-				return fmt.Errorf("melt node metadata is incomplete")
+				return fmt.Errorf("melt/unpivot node metadata is incomplete")
 			}
 			idCount, err := strconv.Atoi(n.Strings[2])
 			if err != nil {
 				return err
 			}
 			if idCount < 0 || idCount > len(n.Columns) {
-				return fmt.Errorf("invalid melt id count")
+				return fmt.Errorf("invalid melt/unpivot id count")
 			}
-			next, err := current.Melt(n.Columns[:idCount], n.Columns[idCount:], n.Strings[0], n.Strings[1])
+			var next frame.DataFrame
+			if n.Type == logical.NodeMelt {
+				next, err = current.Melt(n.Columns[:idCount], n.Columns[idCount:], n.Strings[0], n.Strings[1])
+			} else {
+				next, err = current.Unpivot(n.Columns[:idCount], n.Columns[idCount:], n.Strings[0], n.Strings[1])
+			}
+			if err != nil {
+				return err
+			}
+			current = next
+			return nil
+		case logical.NodeWithRowIdx:
+			if len(n.Strings) < 1 {
+				return fmt.Errorf("with_row_index node missing name")
+			}
+			offset := int64(0)
+			if len(n.Strings) > 1 {
+				if parsed, err := strconv.ParseInt(n.Strings[1], 10, 64); err == nil {
+					offset = parsed
+				}
+			}
+			next, err := current.WithRowIndex(n.Strings[0], offset)
+			if err != nil {
+				return err
+			}
+			current = next
+			return nil
+		case logical.NodeShift:
+			next, err := current.Shift(n.IntValue)
+			if err != nil {
+				return err
+			}
+			current = next
+			return nil
+		case logical.NodeSetSorted:
+			if len(n.Columns) < 1 {
+				return fmt.Errorf("set_sorted node missing column")
+			}
+			next, err := current.SetSorted(n.Columns[0])
+			if err != nil {
+				return err
+			}
+			current = next
+			return nil
+		case logical.NodeCast:
+			mapping := map[string]dtypes.DataType{}
+			for i := 0; i < len(n.Strings)-1; i += 2 {
+				mapping[n.Strings[i]] = dtypes.DataType(n.Strings[i+1])
+			}
+			next, err := current.Cast(mapping)
+			if err != nil {
+				return err
+			}
+			current = next
+			return nil
+		case logical.NodeFillNaN:
+			val := 0.0
+			if len(n.Strings) > 0 {
+				if parsed, err := strconv.ParseFloat(n.Strings[0], 64); err == nil {
+					val = parsed
+				}
+			}
+			next, err := current.FillNaN(val)
+			if err != nil {
+				return err
+			}
+			current = next
+			return nil
+		case logical.NodeInterpolate:
+			next, err := current.Interpolate(n.Columns...)
+			if err != nil {
+				return err
+			}
+			current = next
+			return nil
+		case logical.NodeUpdate:
+			if len(n.Plan) == 0 {
+				return fmt.Errorf("update node missing plan")
+			}
+			other, err := executeOptimized(source, n.Plan)
+			if err != nil {
+				return err
+			}
+			next, err := current.Update(other)
 			if err != nil {
 				return err
 			}

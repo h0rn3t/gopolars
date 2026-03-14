@@ -1182,6 +1182,44 @@ func (d DataFrame) FlattenStruct(column string, prefix string) (DataFrame, error
 	return New(NewInput{Series: out})
 }
 
+func (d DataFrame) WithRowIndex(name string, offset int64) (DataFrame, error) {
+	return d.WithRowCount(name, offset)
+}
+
+func (d DataFrame) Shift(periods int) (DataFrame, error) {
+	if periods == 0 {
+		return d.clone(), nil
+	}
+	out := make([]series.Series, 0, len(d.order))
+	for _, name := range d.order {
+		out = append(out, d.cols[name].Shift(periods))
+	}
+	return New(NewInput{Series: out})
+}
+
+func (d DataFrame) SetSorted(by string) (DataFrame, error) {
+	return d, nil // Logical metadata operation, in this context just return the frame
+}
+
+func (d DataFrame) Unnest(columns ...string) (DataFrame, error) {
+	return d.FlattenStruct(columns[0], "") // simplified unnest
+}
+
+func (d DataFrame) Unpivot(idVars []string, valueVars []string, variableCol string, valueCol string) (DataFrame, error) {
+	return d.Melt(idVars, valueVars, variableCol, valueCol)
+}
+
+func (d DataFrame) Update(other DataFrame) (DataFrame, error) {
+	// naive update implementation replacing matching columns
+	out := d.clone()
+	for _, name := range other.Columns() {
+		if _, ok := out.cols[name]; ok {
+			out.cols[name] = other.cols[name].Clone()
+		}
+	}
+	return out, nil
+}
+
 func (d DataFrame) GroupBy(keys ...string) GroupBy {
 	return GroupBy{df: d, keys: keys}
 }
