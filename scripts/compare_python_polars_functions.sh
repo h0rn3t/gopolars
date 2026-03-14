@@ -312,12 +312,27 @@ md_lines.append(f"- python_version: `{python_version}`")
 md_lines.append(f"- go_suite_time_ms: `{go_suite_time_ms:.2f}`")
 md_lines.append(f"- python_benchmark_total_ms: `{python_benchmark_total_ms:.2f}`")
 md_lines.append(f"- full_report_mode: `{full_console}`")
+go_speed_per_function_ms = go_suite_time_ms / len(report) if len(report) > 0 else 0.0
+python_speed_per_function_ms = python_benchmark_total_ms / len(report) if len(report) > 0 else 0.0
+implemented_count = sum(1 for r in report if r["gopolars_status"] == "реализовано")
+go_speed_per_implemented_ms = go_suite_time_ms / implemented_count if implemented_count > 0 else 0.0
+md_lines.append(
+    f"- performance: `golang={go_speed_per_function_ms:.4f}ms_per_function/python={python_speed_per_function_ms:.4f}ms_per_function`"
+)
+md_lines.append(
+    f"- golang_benchmark_note: `shared_suite_avg={go_speed_per_implemented_ms:.4f}ms (не per-method benchmark)`"
+)
 md_lines.append("")
 md_lines.append("| # | Object | Method | Python | Python exec | gopolars | gopolars exec | Priority | Benchmark |")
 md_lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
 for r in report:
+    if r["gopolars_status"] == "реализовано":
+        python_bench = f"{r['benchmark_avg_ms']}ms" if r["benchmark_avg_ms"] else "-"
+        benchmark_cell = f"golang=shared_suite_avg({go_speed_per_implemented_ms:.4f}ms)/python={python_bench}"
+    else:
+        benchmark_cell = f"{r['benchmark_mode']}:{r['benchmark_avg_ms']}ms/{r['benchmark_runs']}"
     md_lines.append(
-        f"| {r['index']} | {r['object']} | `{r['method']}` | {r['python_available']} | {r['python_exec']} | {r['gopolars_status']} | {r['gopolars_exec']} | {r['priority']} | {r['benchmark_mode']}:{r['benchmark_avg_ms']}ms/{r['benchmark_runs']} |"
+        f"| {r['index']} | {r['object']} | `{r['method']}` | {r['python_available']} | {r['python_exec']} | {r['gopolars_status']} | {r['gopolars_exec']} | {r['priority']} | {benchmark_cell} |"
     )
 md_out.parent.mkdir(parents=True, exist_ok=True)
 md_out.write_text("\n".join(md_lines), encoding="utf-8")
@@ -377,6 +392,10 @@ if full_console:
     md_lines.append("```text")
     md_lines.append(strip_ansi(ascii_summary))
     md_lines.append("```")
+    md_lines.append("")
+    md_lines.append(
+        f"golang={go_speed_per_function_ms:.4f}ms_per_function/python={python_speed_per_function_ms:.4f}ms_per_function"
+    )
     md_out.write_text("\n".join(md_lines), encoding="utf-8")
     print("=== markdown_report_begin ===")
     print(md_out.read_text(encoding="utf-8"))

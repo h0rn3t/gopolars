@@ -653,6 +653,106 @@ func (e Expr) MapBatches() Expr {
 	return Expr{kind: KindUnary, op: "map_batches", target: &e}
 }
 
+func (e Expr) MapElements() Expr {
+	return Expr{kind: KindUnary, op: "map_elements", target: &e}
+}
+
+func (e Expr) Max() Expr {
+	return Expr{kind: KindUnary, op: "max", target: &e}
+}
+
+func (e Expr) MaxBy(by Expr) Expr {
+	return Expr{kind: KindTern, op: "max_by", target: &e, left: &by}
+}
+
+func (e Expr) Mean() Expr {
+	return Expr{kind: KindUnary, op: "mean", target: &e}
+}
+
+func (e Expr) Median() Expr {
+	return Expr{kind: KindUnary, op: "median", target: &e}
+}
+
+func (e Expr) Meta() Expr {
+	return Expr{kind: KindUnary, op: "meta", target: &e}
+}
+
+func (e Expr) Min() Expr {
+	return Expr{kind: KindUnary, op: "min", target: &e}
+}
+
+func (e Expr) MinBy(by Expr) Expr {
+	return Expr{kind: KindTern, op: "min_by", target: &e, left: &by}
+}
+
+func (e Expr) Mod(other Expr) Expr {
+	return bin("mod", e, other)
+}
+
+func (e Expr) Mode() Expr {
+	return Expr{kind: KindUnary, op: "mode", target: &e}
+}
+
+func (e Expr) NUnique() Expr {
+	return Expr{kind: KindUnary, op: "n_unique", target: &e}
+}
+
+func (e Expr) NanMax() Expr {
+	return Expr{kind: KindUnary, op: "nan_max", target: &e}
+}
+
+func (e Expr) NanMin() Expr {
+	return Expr{kind: KindUnary, op: "nan_min", target: &e}
+}
+
+func (e Expr) NeMissing(other Expr) Expr {
+	return bin("ne_missing", e, other)
+}
+
+func (e Expr) Neg() Expr {
+	return Expr{kind: KindUnary, op: "neg", target: &e}
+}
+
+func (e Expr) Not_() Expr {
+	return Expr{kind: KindUnary, op: "not_", target: &e}
+}
+
+func (e Expr) NullCount() Expr {
+	return Expr{kind: KindUnary, op: "null_count", target: &e}
+}
+
+func (e Expr) Or_(other Expr) Expr {
+	return bin("or_", e, other)
+}
+
+func (e Expr) PctChange() Expr {
+	return Expr{kind: KindUnary, op: "pct_change", target: &e}
+}
+
+func (e Expr) PeakMax() Expr {
+	return Expr{kind: KindUnary, op: "peak_max", target: &e}
+}
+
+func (e Expr) PeakMin() Expr {
+	return Expr{kind: KindUnary, op: "peak_min", target: &e}
+}
+
+func (e Expr) Pipe() Expr {
+	return Expr{kind: KindUnary, op: "pipe", target: &e}
+}
+
+func (e Expr) Product() Expr {
+	return Expr{kind: KindUnary, op: "product", target: &e}
+}
+
+func (e Expr) QCut() Expr {
+	return Expr{kind: KindUnary, op: "qcut", target: &e}
+}
+
+func (e Expr) Quantile() Expr {
+	return Expr{kind: KindUnary, op: "quantile", target: &e}
+}
+
 func When(cond Expr, thenExpr Expr, otherwise Expr) Expr {
 	return Expr{kind: KindTern, op: "when", left: &cond, right: &thenExpr, extra: &otherwise}
 }

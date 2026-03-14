@@ -142,7 +142,7 @@ If a mistake relates to **system behavior** → fix it in `openspec/specs/`.
 - **CS-4 (SHOULD)** Avoid reflection on hot paths; use generics when they simplify and improve clarity/perf.
 - **CS-5 (MUST)** Use input structs when function takes >2 non-context args. Do not place `context.Context` inside input structs.
 - **CS-6 (SHOULD)** Declare input structs right before the consuming function.
-- **CS-7 (SHOULD)** All user-facing text/comments/log messages are in Ukrainian.
+- **CS-7 (SHOULD)** All user-facing text/comments/log messages are in English.
 - **CS-8 (CAN)** Use `embed` for static assets.
 
 ## 6.3 Errors

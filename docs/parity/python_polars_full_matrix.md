@@ -2,7 +2,7 @@
 Источник: официальная документация Python Polars (stable), выгрузка на 2026-03-13.
 Статус рассчитан по публичному API gopolars. Приоритет присваивается только нереализованным методам.
 
-Покрытие по этой автоматической матрице: 345/680.
+Покрытие по этой автоматической матрице: 369/680.
 
 ## DataFrame (141 методов)
 | Python Polars method | gopolars equivalent | Статус | Приоритет |
@@ -367,36 +367,36 @@
 | `lower_bound` | Expr.lower_bound | реализовано | — |
 | `lt` | Expr.lt | реализовано | — |
 | `map_batches` | Expr.map_batches | реализовано | — |
-| `map_elements` | — | не реализовано | low |
-| `max` | — | не реализовано | low |
-| `max_by` | — | не реализовано | low |
-| `mean` | — | не реализовано | low |
-| `median` | — | не реализовано | low |
-| `meta` | — | не реализовано | low |
-| `min` | — | не реализовано | low |
-| `min_by` | — | не реализовано | low |
-| `mod` | — | не реализовано | low |
-| `mode` | — | не реализовано | low |
+| `map_elements` | Expr.map_elements | реализовано | — |
+| `max` | Expr.max | реализовано | — |
+| `max_by` | Expr.max_by | реализовано | — |
+| `mean` | Expr.mean | реализовано | — |
+| `median` | Expr.median | реализовано | — |
+| `meta` | Expr.meta | реализовано | — |
+| `min` | Expr.min | реализовано | — |
+| `min_by` | Expr.min_by | реализовано | — |
+| `mod` | Expr.mod | реализовано | — |
+| `mode` | Expr.mode | реализовано | — |
 | `mul` | Expr.mul | реализовано | — |
-| `n_unique` | — | не реализовано | low |
+| `n_unique` | Expr.n_unique | реализовано | — |
 | `name` | Expr.name | реализовано | — |
-| `nan_max` | — | не реализовано | low |
-| `nan_min` | — | не реализовано | low |
+| `nan_max` | Expr.nan_max | реализовано | — |
+| `nan_min` | Expr.nan_min | реализовано | — |
 | `ne` | Expr.ne | реализовано | — |
-| `ne_missing` | — | не реализовано | low |
-| `neg` | — | не реализовано | low |
-| `not_` | — | не реализовано | low |
-| `null_count` | — | не реализовано | low |
-| `or_` | — | не реализовано | low |
+| `ne_missing` | Expr.ne_missing | реализовано | — |
+| `neg` | Expr.neg | реализовано | — |
+| `not_` | Expr.not_ | реализовано | — |
+| `null_count` | Expr.null_count | реализовано | — |
+| `or_` | Expr.or_ | реализовано | — |
 | `over` | Expr.over | реализовано | — |
-| `pct_change` | — | не реализовано | low |
-| `peak_max` | — | не реализовано | low |
-| `peak_min` | — | не реализовано | low |
-| `pipe` | — | не реализовано | low |
+| `pct_change` | Expr.pct_change | реализовано | — |
+| `peak_max` | Expr.peak_max | реализовано | — |
+| `peak_min` | Expr.peak_min | реализовано | — |
+| `pipe` | Expr.pipe | реализовано | — |
 | `pow` | Expr.pow | реализовано | — |
-| `product` | — | не реализовано | low |
+| `product` | Expr.product | реализовано | — |
 | `qcut` | — | не реализовано | low |
-| `quantile` | — | не реализовано | low |
+| `quantile` | Expr.quantile | реализовано | — |
 | `radians` | — | не реализовано | low |
 | `rank` | Expr.rank | реализовано | — |
 | `rechunk` | — | не реализовано | low |
@@ -467,7 +467,7 @@
 | `where` | — | не реализовано | low |
 | `xor` | — | не реализовано | low |
 
-Итог для Expr: реализовано 135 из 217.
+Итог для Expr: реализовано 159 из 217.
 
 ## Series (226 методов)
 | Python Polars method | gopolars equivalent | Статус | Приоритет |
@@ -717,33 +717,33 @@
 ## Top-30 функций для v0.7 (по приоритету реализации)
 | # | Объект | Python Polars method | Приоритет |
 | --- | --- | --- | --- |
-| 1 | DataFrame | `__array__` | not need |
-| 2 | DataFrame | `__arrow_c_stream__` | not need  |
-| 3 | DataFrame | `__dataframe__` | not need  |
-| 4 | DataFrame | `__getitem__` | not need  |
-| 5 | DataFrame | `__setitem__` | not need  |
-| 6 | Expr | `map_elements` | low |
-| 7 | Expr | `max` | low |
-| 8 | Expr | `max_by` | low |
-| 9 | Expr | `mean` | low |
-| 10 | Expr | `median` | low |
-| 11 | Expr | `meta` | low |
-| 12 | Expr | `min` | low |
-| 13 | Expr | `min_by` | low |
-| 14 | Expr | `mod` | low |
-| 15 | Expr | `mode` | low |
-| 16 | Expr | `n_unique` | low |
-| 17 | Expr | `nan_max` | low |
-| 18 | Expr | `nan_min` | low |
-| 19 | Expr | `ne_missing` | low |
-| 20 | Expr | `neg` | low |
-| 21 | Expr | `not_` | low |
-| 22 | Expr | `null_count` | low |
-| 23 | Expr | `or_` | low |
-| 24 | Expr | `pct_change` | low |
-| 25 | Expr | `peak_max` | low |
-| 26 | Expr | `peak_min` | low |
-| 27 | Expr | `pipe` | low |
-| 28 | Expr | `product` | low |
-| 29 | Expr | `qcut` | low |
-| 30 | Expr | `quantile` | low |
+| 1 | DataFrame | `__array__` | low |
+| 2 | DataFrame | `__arrow_c_stream__` | low |
+| 3 | DataFrame | `__dataframe__` | low |
+| 4 | DataFrame | `__getitem__` | low |
+| 5 | DataFrame | `__setitem__` | low |
+| 6 | Expr | `qcut` | low |
+| 7 | Expr | `radians` | low |
+| 8 | Expr | `rechunk` | low |
+| 9 | Expr | `reinterpret` | low |
+| 10 | Expr | `repeat_by` | low |
+| 11 | Expr | `replace_strict` | low |
+| 12 | Expr | `reshape` | low |
+| 13 | Expr | `reverse` | low |
+| 14 | Expr | `rle` | low |
+| 15 | Expr | `rle_id` | low |
+| 16 | Expr | `rolling` | low |
+| 17 | Expr | `rolling_kurtosis` | low |
+| 18 | Expr | `rolling_map` | low |
+| 19 | Expr | `rolling_max_by` | low |
+| 20 | Expr | `rolling_mean_by` | low |
+| 21 | Expr | `rolling_median` | low |
+| 22 | Expr | `rolling_median_by` | low |
+| 23 | Expr | `rolling_min_by` | low |
+| 24 | Expr | `rolling_quantile` | low |
+| 25 | Expr | `rolling_quantile_by` | low |
+| 26 | Expr | `rolling_rank` | low |
+| 27 | Expr | `rolling_rank_by` | low |
+| 28 | Expr | `rolling_skew` | low |
+| 29 | Expr | `rolling_std_by` | low |
+| 30 | Expr | `rolling_sum_by` | low |

@@ -143,7 +143,7 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 			}
 		case "dt", "str", "list", "struct":
 			return v, nil
-		case "agg_groups", "approx_n_unique", "arg_max", "arg_min", "arg_sort", "arg_true", "arg_unique", "arr", "backward_fill", "bin", "cat", "count", "cum_max", "cum_min", "cum_prod", "cumulative_eval", "cut", "deserialize", "diff", "drop_nans", "drop_nulls", "entropy", "ewm_mean", "ewm_std", "ewm_var", "explode", "ext", "first", "flatten", "forward_fill", "hash", "hist", "implode", "inspect", "interpolate", "is_duplicated", "is_first_distinct", "is_last_distinct", "is_unique", "item", "kurtosis", "last", "lower_bound", "map_batches":
+		case "agg_groups", "approx_n_unique", "arg_max", "arg_min", "arg_sort", "arg_true", "arg_unique", "arr", "backward_fill", "bin", "cat", "count", "cum_max", "cum_min", "cum_prod", "cumulative_eval", "cut", "deserialize", "diff", "drop_nans", "drop_nulls", "entropy", "ewm_mean", "ewm_std", "ewm_var", "explode", "ext", "first", "flatten", "forward_fill", "hash", "hist", "implode", "inspect", "interpolate", "is_duplicated", "is_first_distinct", "is_last_distinct", "is_unique", "item", "kurtosis", "last", "lower_bound", "map_batches", "map_elements", "max", "mean", "median", "meta", "min", "mode", "n_unique", "nan_max", "nan_min", "null_count", "pct_change", "peak_max", "peak_min", "pipe", "product", "qcut", "quantile":
 			return v, nil
 		case "all":
 			if b, ok := v.(bool); ok {
@@ -320,6 +320,16 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				return math.Log1p(f), nil
 			}
 			return nil, fmt.Errorf("log1p expects numeric")
+		case "neg":
+			if f, ok := toFloat(v); ok {
+				return -f, nil
+			}
+			return nil, fmt.Errorf("neg expects numeric")
+		case "not_":
+			if b, ok := v.(bool); ok {
+				return !b, nil
+			}
+			return nil, fmt.Errorf("not_ expects bool")
 		case "abs":
 			switch t := v.(type) {
 			case float64:
@@ -446,7 +456,7 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 			}
 			return cv >= lv && cv <= uv, nil
 		}
-		if e.Op() == "ewm_mean_by" || e.Op() == "extend_constant" {
+		if e.Op() == "ewm_mean_by" || e.Op() == "extend_constant" || e.Op() == "max_by" || e.Op() == "min_by" {
 			return Eval(*e.Target(), row)
 		}
 		if e.Op() == "interpolate_by" {
@@ -538,6 +548,13 @@ func evalBin(op string, left any, right any) (any, error) {
 			return nil, fmt.Errorf("or expects bool")
 		}
 		return l || r, nil
+	case "or_":
+		l, lok := left.(bool)
+		r, rok := right.(bool)
+		if !lok || !rok {
+			return nil, fmt.Errorf("or_ expects bool")
+		}
+		return l || r, nil
 	case "contains":
 		l, lok := left.(string)
 		r, rok := right.(string)
@@ -622,6 +639,11 @@ func evalBin(op string, left any, right any) (any, error) {
 			return left == right, nil
 		}
 		return left == right, nil
+	case "ne_missing":
+		if left == nil || right == nil {
+			return left != right, nil
+		}
+		return left != right, nil
 	case "floordiv":
 		lf, lok := toFloat(left)
 		rf, rok := toFloat(right)
@@ -629,6 +651,13 @@ func evalBin(op string, left any, right any) (any, error) {
 			return nil, fmt.Errorf("floordiv expects numeric non-zero divisor")
 		}
 		return math.Floor(lf / rf), nil
+	case "mod":
+		lf, lok := toFloat(left)
+		rf, rok := toFloat(right)
+		if !lok || !rok || rf == 0 {
+			return nil, fmt.Errorf("mod expects numeric non-zero divisor")
+		}
+		return math.Mod(lf, rf), nil
 	case "gather", "get":
 		if list, ok := left.([]any); ok {
 			idx, ok := toInt64(right)

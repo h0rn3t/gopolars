@@ -120,6 +120,31 @@ func TestV09WaveDExprTailMethods(t *testing.T) {
 		polars.Col("x").Log1p().Alias("log1p"),
 		polars.Col("x").LowerBound().Alias("lower_bound"),
 		polars.Col("x").MapBatches().Alias("map_batches"),
+		polars.Col("x").MapElements().Alias("map_elements"),
+		polars.Col("x").Max().Alias("max"),
+		polars.Col("x").MaxBy(polars.Col("i")).Alias("max_by"),
+		polars.Col("x").Mean().Alias("mean"),
+		polars.Col("x").Median().Alias("median"),
+		polars.Col("x").Meta().Alias("meta"),
+		polars.Col("x").Min().Alias("min"),
+		polars.Col("x").MinBy(polars.Col("i")).Alias("min_by"),
+		polars.Col("x").Mod(polars.Lit(float64(0.2))).Alias("mod"),
+		polars.Col("x").Mode().Alias("mode"),
+		polars.Col("x").NUnique().Alias("n_unique"),
+		polars.Col("x").NanMax().Alias("nan_max"),
+		polars.Col("x").NanMin().Alias("nan_min"),
+		polars.Col("x").NeMissing(polars.Lit(float64(0.9))).Alias("ne_missing"),
+		polars.Col("x").Neg().Alias("neg"),
+		polars.Col("b").Not_().Alias("not_"),
+		polars.Col("x").NullCount().Alias("null_count"),
+		polars.Col("b").Or_(polars.Lit(false)).Alias("or_"),
+		polars.Col("x").PctChange().Alias("pct_change"),
+		polars.Col("x").PeakMax().Alias("peak_max"),
+		polars.Col("x").PeakMin().Alias("peak_min"),
+		polars.Col("x").Pipe().Alias("pipe"),
+		polars.Col("x").Product().Alias("product"),
+		polars.Col("x").QCut().Alias("qcut"),
+		polars.Col("x").Quantile().Alias("quantile"),
 	)
 	if err != nil {
 		t.Fatalf("expr tail select failed: %v", err)
@@ -146,5 +171,13 @@ func TestV09WaveDExprTailMethods(t *testing.T) {
 	ib, _ := out.GetColumn("is_between")
 	if ib.Value(0).(bool) != true {
 		t.Fatalf("is_between mismatch")
+	}
+	ng, _ := out.GetColumn("neg")
+	if ng.Value(0).(float64) != -0.5 {
+		t.Fatalf("neg mismatch")
+	}
+	mod, _ := out.GetColumn("mod")
+	if math.Abs(mod.Value(0).(float64)-0.1) > 1e-9 {
+		t.Fatalf("mod mismatch")
 	}
 }
