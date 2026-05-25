@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -277,6 +278,16 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 			return nil
 		case logical.NodeInterpolate:
 			next, err := current.Interpolate(n.Columns...)
+			if err != nil {
+				return err
+			}
+			current = next
+			return nil
+		case logical.NodeFrameAgg:
+			if len(n.Strings) < 1 {
+				return fmt.Errorf("frame_agg node missing aggregation type")
+			}
+			next, err := aggregateFrame(current, n.Strings[0], n.Strings[1:])
 			if err != nil {
 				return err
 			}
@@ -799,4 +810,218 @@ func appendSeries(df frame.DataFrame, s series.Series) (frame.DataFrame, error) 
 		cols = append(cols, s)
 	}
 	return frame.New(frame.NewInput{Series: cols})
+}
+
+func aggregateFrame(df frame.DataFrame, op string, args []string) (frame.DataFrame, error) {
+	out := make([]series.Series, 0, df.Width())
+	for _, name := range df.Columns() {
+		s, _ := df.Series(name)
+		var val any
+		var dt = dtypes.Float64
+		switch op {
+		case "max":
+			var best any
+			has := false
+			for i := 0; i < s.Len(); i++ {
+				v := s.Value(i)
+				if v == nil {
+					continue
+				}
+				if !has || compareForOrder(v, best) > 0 {
+					best = v
+					has = true
+				}
+			}
+			val = best
+			dt = s.DataType()
+		case "min":
+			var best any
+			has := false
+			for i := 0; i < s.Len(); i++ {
+				v := s.Value(i)
+				if v == nil {
+					continue
+				}
+				if !has || compareForOrder(v, best) < 0 {
+					best = v
+					has = true
+				}
+			}
+			val = best
+			dt = s.DataType()
+		case "count":
+			val = int64(s.Len())
+			for i := 0; i < s.Len(); i++ {
+				if s.IsNull(i) {
+					val = val.(int64) - 1
+				}
+			}
+			dt = dtypes.Int64
+		case "null_count":
+			val = int64(0)
+			for i := 0; i < s.Len(); i++ {
+				if s.IsNull(i) {
+					val = val.(int64) + 1
+				}
+			}
+			dt = dtypes.Int64
+		case "sum":
+			sum := float64(0)
+			dt = dtypes.Float64
+			allInt := true
+			has := false
+			for i := 0; i < s.Len(); i++ {
+				if s.IsNull(i) {
+					continue
+				}
+				has = true
+				v := s.Value(i)
+				switch t := v.(type) {
+				case int64:
+					sum += float64(t)
+				case float64:
+					sum += t
+					allInt = false
+				}
+			}
+			if !has {
+				val = nil
+			} else if allInt && s.DataType() == dtypes.Int64 {
+				val = int64(sum)
+				dt = dtypes.Int64
+			} else {
+				val = sum
+			}
+		case "mean":
+			sum := float64(0)
+			count := 0
+			for i := 0; i < s.Len(); i++ {
+				if s.IsNull(i) {
+					continue
+				}
+				v := s.Value(i)
+				switch t := v.(type) {
+				case int64:
+					sum += float64(t)
+					count++
+				case float64:
+					sum += t
+					count++
+				}
+			}
+			if count == 0 {
+				val = nil
+			} else {
+				val = sum / float64(count)
+			}
+		case "median":
+			nums := make([]float64, 0, s.Len())
+			for i := 0; i < s.Len(); i++ {
+				if s.IsNull(i) {
+					continue
+				}
+				v := s.Value(i)
+				switch t := v.(type) {
+				case int64:
+					nums = append(nums, float64(t))
+				case float64:
+					nums = append(nums, t)
+				}
+			}
+			if len(nums) == 0 {
+				val = nil
+			} else {
+				sort.Float64s(nums)
+				mid := len(nums) / 2
+				if len(nums)%2 == 0 {
+					val = (nums[mid-1] + nums[mid]) / 2.0
+				} else {
+					val = nums[mid]
+				}
+			}
+		case "std", "var":
+			sum := float64(0)
+			count := 0
+			for i := 0; i < s.Len(); i++ {
+				if s.IsNull(i) {
+					continue
+				}
+				v := s.Value(i)
+				switch t := v.(type) {
+				case int64:
+					sum += float64(t)
+					count++
+				case float64:
+					sum += t
+					count++
+				}
+			}
+			if count == 0 {
+				val = nil
+			} else {
+				mean := sum / float64(count)
+				variance := float64(0)
+				for i := 0; i < s.Len(); i++ {
+					if s.IsNull(i) {
+						continue
+					}
+					v := s.Value(i)
+					diff := float64(0)
+					switch t := v.(type) {
+					case int64:
+						diff = float64(t) - mean
+					case float64:
+						diff = t - mean
+					}
+					variance += diff * diff
+				}
+				variance /= float64(count)
+				if op == "std" {
+					val = math.Sqrt(variance)
+				} else {
+					val = variance
+				}
+			}
+		case "quantile":
+			q := 0.5
+			if len(args) > 0 {
+				if parsed, err := strconv.ParseFloat(args[0], 64); err == nil {
+					q = parsed
+				}
+			}
+			nums := make([]float64, 0, s.Len())
+			for i := 0; i < s.Len(); i++ {
+				if s.IsNull(i) {
+					continue
+				}
+				v := s.Value(i)
+				switch t := v.(type) {
+				case int64:
+					nums = append(nums, float64(t))
+				case float64:
+					nums = append(nums, t)
+				}
+			}
+			if len(nums) == 0 {
+				val = nil
+			} else {
+				sort.Float64s(nums)
+				idx := float64(len(nums)-1) * q
+				lower := int(math.Floor(idx))
+				upper := int(math.Ceil(idx))
+				if lower == upper {
+					val = nums[lower]
+				} else {
+					weight := idx - float64(lower)
+					val = nums[lower]*(1.0-weight) + nums[upper]*weight
+				}
+			}
+		}
+		newS, err := series.New(name, dt, []any{val})
+		if err != nil {
+			return frame.DataFrame{}, err
+		}
+		out = append(out, newS)
+	}
+	return frame.New(frame.NewInput{Series: out})
 }

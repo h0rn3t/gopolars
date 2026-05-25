@@ -40,6 +40,7 @@ const (
 	NodeFillNaN     NodeType = "fill_nan"
 	NodeInterpolate NodeType = "interpolate"
 	NodeWithRowIdx  NodeType = "with_row_index"
+	NodeFrameAgg    NodeType = "frame_agg"
 	NodePivot       NodeType = "pivot"
 	NodeSetOp       NodeType = "set_op"
 	NodeRolling     NodeType = "rolling_mean"

@@ -36,3 +36,25 @@ TBD - synced from change plan-v0-3-core-parity-and-performance. Update Purpose i
 #### Scenario: Error on length mismatch
 - **WHEN** операция выполняется между сериями разной длины
 - **THEN** система MUST вернуть ошибку несоответствия размеров
+
+### Requirement: Series SHALL close or explicitly classify each remaining full-matrix low-priority row
+Система SHALL для кожного методу `Series`, що залишається у статусі `не реализовано` / `low` у `docs/parity/python_polars_full_matrix.md`, або (a) надати публічний Go-еквівалент з документованою семантикою Polars у межах підтримуваних dtype, або (b) оновити матрицю на **deferred** / **non-goal** з текстовим обґрунтуванням у відповідній OpenSpec-зміні або `design.md`.
+
+#### Scenario: Matrix row reflects implementation
+- **WHEN** метод реалізовано на `Series` або її namespace
+- **THEN** відповідний рядок матриці SHALL показувати `реализовано`, еквівалентний Go символ і пріоритет `—`
+
+#### Scenario: Matrix row reflects explicit deferral
+- **WHEN** метод свідомо не реалізовується в межах зміни
+- **THEN** матриця або `design.md` SHALL містити категорію **deferred** або **non-goal** і посилання на обмеження зберігання / ecosystem
+
+#### Scenario: No silent gap
+- **WHEN** закривається зміна, що покриває low-priority хвіст
+- **THEN** Review у `tasks.md` або матриця SHALL пояснювати залишковий зліч `не реализовано` / `low` відносно цільового порогу
+
+### Requirement: Series rolling-by and ewm-by family SHALL be deterministic or explicitly unsupported
+Для методів сімейства `rolling_*_by`, `ewm_mean_by`, `rolling_rank*` система SHALL забезпечити детерміновану поведінку на тестових dtype або стабільну помилку `not supported` до першої невалідної комбінації dtype/вікна.
+
+#### Scenario: Unsupported dtype for rolling_by
+- **WHEN** користувач викликає rolling-by на dtype без дорожньої карти реалізації
+- **THEN** система SHALL повернути діагностичну помилку без паніки

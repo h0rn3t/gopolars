@@ -272,6 +272,176 @@ func (l *lf) RollingMean(input RollingMeanInput) LazyFrame {
 	})
 }
 
+func (l *lf) Max() LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"max"}})
+}
+
+func (l *lf) Min() LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"min"}})
+}
+
+func (l *lf) Mean() LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"mean"}})
+}
+
+func (l *lf) Median() LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"median"}})
+}
+
+func (l *lf) Sum() LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"sum"}})
+}
+
+func (l *lf) Std() LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"std"}})
+}
+
+func (l *lf) Var() LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"var"}})
+}
+
+func (l *lf) Quantile(q float64) LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"quantile", fmt.Sprintf("%f", q)}})
+}
+
+func (l *lf) NullCount() LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"null_count"}})
+}
+
+func (l *lf) Count() LazyFrame {
+	return l.withNode(logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"count"}})
+}
+
+func (l *lf) CollectSchema() dtypes.Schema {
+	return l.source.CollectSchema()
+}
+
+func (l *lf) Columns() []string {
+	return l.source.Columns()
+}
+
+func (l *lf) Width() int {
+	return l.source.Width()
+}
+
+func (l *lf) Schema() dtypes.Schema {
+	return l.source.Schema()
+}
+
+func (l *lf) Dtypes() []dtypes.DataType {
+	return l.source.Dtypes()
+}
+
+func (l *lf) Describe() (DataFrame, error) {
+	return (&df{value: l.source}).Describe()
+}
+
+func (l *lf) JoinAsof(input JoinInput) LazyFrame {
+	if input.How == "" {
+		input.How = "asof"
+	}
+	return l.Join(input)
+}
+
+func (l *lf) MapBatches(fn func(DataFrame) (DataFrame, error)) LazyFrame {
+	if fn == nil {
+		return l
+	}
+	current, err := l.Collect(context.Background())
+	if err != nil {
+		return l
+	}
+	next, err := fn(current)
+	if err != nil || next == nil {
+		return l
+	}
+	return next.Lazy()
+}
+
+func (l *lf) MatchToSchema(schema dtypes.Schema) LazyFrame {
+	return l.MapBatches(func(df DataFrame) (DataFrame, error) {
+		return df.MatchToSchema(schema)
+	})
+}
+
+func (l *lf) SubSelectColumns(columns ...string) LazyFrame {
+	if len(columns) == 0 {
+		return l.Clone()
+	}
+	exprs := make([]Expr, 0, len(columns))
+	for _, c := range columns {
+		exprs = append(exprs, Col(c))
+	}
+	return l.Select(exprs...)
+}
+
+func (l *lf) MergeSorted(other LazyFrame, by string) LazyFrame {
+	current, err := l.Collect(context.Background())
+	if err != nil {
+		return l
+	}
+	otherDF, err := other.Collect(context.Background())
+	if err != nil {
+		return l
+	}
+	next, err := current.MergeSorted(otherDF, by)
+	if err != nil {
+		return l
+	}
+	return next.Lazy()
+}
+
+func (l *lf) Pipe(fn func(LazyFrame) LazyFrame) LazyFrame {
+	if fn == nil {
+		return l
+	}
+	return fn(l)
+}
+
+func (l *lf) PipeWithSchema(fn func(LazyFrame, dtypes.Schema) LazyFrame, schema dtypes.Schema) LazyFrame {
+	if fn == nil {
+		return l
+	}
+	return fn(l, schema)
+}
+
+func (l *lf) Rolling(input RollingMeanInput) LazyFrame {
+	return l.RollingMean(input)
+}
+
+func (l *lf) SelectSeq(exprs ...Expr) LazyFrame {
+	return l.Select(exprs...)
+}
+
+func (l *lf) WithColumnsSeq(exprs ...Expr) LazyFrame {
+	return l.WithColumns(exprs...)
+}
+
+func (l *lf) WithContext(other LazyFrame) LazyFrame {
+	_ = other
+	return l
+}
+
+func (l *lf) Remove(column string) LazyFrame {
+	return l.Drop(column)
+}
+
+func (l *lf) TopK(k int, by string) LazyFrame {
+	return l.Sort(SortInput{By: []string{by}, Descending: []bool{true}}).Limit(k)
+}
+
+func (l *lf) Show(maxRows int) string {
+	df, err := l.Collect(context.Background())
+	if err != nil {
+		return err.Error()
+	}
+	return df.Show(maxRows)
+}
+
+func (l *lf) Lazy() LazyFrame {
+	return l.Clone()
+}
+
 func (l *lf) Cache() LazyFrame {
 	return l
 }
@@ -438,6 +608,16 @@ func (l *lf) SinkIPC(ctx context.Context, input WriteIPCInput) error {
 		return err
 	}
 	return df.WriteIPC(input)
+}
+
+func (l *lf) SinkDelta(ctx context.Context, path string) error {
+	_ = ctx
+	return fmt.Errorf("not supported: sink_delta %s", path)
+}
+
+func (l *lf) SinkIceberg(ctx context.Context, path string) error {
+	_ = ctx
+	return fmt.Errorf("not supported: sink_iceberg %s", path)
 }
 
 func (l *lf) Explain(optimized bool) string {

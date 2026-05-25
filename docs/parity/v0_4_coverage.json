@@ -1,8 +1,0 @@
-{
-  "version": "v0.4",
-  "minimum_overall_coverage": 0.35,
-  "minimum_sql_window_coverage": 0.30,
-  "minimum_nested_coverage": 0.30,
-  "minimum_cloud_io_coverage": 0.30,
-  "notes": "Coverage thresholds for v0.4 feature wave release candidate."
-}

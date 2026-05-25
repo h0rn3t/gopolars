@@ -1546,6 +1546,8 @@ func (d DataFrame) evalExprAsSeriesVectorized(e expr.Expr) (series.Series, error
 			return d.evalCumulative(*e.Target(), e.Name(), "count")
 		case e.Op() == "rank":
 			return d.evalRank(*e.Target(), e.Name())
+		case e.Op() == "reverse":
+			return d.evalReverse(*e.Target(), e.Name())
 		case strings.HasPrefix(e.Op(), "rolling_"):
 			return d.evalRolling(*e.Target(), e.Op(), e.Name())
 		case strings.HasPrefix(e.Op(), "over:"):
@@ -1620,6 +1622,18 @@ func (d DataFrame) evalRank(target expr.Expr, name string) (series.Series, error
 		out[idx] = int64(rank + 1)
 	}
 	return series.New(name, dtypes.Int64, out)
+}
+
+func (d DataFrame) evalReverse(target expr.Expr, name string) (series.Series, error) {
+	base, err := d.evalExprAsSeriesVectorized(target)
+	if err != nil {
+		return series.Series{}, err
+	}
+	out := make([]any, d.height)
+	for i := 0; i < d.height; i++ {
+		out[i] = base.Value(d.height - 1 - i)
+	}
+	return series.New(name, base.DataType(), out)
 }
 
 func (d DataFrame) evalRolling(target expr.Expr, op string, name string) (series.Series, error) {
@@ -1698,6 +1712,18 @@ func (d DataFrame) evalRolling(target expr.Expr, op string, name string) (series
 			}
 			variance /= float64(len(nums))
 			out[i] = math.Sqrt(variance)
+		case "rolling_var":
+			sum := float64(0)
+			for _, n := range nums {
+				sum += n
+			}
+			mean := sum / float64(len(nums))
+			variance := float64(0)
+			for _, n := range nums {
+				diff := n - mean
+				variance += diff * diff
+			}
+			out[i] = variance / float64(len(nums))
 		default:
 			out[i] = nums[len(nums)-1]
 		}
@@ -2098,6 +2124,18 @@ func (r rowAccessor) ValueByName(name string) (any, bool) {
 		return nil, false
 	}
 	return s.Value(r.row), true
+}
+
+func (r rowAccessor) RowIndex() int { return r.row }
+
+func (r rowAccessor) NumRows() int { return r.df.height }
+
+func (r rowAccessor) ValueAt(row int, column string) (any, bool) {
+	s, ok := r.df.cols[column]
+	if !ok || row < 0 || row >= r.df.height {
+		return nil, false
+	}
+	return s.Value(row), true
 }
 
 func lessAny(left any, right any) bool {

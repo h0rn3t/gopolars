@@ -23,3 +23,14 @@
 #### Scenario: Expression composition for filter and projection
 - **WHEN** користувач передає комбіновані `Expr` у `Filter` та `Select`
 - **THEN** система коректно обчислює вирази та зберігає імена колонок згідно з `Alias`
+
+### Requirement: DataFrame column mutation parity SHALL be decided and documented
+Система SHALL зафіксувати поведінку для рядка матриці `DataFrame.__setitem__` (Python in-place присвоєння): або **non-goal** з посиланням на рекомендовані Go-методи (**ReplaceColumn**, **WithColumns**, **Hstack**), або обмежений публічний API in-place з явним контрактом у `design.md` і тестами.
+
+#### Scenario: User-facing guidance for mutation
+- **WHEN** користувач шукає еквівалент Python `df["x"] = s`
+- **THEN** документація зміни або матриця SHALL вказувати підтримуваний шлях у Go без двозначності
+
+#### Scenario: No accidental Python semantics
+- **WHEN** in-place API не реалізовано
+- **THEN** матриця SHALL не позначати метод як `реализовано` без відповідного Go API

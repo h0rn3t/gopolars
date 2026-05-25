@@ -122,6 +122,17 @@ func (d *df) GetColumn(name string) (Series, error) {
 	return fromInternalSeries(s), nil
 }
 
+func (d *df) SubSelectColumns(columns ...string) (DataFrame, error) {
+	if len(columns) == 0 {
+		return d.Clone(), nil
+	}
+	exprs := make([]Expr, 0, len(columns))
+	for _, c := range columns {
+		exprs = append(exprs, Col(c))
+	}
+	return d.Select(exprs...)
+}
+
 func (d *df) GetColumnIndex(name string) int {
 	return d.value.GetColumnIndex(name)
 }

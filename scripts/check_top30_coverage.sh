@@ -2,11 +2,15 @@
 set -euo pipefail
 
 python3 - <<'PY'
-import re, sys, pathlib
+import json
+import re
+import sys
+import pathlib
 
 root = pathlib.Path(".")
 backlog = (root / "docs/parity/v0_7_top30_functions.md").read_text()
-matrix = (root / "docs/parity/python_polars_full_matrix.md").read_text()
+registry = json.loads((root / "docs/parity/python_polars_method_registry.json").read_text(encoding="utf-8"))["rows"]
+reg_index = {(r["object"], r["method"]): r["gopolars_status"] for r in registry}
 coverage_doc = (root / "docs/parity/v0_7_top30_coverage.json").read_text()
 
 required = 30
@@ -21,13 +25,11 @@ if len(rows) != 30:
 
 implemented = 0
 for obj, method, _ in rows:
-    pattern = rf'\| `{re.escape(method)}` \| .*? \| реализовано \|'
-    section = rf'## {obj} \(.*?\)\n([\s\S]*?)(?:\n## |\Z)'
-    sec_match = re.search(section, matrix)
-    if not sec_match:
-        print(f"missing matrix section for {obj}")
+    st = reg_index.get((obj, method))
+    if st is None:
+        print(f"missing registry entry for {obj}.{method}")
         sys.exit(1)
-    if re.search(pattern, sec_match.group(1)):
+    if st == "реализовано":
         implemented += 1
 
 print(f"top30_implemented={implemented}/30 required={required}")

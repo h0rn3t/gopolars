@@ -213,6 +213,10 @@ func (e Expr) RollingStd(window int) Expr {
 	return Expr{kind: KindUnary, op: "rolling_std:" + strconv.Itoa(window), target: &e}
 }
 
+func (e Expr) RollingVar(window int) Expr {
+	return Expr{kind: KindUnary, op: "rolling_var:" + strconv.Itoa(window), target: &e}
+}
+
 func (e Expr) Clip(min Expr, max Expr) Expr {
 	return Expr{kind: KindTern, op: "clip", target: &e, left: &min, right: &max}
 }
@@ -397,8 +401,24 @@ func (e Expr) Cos() Expr {
 	return Expr{kind: KindUnary, op: "cos", target: &e}
 }
 
+func (e Expr) Sin() Expr {
+	return Expr{kind: KindUnary, op: "sin", target: &e}
+}
+
 func (e Expr) Cosh() Expr {
 	return Expr{kind: KindUnary, op: "cosh", target: &e}
+}
+
+func (e Expr) Sinh() Expr {
+	return Expr{kind: KindUnary, op: "sinh", target: &e}
+}
+
+func (e Expr) Tan() Expr {
+	return Expr{kind: KindUnary, op: "tan", target: &e}
+}
+
+func (e Expr) Tanh() Expr {
+	return Expr{kind: KindUnary, op: "tanh", target: &e}
 }
 
 func (e Expr) Cot() Expr {
@@ -751,6 +771,220 @@ func (e Expr) QCut() Expr {
 
 func (e Expr) Quantile() Expr {
 	return Expr{kind: KindUnary, op: "quantile", target: &e}
+}
+
+func (e Expr) Sign() Expr {
+	return Expr{kind: KindUnary, op: "sign", target: &e}
+}
+
+func (e Expr) Radians() Expr {
+	return Expr{kind: KindUnary, op: "radians", target: &e}
+}
+
+func (e Expr) RoundSigFigs(digits int) Expr {
+	return Expr{kind: KindUnary, op: "round_sig_figs:" + strconv.Itoa(digits), target: &e}
+}
+
+func (e Expr) RollingMaxBy(by Expr, window int) Expr {
+	return Expr{kind: KindTern, op: "rolling_max_by:" + strconv.Itoa(window), target: &e, left: &by}
+}
+
+func (e Expr) RollingMeanBy(by Expr, window int) Expr {
+	return Expr{kind: KindTern, op: "rolling_mean_by:" + strconv.Itoa(window), target: &e, left: &by}
+}
+
+func (e Expr) RollingMinBy(by Expr, window int) Expr {
+	return Expr{kind: KindTern, op: "rolling_min_by:" + strconv.Itoa(window), target: &e, left: &by}
+}
+
+func (e Expr) RollingSumBy(by Expr, window int) Expr {
+	return Expr{kind: KindTern, op: "rolling_sum_by:" + strconv.Itoa(window), target: &e, left: &by}
+}
+
+func (e Expr) RollingStdBy(by Expr, window int) Expr {
+	return Expr{kind: KindTern, op: "rolling_std_by:" + strconv.Itoa(window), target: &e, left: &by}
+}
+
+func (e Expr) RollingVarBy(by Expr, window int) Expr {
+	return Expr{kind: KindTern, op: "rolling_var_by:" + strconv.Itoa(window), target: &e, left: &by}
+}
+
+func (e Expr) RollingMedian(window int) Expr {
+	return Expr{kind: KindUnary, op: "rolling_median:" + strconv.Itoa(window), target: &e}
+}
+
+func (e Expr) RollingMedianBy(by Expr, window int) Expr {
+	return Expr{kind: KindTern, op: "rolling_median_by:" + strconv.Itoa(window), target: &e, left: &by}
+}
+
+func (e Expr) RollingQuantile(window int, q float64) Expr {
+	return Expr{kind: KindUnary, op: "rolling_quantile:" + strconv.Itoa(window) + ":" + strconv.FormatFloat(q, 'f', -1, 64), target: &e}
+}
+
+func (e Expr) RollingQuantileBy(by Expr, window int, q float64) Expr {
+	return Expr{kind: KindTern, op: "rolling_quantile_by:" + strconv.Itoa(window) + ":" + strconv.FormatFloat(q, 'f', -1, 64), target: &e, left: &by}
+}
+
+func (e Expr) RollingSkew(window int) Expr {
+	return Expr{kind: KindUnary, op: "rolling_skew:" + strconv.Itoa(window), target: &e}
+}
+
+func (e Expr) RollingKurtosis(window int) Expr {
+	return Expr{kind: KindUnary, op: "rolling_kurtosis:" + strconv.Itoa(window), target: &e}
+}
+
+func (e Expr) RollingMap(window int) Expr {
+	return Expr{kind: KindUnary, op: "rolling_map:" + strconv.Itoa(window), target: &e}
+}
+
+func (e Expr) Rolling(window int) Expr {
+	return Expr{kind: KindUnary, op: "rolling:" + strconv.Itoa(window), target: &e}
+}
+
+func (e Expr) RollingRank(window int) Expr {
+	return Expr{kind: KindUnary, op: "rolling_rank:" + strconv.Itoa(window), target: &e}
+}
+
+func (e Expr) RollingRankBy(by Expr, window int) Expr {
+	return Expr{kind: KindTern, op: "rolling_rank_by:" + strconv.Itoa(window), target: &e, left: &by}
+}
+
+func (e Expr) Sort(descending bool) Expr {
+	return Expr{kind: KindUnary, op: "sort:" + strconv.FormatBool(descending), target: &e}
+}
+
+func (e Expr) SortBy(by Expr, descending bool) Expr {
+	return Expr{kind: KindTern, op: "sort_by:" + strconv.FormatBool(descending), target: &e, left: &by}
+}
+
+func (e Expr) Slice(offset int, length int) Expr {
+	return Expr{kind: KindUnary, op: "slice:" + strconv.Itoa(offset) + ":" + strconv.Itoa(length), target: &e}
+}
+
+func (e Expr) Tail(n int) Expr {
+	return Expr{kind: KindUnary, op: "tail:" + strconv.Itoa(n), target: &e}
+}
+
+func (e Expr) Unique() Expr {
+	return Expr{kind: KindUnary, op: "unique", target: &e}
+}
+
+func (e Expr) UniqueCounts() Expr {
+	return Expr{kind: KindUnary, op: "unique_counts", target: &e}
+}
+
+func (e Expr) ValueCounts() Expr {
+	return Expr{kind: KindUnary, op: "value_counts", target: &e}
+}
+
+func (e Expr) Rechunk() Expr {
+	return Expr{kind: KindUnary, op: "rechunk", target: &e}
+}
+
+func (e Expr) Reinterpret() Expr {
+	return Expr{kind: KindUnary, op: "reinterpret", target: &e}
+}
+
+func (e Expr) RepeatBy(n int) Expr {
+	return Expr{kind: KindUnary, op: "repeat_by:" + strconv.Itoa(n), target: &e}
+}
+
+func (e Expr) ReplaceStrict(old Expr, new Expr) Expr {
+	oldCopy := old
+	newCopy := new
+	return Expr{kind: KindTern, op: "replace_strict", target: &e, left: &oldCopy, right: &newCopy}
+}
+
+func (e Expr) Reshape(dims ...int) Expr {
+	parts := make([]string, 0, len(dims))
+	for _, dim := range dims {
+		parts = append(parts, strconv.Itoa(dim))
+	}
+	return Expr{kind: KindUnary, op: "reshape:" + strings.Join(parts, ","), target: &e}
+}
+
+func (e Expr) Rle() Expr {
+	return Expr{kind: KindUnary, op: "rle", target: &e}
+}
+
+func (e Expr) RleId() Expr {
+	return Expr{kind: KindUnary, op: "rle_id", target: &e}
+}
+
+func (e Expr) Sample(n int, seed int64) Expr {
+	return Expr{kind: KindUnary, op: "sample:" + strconv.Itoa(n) + ":" + strconv.FormatInt(seed, 10), target: &e}
+}
+
+func (e Expr) SearchSorted(value Expr) Expr {
+	return bin("search_sorted", e, value)
+}
+
+func (e Expr) SetSorted(descending bool) Expr {
+	return Expr{kind: KindUnary, op: "set_sorted:" + strconv.FormatBool(descending), target: &e}
+}
+
+func (e Expr) Shift(periods int) Expr {
+	return Expr{kind: KindUnary, op: "shift:" + strconv.Itoa(periods), target: &e}
+}
+
+func (e Expr) Reverse() Expr {
+	return Expr{kind: KindUnary, op: "reverse", target: &e}
+}
+
+func (e Expr) ShrinkDtype() Expr {
+	return Expr{kind: KindUnary, op: "shrink_dtype", target: &e}
+}
+
+func (e Expr) Shuffle(seed int64) Expr {
+	return Expr{kind: KindUnary, op: "shuffle:" + strconv.FormatInt(seed, 10), target: &e}
+}
+
+func (e Expr) Skew() Expr {
+	return Expr{kind: KindUnary, op: "skew", target: &e}
+}
+
+func (e Expr) Std() Expr {
+	return Expr{kind: KindUnary, op: "std", target: &e}
+}
+
+func (e Expr) Sum() Expr {
+	return Expr{kind: KindUnary, op: "sum", target: &e}
+}
+
+func (e Expr) Var() Expr {
+	return Expr{kind: KindUnary, op: "var", target: &e}
+}
+
+func (e Expr) Where(mask Expr) Expr {
+	return bin("where", e, mask)
+}
+
+func (e Expr) Xor(other Expr) Expr {
+	return bin("xor", e, other)
+}
+
+func (e Expr) ToPhysical() Expr {
+	return Expr{kind: KindUnary, op: "to_physical", target: &e}
+}
+
+func (e Expr) TopK(k int) Expr {
+	return Expr{kind: KindUnary, op: "top_k:" + strconv.Itoa(k), target: &e}
+}
+
+func (e Expr) TopKBy(by Expr, k int) Expr {
+	return Expr{kind: KindTern, op: "top_k_by:" + strconv.Itoa(k), target: &e, left: &by}
+}
+
+func (e Expr) Truncate() Expr {
+	return Expr{kind: KindUnary, op: "truncate", target: &e}
+}
+
+func (e Expr) TrueDiv(other Expr) Expr {
+	return bin("true_div", e, other)
+}
+
+func (e Expr) UpperBound() Expr {
+	return Expr{kind: KindUnary, op: "upper_bound", target: &e}
 }
 
 func When(cond Expr, thenExpr Expr, otherwise Expr) Expr {

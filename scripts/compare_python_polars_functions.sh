@@ -51,6 +51,9 @@ parquet_path = pathlib.Path(sys.argv[1]).resolve()
 csv_out = pathlib.Path(sys.argv[2]).resolve()
 md_out = pathlib.Path(sys.argv[3]).resolve()
 matrix_path = pathlib.Path("docs/parity/python_polars_full_matrix.md").resolve()
+registry_path = matrix_path.with_name("python_polars_method_registry.json").resolve()
+
+import json
 
 import polars as pl
 
@@ -80,28 +83,34 @@ def render_ascii_table(headers, rows):
     out.append(sep)
     return "\n".join(out)
 
-matrix_text = matrix_path.read_text(encoding="utf-8")
-sections = ["DataFrame", "LazyFrame", "Expr", "Series", "SQLContext"]
-rows = []
-for obj in sections:
-    section_match = re.search(rf"## {obj} \(\d+ методов\)\n([\s\S]*?)(?:\n## |\Z)", matrix_text)
-    if not section_match:
-        continue
-    block = section_match.group(1)
-    for line in block.splitlines():
-        m = re.match(r"\| `([^`]+)` \| ([^|]+) \| (реализовано|не реализовано) \| (—|high|medium|low) \|", line.strip())
-        if not m:
+if registry_path.exists():
+    rows = json.loads(registry_path.read_text(encoding="utf-8"))["rows"]
+else:
+    matrix_text = matrix_path.read_text(encoding="utf-8")
+    sections = ["DataFrame", "LazyFrame", "Expr", "Series", "SQLContext"]
+    rows = []
+    for obj in sections:
+        section_match = re.search(rf"## {obj} \(\d+ методов\)\n([\s\S]*?)(?:\n## |\Z)", matrix_text)
+        if not section_match:
             continue
-        method, equivalent, status, priority = m.groups()
-        rows.append(
-            {
-                "object": obj,
-                "method": method,
-                "equivalent": equivalent.strip(),
-                "gopolars_status": status,
-                "priority": priority,
-            }
-        )
+        block = section_match.group(1)
+        for line in block.splitlines():
+            m = re.match(
+                r"\| `([^`]+)` \| ([^|]+) \| (реализовано|не реализовано) \| (—|high|medium|low) \|",
+                line.strip(),
+            )
+            if not m:
+                continue
+            method, equivalent, status, priority = m.groups()
+            rows.append(
+                {
+                    "object": obj,
+                    "method": method,
+                    "equivalent": equivalent.strip(),
+                    "gopolars_status": status,
+                    "priority": priority,
+                }
+            )
 
 df = pl.read_parquet(str(parquet_path))
 lf = df.lazy()

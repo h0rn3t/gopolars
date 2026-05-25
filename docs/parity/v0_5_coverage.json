@@ -1,9 +1,0 @@
-{
-  "version": "v0.5",
-  "minimum_overall_coverage": 0.45,
-  "minimum_advanced_join_coverage": 0.4,
-  "minimum_reshape_coverage": 0.4,
-  "minimum_sql_surface_coverage": 0.4,
-  "minimum_sink_materialization_coverage": 0.35,
-  "notes": "Coverage thresholds for v0.5 parity wave 2 release candidate."
-}

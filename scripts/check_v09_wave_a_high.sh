@@ -2,14 +2,12 @@
 set -euo pipefail
 
 python3 - <<'PY'
-import re
+import json
 import sys
 from pathlib import Path
 
-matrix = Path("docs/parity/python_polars_full_matrix.md").read_text()
-body = matrix.split("## Top-30")[0]
-
-rows = re.findall(r"\| `([^`]+)` \| .*? \| (реализовано|не реализовано) \| (—|high|medium|low) \|", body)
+reg = Path("docs/parity/python_polars_method_registry.json")
+rows = [(r["method"], r["gopolars_status"], r["priority"]) for r in json.loads(reg.read_text(encoding="utf-8"))["rows"]]
 remaining_high = [name for name, status, prio in rows if status == "не реализовано" and prio == "high"]
 implemented = sum(1 for _, status, _ in rows if status == "реализовано")
 
