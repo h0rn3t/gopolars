@@ -1,6 +1,6 @@
 module github.com/eugeneshershen/gopolars
 
-go 1.24.9
+go 1.26
 
 require github.com/parquet-go/parquet-go v0.29.0
 
