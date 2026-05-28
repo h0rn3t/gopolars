@@ -12,6 +12,7 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 
 - ✅ Strong DataFrame/LazyFrame core for real analytics workloads
 - ✅ Stable IO surface (CSV/JSON/Parquet/IPC + scans + pushdown)
+- ✅ **71%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
 - ✅ **675 / 680** tracked Python Polars methods implemented on the [full parity matrix](docs/parity/python_polars_full_matrix.md) (5 rows intentionally out of scope: `DataFrame.__setitem__` + four Series non-goals — see matrix notes)
 
 ## Implemented capabilities
@@ -59,7 +60,7 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 - Streaming collect with bounded-memory path and deterministic fallback
 - Explain and diagnostics output with stable schema for automation (`schema_version: v2`)
 - Operator-level execution report structure for telemetry integrations (duration, memory, temporal operator markers)
-- Unit/conformance tests, benchmarks, `go vet`, race tests, CI quality gates
+- Unit/conformance tests (**71%** `pkg/` statement coverage), benchmarks, `go vet`, race tests, CI quality gates
 - Compatibility governance artifacts:
   - versioning policy
   - migration notes
@@ -168,6 +169,18 @@ results. No public API changes are required.
 
 Micro-benchmarks and observed speedups are documented in
 [`bench/micro/simd_results.md`](bench/micro/simd_results.md).
+
+## Testing
+
+Statement coverage is measured over library code in `./pkg/...` using both package-local tests and `test/unit`:
+
+```bash
+go test ./pkg/... ./test/unit/... -coverpkg=./pkg/... -skip V06Performance
+```
+
+Current coverage: **71%** (as of the latest local run with the command above).
+
+Codecov tracks `./pkg/...` on CI; see [`docs/codecov.md`](docs/codecov.md) for upload details.
 
 ## Quick start
 
