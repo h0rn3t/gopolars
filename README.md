@@ -1,10 +1,7 @@
 # gopolars
 
 [![CI](https://github.com/h0rn3t/gopolars/actions/workflows/ci.yml/badge.svg)](https://github.com/h0rn3t/gopolars/actions/workflows/ci.yml)
-[![Go](https://img.shields.io/github/go-mod/go-version/h0rn3t/gopolars)](https://go.dev/dl/)
 [![codecov](https://codecov.io/gh/h0rn3t/gopolars/graph/badge.svg)](https://codecov.io/gh/h0rn3t/gopolars)
-
-> Codecov setup (private repo): install the [Codecov GitHub App](https://github.com/apps/codecov), add the `CODECOV_TOKEN` repository secret, then run CI. See [`docs/codecov.md`](docs/codecov.md).
 
 `gopolars` is a high-performance Go DataFrame library inspired by Polars Python API.
 

@@ -74,6 +74,32 @@ SELECT id FROM (SELECT id, value FROM t WHERE value >= 20) s WHERE id > 1
 	if unionOut.Height() != 3 {
 		t.Fatalf("unexpected union rows")
 	}
+
+	intersectQuery := `SELECT id FROM t WHERE id <= 2 INTERSECT SELECT id FROM t WHERE id >= 2`
+	lf3, err := polars.SQLFromDataFrame(context.Background(), df, intersectQuery, "t")
+	if err != nil {
+		t.Fatalf("intersect parse failed: %v", err)
+	}
+	intersectOut, err := lf3.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("intersect collect failed: %v", err)
+	}
+	if intersectOut.Height() != 1 {
+		t.Fatalf("unexpected intersect rows: %d", intersectOut.Height())
+	}
+
+	exceptQuery := `SELECT id FROM t WHERE id <= 2 EXCEPT SELECT id FROM t WHERE id >= 2`
+	lf4, err := polars.SQLFromDataFrame(context.Background(), df, exceptQuery, "t")
+	if err != nil {
+		t.Fatalf("except parse failed: %v", err)
+	}
+	exceptOut, err := lf4.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("except collect failed: %v", err)
+	}
+	if exceptOut.Height() != 1 {
+		t.Fatalf("unexpected except rows: %d", exceptOut.Height())
+	}
 }
 
 func TestLazySinkCollectParity(t *testing.T) {
