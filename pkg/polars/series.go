@@ -13,6 +13,7 @@ import (
 	"github.com/eugeneshershen/gopolars/pkg/frame"
 	iarrow "github.com/eugeneshershen/gopolars/pkg/io/arrow"
 	iseries "github.com/eugeneshershen/gopolars/pkg/series"
+	"github.com/eugeneshershen/gopolars/pkg/simd"
 )
 
 type seriesFacade struct {
@@ -324,13 +325,8 @@ func (s seriesFacade) Reverse() Series {
 }
 
 func (s seriesFacade) Sum() float64 {
-	acc := 0.0
-	for i := 0; i < s.Len(); i++ {
-		if v, ok := toFloat64(s.Value(i)); ok {
-			acc += v
-		}
-	}
-	return acc
+	vals := s.numericValues(true)
+	return simd.SumFloat64(vals)
 }
 
 func (s seriesFacade) Std() float64 {
@@ -349,30 +345,12 @@ func (s seriesFacade) Std() float64 {
 
 func (s seriesFacade) Max() float64 {
 	vals := s.numericValues(true)
-	if len(vals) == 0 {
-		return 0
-	}
-	best := vals[0]
-	for _, v := range vals[1:] {
-		if v > best {
-			best = v
-		}
-	}
-	return best
+	return simd.MaxFloat64(vals)
 }
 
 func (s seriesFacade) Min() float64 {
 	vals := s.numericValues(true)
-	if len(vals) == 0 {
-		return 0
-	}
-	best := vals[0]
-	for _, v := range vals[1:] {
-		if v < best {
-			best = v
-		}
-	}
-	return best
+	return simd.MinFloat64(vals)
 }
 
 func (s seriesFacade) Mean() float64 {
@@ -1912,33 +1890,13 @@ func (s seriesFacade) rolling(window int, mode string) Series {
 		}
 		switch mode {
 		case "sum":
-			acc := float64(0)
-			for _, n := range nums {
-				acc += n
-			}
-			values[i] = acc
+			values[i] = simd.SumFloat64(nums)
 		case "mean":
-			acc := float64(0)
-			for _, n := range nums {
-				acc += n
-			}
-			values[i] = acc / float64(len(nums))
+			values[i] = simd.SumFloat64(nums) / float64(len(nums))
 		case "min":
-			best := nums[0]
-			for _, n := range nums[1:] {
-				if n < best {
-					best = n
-				}
-			}
-			values[i] = best
+			values[i] = simd.MinFloat64(nums)
 		case "max":
-			best := nums[0]
-			for _, n := range nums[1:] {
-				if n > best {
-					best = n
-				}
-			}
-			values[i] = best
+			values[i] = simd.MaxFloat64(nums)
 		case "std", "var":
 			mean := meanFloatSlice(nums)
 			sumSq := 0.0

@@ -1,0 +1,37 @@
+# Конфігурація Codecov для gopolars.
+# Перевірка: curl --data-binary @codecov.yml https://codecov.io/validate
+
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  precision: 2
+  round: down
+  range: "40...100"
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+    patch:
+      default:
+        target: auto
+        informational: true
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: false
+
+flags:
+  unit:
+    paths:
+      - pkg/
+
+ignore:
+  - "bench/**"
+  - "examples/**"
+  - "test/**"
+  - "**/*_test.go"
+  - "pkg/**/testdata/**"

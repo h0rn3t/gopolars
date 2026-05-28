@@ -1,3 +1,6 @@
 openspec/
 .agent/
 CLAUDE.md
+AGENTS.md
+coverage.out
+*.coverprofile

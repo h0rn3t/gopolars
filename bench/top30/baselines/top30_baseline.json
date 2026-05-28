@@ -1,0 +1,9 @@
+[
+  {"object": "DataFrame", "op": "filter", "size": "1K", "elements": 1000, "go_ns_per_op": 1000000, "python_sec_per_op": 0.001, "ratio": 1.0},
+  {"object": "DataFrame", "op": "filter", "size": "1M", "elements": 1000000, "go_ns_per_op": 5000000, "python_sec_per_op": 0.005, "ratio": 1.0},
+  {"object": "Expr", "op": "cum_sum", "size": "1K", "elements": 1000, "go_ns_per_op": 800000, "python_sec_per_op": 0.0008, "ratio": 1.0},
+  {"object": "Expr", "op": "rolling_mean", "size": "1K", "elements": 1000, "go_ns_per_op": 1200000, "python_sec_per_op": 0.0012, "ratio": 1.0},
+  {"object": "Series", "op": "null_count", "size": "1K", "elements": 1000, "go_ns_per_op": 500000, "python_sec_per_op": 0.0005, "ratio": 1.0},
+  {"object": "LazyFrame", "op": "collect", "size": "1K", "elements": 1000, "go_ns_per_op": 2000000, "python_sec_per_op": 0.002, "ratio": 1.0},
+  {"object": "SQLContext", "op": "execute", "size": "1K", "elements": 1000, "go_ns_per_op": 1500000, "python_sec_per_op": 0.0015, "ratio": 1.0}
+]

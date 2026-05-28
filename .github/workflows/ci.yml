@@ -6,9 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   ci:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goexperiment: ['', 'simd']
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,6 +33,8 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: go vet
+        env:
+          GOEXPERIMENT: ${{ matrix.goexperiment }}
         run: go vet ./...
 
       - name: golangci-lint
@@ -34,6 +42,81 @@ jobs:
         with:
           version: v1.64
           args: --timeout=5m
+        env:
+          GOEXPERIMENT: ${{ matrix.goexperiment }}
 
       - name: go test -race
+        env:
+          GOEXPERIMENT: ${{ matrix.goexperiment }}
         run: go test -race ./...
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Unit test coverage
+        run: |
+          go test -race -coverprofile=coverage.out -covermode=atomic ./pkg/...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.out
+          flags: unit
+          name: gopolars-unit
+          fail_ci_if_error: true
+          verbose: true
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python bench dependencies
+        run: pip install -r bench/top30/requirements-bench.txt
+
+      - name: Run top30 benchmark (light mode)
+        run: go test -bench=BenchmarkTop30 ./bench/top30/... -benchtime=1s -light
+
+      - name: Check performance budgets
+        run: ./scripts/check_top30_performance_budgets.sh
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: top30-benchmark-results
+          path: |
+            bench/top30/top30_summary.json
+            bench/top30/top30_summary.csv
+            bench/top30/top30_summary.md

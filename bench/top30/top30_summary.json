@@ -1,0 +1,2036 @@
+[
+  {
+    "object": "DataFrame",
+    "op": "filter",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 251667,
+    "python_sec_per_op": 0.00007542079547420144,
+    "ratio": 0.29968488309631947
+  },
+  {
+    "object": "DataFrame",
+    "op": "filter",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 73523,
+    "python_sec_per_op": 0.00009625409729778767,
+    "ratio": 1.3091698828636982
+  },
+  {
+    "object": "DataFrame",
+    "op": "filter",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 69110,
+    "python_sec_per_op": 0.00007845420623198152,
+    "ratio": 1.135207730169028
+  },
+  {
+    "object": "DataFrame",
+    "op": "filter",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 69912,
+    "python_sec_per_op": 0.00008529579499736429,
+    "ratio": 1.2200451281234164
+  },
+  {
+    "object": "DataFrame",
+    "op": "filter",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 19824708,
+    "python_sec_per_op": 0.0005350416991859675,
+    "ratio": 0.026988629501426577
+  },
+  {
+    "object": "DataFrame",
+    "op": "filter",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 19586193,
+    "python_sec_per_op": 0.0005386124947108328,
+    "ratio": 0.02749960110731232
+  },
+  {
+    "object": "DataFrame",
+    "op": "select",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 55000,
+    "python_sec_per_op": 0.00000741670373827219,
+    "ratio": 0.13484915887767618
+  },
+  {
+    "object": "DataFrame",
+    "op": "select",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 10127,
+    "python_sec_per_op": 0.000007429206743836403,
+    "ratio": 0.7336039047927722
+  },
+  {
+    "object": "DataFrame",
+    "op": "select",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 6238,
+    "python_sec_per_op": 0.000007299997378140688,
+    "ratio": 1.1702464536936017
+  },
+  {
+    "object": "DataFrame",
+    "op": "select",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 5946,
+    "python_sec_per_op": 0.0000073917093686759475,
+    "ratio": 1.2431398198244108
+  },
+  {
+    "object": "DataFrame",
+    "op": "select",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2497042,
+    "python_sec_per_op": 0.000007220893166959286,
+    "ratio": 0.002891778819482926
+  },
+  {
+    "object": "DataFrame",
+    "op": "select",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2963807,
+    "python_sec_per_op": 0.000007233291398733854,
+    "ratio": 0.0024405406285678702
+  },
+  {
+    "object": "DataFrame",
+    "op": "select",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2847156,
+    "python_sec_per_op": 0.0000072499969974160194,
+    "ratio": 0.0025463996343776103
+  },
+  {
+    "object": "DataFrame",
+    "op": "with_columns",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 54375,
+    "python_sec_per_op": 0.000007633294444531202,
+    "ratio": 0.14038242656609107
+  },
+  {
+    "object": "DataFrame",
+    "op": "with_columns",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 20407,
+    "python_sec_per_op": 0.00000779579859226942,
+    "ratio": 0.38201590592783946
+  },
+  {
+    "object": "DataFrame",
+    "op": "with_columns",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 14867,
+    "python_sec_per_op": 0.000007641594856977463,
+    "ratio": 0.5139970980680341
+  },
+  {
+    "object": "DataFrame",
+    "op": "with_columns",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 15088,
+    "python_sec_per_op": 0.000007733399979770183,
+    "ratio": 0.5125530209285646
+  },
+  {
+    "object": "DataFrame",
+    "op": "with_columns",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 13948250,
+    "python_sec_per_op": 0.00000767080346122384,
+    "ratio": 0.0005499473741310802
+  },
+  {
+    "object": "DataFrame",
+    "op": "with_columns",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 7306538,
+    "python_sec_per_op": 0.000007483398076146841,
+    "ratio": 0.0010242057286428733
+  },
+  {
+    "object": "DataFrame",
+    "op": "with_columns",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 7257284,
+    "python_sec_per_op": 0.000007654097862541675,
+    "ratio": 0.0010546780121243257
+  },
+  {
+    "object": "DataFrame",
+    "op": "sort",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 236625,
+    "python_sec_per_op": 0.0001242875005118549,
+    "ratio": 0.5252509266216794
+  },
+  {
+    "object": "DataFrame",
+    "op": "sort",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 170436,
+    "python_sec_per_op": 0.0001541915931738913,
+    "ratio": 0.9046891101286777
+  },
+  {
+    "object": "DataFrame",
+    "op": "sort",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 160105,
+    "python_sec_per_op": 0.00014217080315575003,
+    "ratio": 0.8879847797117517
+  },
+  {
+    "object": "DataFrame",
+    "op": "sort",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 468081583,
+    "python_sec_per_op": 0.013839204201940448,
+    "ratio": 0.02956579516169609
+  },
+  {
+    "object": "DataFrame",
+    "op": "sort",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 502726687,
+    "python_sec_per_op": 0.013198512501548975,
+    "ratio": 0.026253852924161502
+  },
+  {
+    "object": "DataFrame",
+    "op": "group_by",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 135083,
+    "python_sec_per_op": 0.00047050419962033627,
+    "ratio": 3.4830748474666406
+  },
+  {
+    "object": "DataFrame",
+    "op": "group_by",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 49664,
+    "python_sec_per_op": 0.0003430749988183379,
+    "ratio": 6.9079212068769715
+  },
+  {
+    "object": "DataFrame",
+    "op": "group_by",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 54715,
+    "python_sec_per_op": 0.0004353582975454628,
+    "ratio": 7.956836288868917
+  },
+  {
+    "object": "DataFrame",
+    "op": "group_by",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 41924,
+    "python_sec_per_op": 0.00035063340328633785,
+    "ratio": 8.36354840392944
+  },
+  {
+    "object": "DataFrame",
+    "op": "group_by",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 41601,
+    "python_sec_per_op": 0.00036029169568791987,
+    "ratio": 8.660649880722096
+  },
+  {
+    "object": "DataFrame",
+    "op": "group_by",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 44674375,
+    "python_sec_per_op": 0.0014269749983213842,
+    "ratio": 0.031941689129873316
+  },
+  {
+    "object": "DataFrame",
+    "op": "group_by",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 39279176,
+    "python_sec_per_op": 0.0015100624994374811,
+    "ratio": 0.038444352789821286
+  },
+  {
+    "object": "DataFrame",
+    "op": "join",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 50033542,
+    "python_sec_per_op": 0.0006319375010207295,
+    "ratio": 0.012630277125307848
+  },
+  {
+    "object": "DataFrame",
+    "op": "join",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 47218642,
+    "python_sec_per_op": 0.0006239334004931151,
+    "ratio": 0.013213709121349046
+  },
+  {
+    "object": "DataFrame",
+    "op": "head",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 92166,
+    "python_sec_per_op": 6.58305361866951e-7,
+    "ratio": 0.007142605319390568
+  },
+  {
+    "object": "DataFrame",
+    "op": "head",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 4380,
+    "python_sec_per_op": 5.499925464391708e-7,
+    "ratio": 0.12556907452949104
+  },
+  {
+    "object": "DataFrame",
+    "op": "head",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 2505,
+    "python_sec_per_op": 5.583977326750756e-7,
+    "ratio": 0.2229132665369563
+  },
+  {
+    "object": "DataFrame",
+    "op": "head",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 3374,
+    "python_sec_per_op": 5.458015948534011e-7,
+    "ratio": 0.1617669220075285
+  },
+  {
+    "object": "DataFrame",
+    "op": "head",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 62375,
+    "python_sec_per_op": 0.000002849998418241739,
+    "ratio": 0.04569135740668119
+  },
+  {
+    "object": "DataFrame",
+    "op": "head",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 3701,
+    "python_sec_per_op": 9.124982170760632e-7,
+    "ratio": 0.24655450339801763
+  },
+  {
+    "object": "DataFrame",
+    "op": "head",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2520,
+    "python_sec_per_op": 0.0000011375057511031628,
+    "ratio": 0.4513911710726837
+  },
+  {
+    "object": "DataFrame",
+    "op": "head",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 1914,
+    "python_sec_per_op": 6.083981133997441e-7,
+    "ratio": 0.31786735287342954
+  },
+  {
+    "object": "DataFrame",
+    "op": "head",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 1958,
+    "python_sec_per_op": 6.749993190169334e-7,
+    "ratio": 0.34473918233755535
+  },
+  {
+    "object": "DataFrame",
+    "op": "tail",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 62750,
+    "python_sec_per_op": 6.167101673781872e-7,
+    "ratio": 0.00982805047614641
+  },
+  {
+    "object": "DataFrame",
+    "op": "tail",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 4475,
+    "python_sec_per_op": 6.334041245281696e-7,
+    "ratio": 0.1415428211236133
+  },
+  {
+    "object": "DataFrame",
+    "op": "tail",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 3164,
+    "python_sec_per_op": 6.292015314102173e-7,
+    "ratio": 0.19886268375797006
+  },
+  {
+    "object": "DataFrame",
+    "op": "tail",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 3028,
+    "python_sec_per_op": 6.624963134527207e-7,
+    "ratio": 0.21879006388795266
+  },
+  {
+    "object": "DataFrame",
+    "op": "tail",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 44833,
+    "python_sec_per_op": 6.334041245281696e-7,
+    "ratio": 0.014128078079275746
+  },
+  {
+    "object": "DataFrame",
+    "op": "tail",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 4278,
+    "python_sec_per_op": 0.000001100008375942707,
+    "ratio": 0.2571314576771171
+  },
+  {
+    "object": "DataFrame",
+    "op": "tail",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2530,
+    "python_sec_per_op": 7.083057425916195e-7,
+    "ratio": 0.2799627441073595
+  },
+  {
+    "object": "DataFrame",
+    "op": "tail",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2079,
+    "python_sec_per_op": 7.00005330145359e-7,
+    "ratio": 0.3367029005028182
+  },
+  {
+    "object": "DataFrame",
+    "op": "tail",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2140,
+    "python_sec_per_op": 6.500049494206905e-7,
+    "ratio": 0.30374063057041617
+  },
+  {
+    "object": "DataFrame",
+    "op": "unique",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 146584,
+    "python_sec_per_op": 0.00017502909759059548,
+    "ratio": 1.1940532226613783
+  },
+  {
+    "object": "DataFrame",
+    "op": "unique",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 66087,
+    "python_sec_per_op": 0.00016933330334722996,
+    "ratio": 2.5622785623077147
+  },
+  {
+    "object": "DataFrame",
+    "op": "unique",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 56134,
+    "python_sec_per_op": 0.00019326249603182077,
+    "ratio": 3.442877686105048
+  },
+  {
+    "object": "DataFrame",
+    "op": "unique",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 54116,
+    "python_sec_per_op": 0.00018687500851228834,
+    "ratio": 3.4532302556044114
+  },
+  {
+    "object": "DataFrame",
+    "op": "unique",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 53298208,
+    "python_sec_per_op": 0.005517337494529784,
+    "ratio": 0.10351825514527213
+  },
+  {
+    "object": "DataFrame",
+    "op": "unique",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 53257732,
+    "python_sec_per_op": 0.005300141707994044,
+    "ratio": 0.09951872730881675
+  },
+  {
+    "object": "DataFrame",
+    "op": "fill_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 130250,
+    "python_sec_per_op": 0.0001371458056382835,
+    "ratio": 1.052942845591428
+  },
+  {
+    "object": "DataFrame",
+    "op": "fill_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 83868,
+    "python_sec_per_op": 0.0002023249980993569,
+    "ratio": 2.4124218784203375
+  },
+  {
+    "object": "DataFrame",
+    "op": "fill_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 49981,
+    "python_sec_per_op": 0.0001567874918691814,
+    "ratio": 3.1369418752962406
+  },
+  {
+    "object": "DataFrame",
+    "op": "fill_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 45201,
+    "python_sec_per_op": 0.00013194159837439656,
+    "ratio": 2.918997331351
+  },
+  {
+    "object": "DataFrame",
+    "op": "fill_null",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 36421000,
+    "python_sec_per_op": 0.0004220707924105227,
+    "ratio": 0.011588665671193066
+  },
+  {
+    "object": "DataFrame",
+    "op": "fill_null",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 28625279,
+    "python_sec_per_op": 0.00045786669943481684,
+    "ratio": 0.01599518731100636
+  },
+  {
+    "object": "DataFrame",
+    "op": "fill_null",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 28640404,
+    "python_sec_per_op": 0.0003722999943420291,
+    "ratio": 0.01299911811097459
+  },
+  {
+    "object": "DataFrame",
+    "op": "drop_nulls",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 104667,
+    "python_sec_per_op": 0.00007024169899523258,
+    "ratio": 0.6710968977350318
+  },
+  {
+    "object": "DataFrame",
+    "op": "drop_nulls",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 66602,
+    "python_sec_per_op": 0.0000807749922387302,
+    "ratio": 1.2128013008427705
+  },
+  {
+    "object": "DataFrame",
+    "op": "drop_nulls",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 55653,
+    "python_sec_per_op": 0.000032762496266514064,
+    "ratio": 0.588692366386611
+  },
+  {
+    "object": "DataFrame",
+    "op": "drop_nulls",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 53794,
+    "python_sec_per_op": 0.00007534169126302003,
+    "ratio": 1.4005593795408415
+  },
+  {
+    "object": "DataFrame",
+    "op": "drop_nulls",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 54596500,
+    "python_sec_per_op": 0.0012341791996732354,
+    "ratio": 0.02260546371421676
+  },
+  {
+    "object": "DataFrame",
+    "op": "drop_nulls",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 45692988,
+    "python_sec_per_op": 0.0015140625066123903,
+    "ratio": 0.03313555477292031
+  },
+  {
+    "object": "DataFrame",
+    "op": "drop_nulls",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 46575866,
+    "python_sec_per_op": 0.0012344707967713476,
+    "ratio": 0.026504516239619625
+  },
+  {
+    "object": "Expr",
+    "op": "cum_sum",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 537084,
+    "python_sec_per_op": 0.00001093749888241291,
+    "ratio": 0.02036459638047849
+  },
+  {
+    "object": "Expr",
+    "op": "cum_sum",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 24295,
+    "python_sec_per_op": 0.000010725005995482207,
+    "ratio": 0.44144910456810893
+  },
+  {
+    "object": "Expr",
+    "op": "cum_sum",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 22689,
+    "python_sec_per_op": 0.00001253749942407012,
+    "ratio": 0.5525805202551951
+  },
+  {
+    "object": "Expr",
+    "op": "cum_sum",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 17953,
+    "python_sec_per_op": 0.0000178084010258317,
+    "ratio": 0.9919456929667299
+  },
+  {
+    "object": "Expr",
+    "op": "cum_sum",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 17607,
+    "python_sec_per_op": 0.000010716693941503763,
+    "ratio": 0.608660983785072
+  },
+  {
+    "object": "Expr",
+    "op": "cum_sum",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 16175209,
+    "python_sec_per_op": 0.002381312497891486,
+    "ratio": 0.14721989050598888
+  },
+  {
+    "object": "Expr",
+    "op": "cum_sum",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 12332823,
+    "python_sec_per_op": 0.0025113958050496875,
+    "ratio": 0.2036351129866769
+  },
+  {
+    "object": "Expr",
+    "op": "cum_sum",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 12307366,
+    "python_sec_per_op": 0.0023237082990817727,
+    "ratio": 0.18880630502755608
+  },
+  {
+    "object": "Expr",
+    "op": "rank",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 475125,
+    "python_sec_per_op": 0.000048699998296797274,
+    "ratio": 0.1024993386936012
+  },
+  {
+    "object": "Expr",
+    "op": "rank",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 131387,
+    "python_sec_per_op": 0.000056766706984490155,
+    "ratio": 0.4320572582104025
+  },
+  {
+    "object": "Expr",
+    "op": "rank",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 115556,
+    "python_sec_per_op": 0.000057212496176362035,
+    "ratio": 0.49510623573299556
+  },
+  {
+    "object": "Expr",
+    "op": "rank",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 488819125,
+    "python_sec_per_op": 0.01353039579698816,
+    "ratio": 0.02767975945496846
+  },
+  {
+    "object": "Expr",
+    "op": "rank",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 484582312,
+    "python_sec_per_op": 0.012721045897342265,
+    "ratio": 0.026251568788879492
+  },
+  {
+    "object": "Expr",
+    "op": "rank",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 495716000,
+    "python_sec_per_op": 0.012870829098392277,
+    "ratio": 0.025964118766374854
+  },
+  {
+    "object": "Expr",
+    "op": "over",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 163208,
+    "python_sec_per_op": 0.0002825165982358158,
+    "ratio": 1.7310217528296148
+  },
+  {
+    "object": "Expr",
+    "op": "over",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 94111,
+    "python_sec_per_op": 0.00024623749777674675,
+    "ratio": 2.616458201238397
+  },
+  {
+    "object": "Expr",
+    "op": "over",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 85163,
+    "python_sec_per_op": 0.00027377919759601354,
+    "ratio": 3.214766948040975
+  },
+  {
+    "object": "Expr",
+    "op": "over",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 85061,
+    "python_sec_per_op": 0.0002542124944739044,
+    "ratio": 2.988590475939671
+  },
+  {
+    "object": "Expr",
+    "op": "over",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 78577250,
+    "python_sec_per_op": 0.0073924000025726855,
+    "ratio": 0.09407812060835274
+  },
+  {
+    "object": "Expr",
+    "op": "over",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 72703907,
+    "python_sec_per_op": 0.007837608305271715,
+    "ratio": 0.10780174860852684
+  },
+  {
+    "object": "Expr",
+    "op": "fill_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 583750,
+    "python_sec_per_op": 0.000035070895683020355,
+    "ratio": 0.06007862215506699
+  },
+  {
+    "object": "Expr",
+    "op": "fill_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 70717,
+    "python_sec_per_op": 0.00005752500146627426,
+    "ratio": 0.813453645746769
+  },
+  {
+    "object": "Expr",
+    "op": "fill_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 63917,
+    "python_sec_per_op": 0.00004829169483855367,
+    "ratio": 0.7555375696380253
+  },
+  {
+    "object": "Expr",
+    "op": "fill_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 63357,
+    "python_sec_per_op": 0.00004395409487187862,
+    "ratio": 0.6937527798329881
+  },
+  {
+    "object": "Expr",
+    "op": "fill_null",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 13451459,
+    "python_sec_per_op": 0.00021696669282391667,
+    "ratio": 0.01612960295414175
+  },
+  {
+    "object": "Expr",
+    "op": "fill_null",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 16241265,
+    "python_sec_per_op": 0.00022051669657230377,
+    "ratio": 0.01357755670954841
+  },
+  {
+    "object": "Expr",
+    "op": "fill_nan",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 119458,
+    "python_sec_per_op": 0.00006299170199781656,
+    "ratio": 0.5273125449766157
+  },
+  {
+    "object": "Expr",
+    "op": "fill_nan",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 72475,
+    "python_sec_per_op": 0.000058904208708554505,
+    "ratio": 0.8127521036019939
+  },
+  {
+    "object": "Expr",
+    "op": "fill_nan",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 63600,
+    "python_sec_per_op": 0.00007370420498773456,
+    "ratio": 1.1588711476058893
+  },
+  {
+    "object": "Expr",
+    "op": "fill_nan",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 63597,
+    "python_sec_per_op": 0.0000652999966405332,
+    "ratio": 1.0267779398483137
+  },
+  {
+    "object": "Expr",
+    "op": "fill_nan",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 15921542,
+    "python_sec_per_op": 0.0008882874972186983,
+    "ratio": 0.05579154941265728
+  },
+  {
+    "object": "Expr",
+    "op": "fill_nan",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 16131486,
+    "python_sec_per_op": 0.0008678541984409094,
+    "ratio": 0.053798775787978204
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_mean",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 528583,
+    "python_sec_per_op": 0.000018370791804045438,
+    "ratio": 0.034754791213575616
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_mean",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 366960,
+    "python_sec_per_op": 0.000018695800099521877,
+    "ratio": 0.05094778749597198
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_mean",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 349082,
+    "python_sec_per_op": 0.000018820795230567455,
+    "ratio": 0.05391511229615808
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_mean",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 300678084,
+    "python_sec_per_op": 0.010967495804652571,
+    "ratio": 0.03647587366112314
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_mean",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 288617930,
+    "python_sec_per_op": 0.010934883297886699,
+    "ratio": 0.037887054688136315
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_mean",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 291827468,
+    "python_sec_per_op": 0.010998970898799598,
+    "ratio": 0.03768997817162159
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_sum",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 586292,
+    "python_sec_per_op": 0.00001927079865708947,
+    "ratio": 0.03286894355899359
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_sum",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 363694,
+    "python_sec_per_op": 0.000018674996681511402,
+    "ratio": 0.05134810219995766
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_sum",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 344570,
+    "python_sec_per_op": 0.000019149994477629663,
+    "ratio": 0.0555764996303499
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_sum",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 301494125,
+    "python_sec_per_op": 0.011049391701817513,
+    "ratio": 0.03664877948058694
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_sum",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 291661527,
+    "python_sec_per_op": 0.011088150006253272,
+    "ratio": 0.03801718423511262
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_sum",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 291718979,
+    "python_sec_per_op": 0.011102645809296518,
+    "ratio": 0.03805938800195965
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_min",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 497625,
+    "python_sec_per_op": 0.000013658299576491117,
+    "ratio": 0.02744697227127077
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_min",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 401715,
+    "python_sec_per_op": 0.0000142207951284945,
+    "ratio": 0.0354002094233337
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_min",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 390968,
+    "python_sec_per_op": 0.000014158396515995264,
+    "ratio": 0.036213696558273986
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_min",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 343048875,
+    "python_sec_per_op": 0.011636370792984962,
+    "ratio": 0.03392044586353756
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_min",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 339037916,
+    "python_sec_per_op": 0.011801691597793252,
+    "ratio": 0.03480935624260165
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_min",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 338264000,
+    "python_sec_per_op": 0.011707783292513341,
+    "ratio": 0.03461137836871006
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_max",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 510167,
+    "python_sec_per_op": 0.000013329193461686372,
+    "ratio": 0.02612711810384908
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_max",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 402935,
+    "python_sec_per_op": 0.000013525004032999276,
+    "ratio": 0.03356621795822968
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_max",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 388208,
+    "python_sec_per_op": 0.000013879197649657726,
+    "ratio": 0.03575196196280789
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_max",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 350729250,
+    "python_sec_per_op": 0.012018275004811585,
+    "ratio": 0.03426653181852265
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_max",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 349241021,
+    "python_sec_per_op": 0.011999454197939486,
+    "ratio": 0.034358662002478474
+  },
+  {
+    "object": "Expr",
+    "op": "rolling_max",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 342896291,
+    "python_sec_per_op": 0.011824912508018315,
+    "ratio": 0.03448539053465094
+  },
+  {
+    "object": "Series",
+    "op": "null_count",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 1759250,
+    "python_sec_per_op": 7.249996997416019e-7,
+    "ratio": 0.0004121072614702867
+  },
+  {
+    "object": "Series",
+    "op": "null_count",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 2198,
+    "python_sec_per_op": 5.041016265749931e-7,
+    "ratio": 0.22934559898771298
+  },
+  {
+    "object": "Series",
+    "op": "null_count",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 2043,
+    "python_sec_per_op": 4.9578957259655e-7,
+    "ratio": 0.2426772259405531
+  },
+  {
+    "object": "Series",
+    "op": "null_count",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 2081,
+    "python_sec_per_op": 5.042064003646374e-7,
+    "ratio": 0.24229043746498674
+  },
+  {
+    "object": "Series",
+    "op": "null_count",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2057667,
+    "python_sec_per_op": 7.2909751906991e-7,
+    "ratio": 0.0003543321242309421
+  },
+  {
+    "object": "Series",
+    "op": "null_count",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2011351,
+    "python_sec_per_op": 8.083996362984181e-7,
+    "ratio": 0.00040191872840613995
+  },
+  {
+    "object": "Series",
+    "op": "null_count",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2013828,
+    "python_sec_per_op": 9.00006853044033e-7,
+    "ratio": 0.0004469134668124751
+  },
+  {
+    "object": "Series",
+    "op": "drop_nans",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 259834,
+    "python_sec_per_op": 0.000009845802560448647,
+    "ratio": 0.03789266439514708
+  },
+  {
+    "object": "Series",
+    "op": "drop_nans",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 19586,
+    "python_sec_per_op": 0.000010991701856255531,
+    "ratio": 0.561201973667698
+  },
+  {
+    "object": "Series",
+    "op": "drop_nans",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 10317,
+    "python_sec_per_op": 0.000010720803402364254,
+    "ratio": 1.0391396144581035
+  },
+  {
+    "object": "Series",
+    "op": "drop_nans",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 9822,
+    "python_sec_per_op": 0.000010675005614757539,
+    "ratio": 1.0868464278922356
+  },
+  {
+    "object": "Series",
+    "op": "drop_nans",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 7967750,
+    "python_sec_per_op": 0.0004452542052604258,
+    "ratio": 0.055882050172310356
+  },
+  {
+    "object": "Series",
+    "op": "drop_nans",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 6191472,
+    "python_sec_per_op": 0.00046930829994380475,
+    "ratio": 0.07579914759265725
+  },
+  {
+    "object": "Series",
+    "op": "drop_nans",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 6119795,
+    "python_sec_per_op": 0.00047248330665752294,
+    "ratio": 0.077205740822613
+  },
+  {
+    "object": "Series",
+    "op": "to_list",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 28000,
+    "python_sec_per_op": 0.0000110041000880301,
+    "ratio": 0.39300357457250357
+  },
+  {
+    "object": "Series",
+    "op": "to_list",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 5889,
+    "python_sec_per_op": 0.000010641699191182852,
+    "ratio": 1.8070468995046447
+  },
+  {
+    "object": "Series",
+    "op": "to_list",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 4818,
+    "python_sec_per_op": 0.000010050006676465272,
+    "ratio": 2.085929156593041
+  },
+  {
+    "object": "Series",
+    "op": "to_list",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 4667,
+    "python_sec_per_op": 0.000011041609104722738,
+    "ratio": 2.3658901017190352
+  },
+  {
+    "object": "Series",
+    "op": "to_list",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 5858833,
+    "python_sec_per_op": 0.012767279206309467,
+    "ratio": 2.1791505588757123
+  },
+  {
+    "object": "Series",
+    "op": "to_list",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 3104146,
+    "python_sec_per_op": 0.013434033293742686,
+    "ratio": 4.327771082205118
+  },
+  {
+    "object": "Series",
+    "op": "to_list",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 3091146,
+    "python_sec_per_op": 0.013244162499904632,
+    "ratio": 4.28454770493035
+  },
+  {
+    "object": "Series",
+    "op": "is_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 51833,
+    "python_sec_per_op": 0.000009233399759978056,
+    "ratio": 0.1781374753531159
+  },
+  {
+    "object": "Series",
+    "op": "is_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 14431,
+    "python_sec_per_op": 0.000009125005453824997,
+    "ratio": 0.6323196905152101
+  },
+  {
+    "object": "Series",
+    "op": "is_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 9400,
+    "python_sec_per_op": 0.000009704194962978362,
+    "ratio": 1.032361166274294
+  },
+  {
+    "object": "Series",
+    "op": "is_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 9305,
+    "python_sec_per_op": 0.000009404192678630351,
+    "ratio": 1.0106601481601667
+  },
+  {
+    "object": "Series",
+    "op": "is_null",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 8545792,
+    "python_sec_per_op": 0.00000962089980021119,
+    "ratio": 0.0011258055192791014
+  },
+  {
+    "object": "Series",
+    "op": "is_null",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 5790690,
+    "python_sec_per_op": 0.000010600010864436626,
+    "ratio": 0.0018305263905400953
+  },
+  {
+    "object": "Series",
+    "op": "is_null",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 5765279,
+    "python_sec_per_op": 0.000009475008118897676,
+    "ratio": 0.0016434604672033524
+  },
+  {
+    "object": "Series",
+    "op": "is_not_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 32583,
+    "python_sec_per_op": 0.000010041601490229368,
+    "ratio": 0.30818529571338943
+  },
+  {
+    "object": "Series",
+    "op": "is_not_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 14949,
+    "python_sec_per_op": 0.000010070891585201025,
+    "ratio": 0.6736832955516104
+  },
+  {
+    "object": "Series",
+    "op": "is_not_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 9352,
+    "python_sec_per_op": 0.000009533297270536422,
+    "ratio": 1.0193859356861017
+  },
+  {
+    "object": "Series",
+    "op": "is_not_null",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 9069,
+    "python_sec_per_op": 0.000009741703979671002,
+    "ratio": 1.0741762024116221
+  },
+  {
+    "object": "Series",
+    "op": "is_not_null",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 7874167,
+    "python_sec_per_op": 0.000010870792903006076,
+    "ratio": 0.0013805641794244492
+  },
+  {
+    "object": "Series",
+    "op": "is_not_null",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 5918555,
+    "python_sec_per_op": 0.000010920804925262928,
+    "ratio": 0.0018451809479278184
+  },
+  {
+    "object": "Series",
+    "op": "is_not_null",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 5833888,
+    "python_sec_per_op": 0.000011120794806629419,
+    "ratio": 0.0019062407105911905
+  },
+  {
+    "object": "Series",
+    "op": "fill_nan",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 50500,
+    "python_sec_per_op": 0.0000659707933664322,
+    "ratio": 1.3063523438897464
+  },
+  {
+    "object": "Series",
+    "op": "fill_nan",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 14362,
+    "python_sec_per_op": 0.00007076660403981805,
+    "ratio": 4.9273502325454706
+  },
+  {
+    "object": "Series",
+    "op": "fill_nan",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 9390,
+    "python_sec_per_op": 0.00007331660017371178,
+    "ratio": 7.807944640437889
+  },
+  {
+    "object": "Series",
+    "op": "fill_nan",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 9430,
+    "python_sec_per_op": 0.00009333329508081079,
+    "ratio": 9.897486222779511
+  },
+  {
+    "object": "Series",
+    "op": "fill_nan",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 8569417,
+    "python_sec_per_op": 0.0008135083015076816,
+    "ratio": 0.09493158070236069
+  },
+  {
+    "object": "Series",
+    "op": "fill_nan",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 6280336,
+    "python_sec_per_op": 0.0008117333054542542,
+    "ratio": 0.1292499804873902
+  },
+  {
+    "object": "Series",
+    "op": "fill_nan",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 6147973,
+    "python_sec_per_op": 0.0008387416019104421,
+    "ratio": 0.13642571330590458
+  },
+  {
+    "object": "LazyFrame",
+    "op": "collect",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 550875,
+    "python_sec_per_op": 0.000003645801916718483,
+    "ratio": 0.006618201800260464
+  },
+  {
+    "object": "LazyFrame",
+    "op": "collect",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 558,
+    "python_sec_per_op": 0.000003787502646446228,
+    "ratio": 6.787639151337326
+  },
+  {
+    "object": "LazyFrame",
+    "op": "collect",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 226,
+    "python_sec_per_op": 0.000003816699609160423,
+    "ratio": 16.888051367966472
+  },
+  {
+    "object": "LazyFrame",
+    "op": "collect",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 119,
+    "python_sec_per_op": 0.0000074499985203146935,
+    "ratio": 62.60502958247642
+  },
+  {
+    "object": "LazyFrame",
+    "op": "collect",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 119,
+    "python_sec_per_op": 0.000003766699228435755,
+    "ratio": 31.65293469273744
+  },
+  {
+    "object": "LazyFrame",
+    "op": "collect",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 24709,
+    "python_sec_per_op": 0.000003904104232788086,
+    "ratio": 0.15800332805002573
+  },
+  {
+    "object": "LazyFrame",
+    "op": "collect",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 470,
+    "python_sec_per_op": 0.000003837503027170897,
+    "ratio": 8.164900057810419
+  },
+  {
+    "object": "LazyFrame",
+    "op": "collect",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 135,
+    "python_sec_per_op": 0.000003849994391202926,
+    "ratio": 28.51847697187353
+  },
+  {
+    "object": "LazyFrame",
+    "op": "collect",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 108,
+    "python_sec_per_op": 0.0000038125086575746537,
+    "ratio": 35.3010060886542
+  },
+  {
+    "object": "LazyFrame",
+    "op": "collect",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 100,
+    "python_sec_per_op": 0.000003841705620288849,
+    "ratio": 38.41705620288849
+  },
+  {
+    "object": "LazyFrame",
+    "op": "sql",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 622875,
+    "python_sec_per_op": 0.00001076660118997097,
+    "ratio": 0.017285332032865294
+  },
+  {
+    "object": "LazyFrame",
+    "op": "sql",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 27887,
+    "python_sec_per_op": 0.000010741699952632189,
+    "ratio": 0.38518664440894285
+  },
+  {
+    "object": "LazyFrame",
+    "op": "sql",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 24889,
+    "python_sec_per_op": 0.00001038750633597374,
+    "ratio": 0.4173533021002748
+  },
+  {
+    "object": "LazyFrame",
+    "op": "sql",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 24207,
+    "python_sec_per_op": 0.00001041659852489829,
+    "ratio": 0.4303134847316185
+  },
+  {
+    "object": "LazyFrame",
+    "op": "sql",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 233791,
+    "python_sec_per_op": 0.000010579207446426153,
+    "ratio": 0.04525070446007824
+  },
+  {
+    "object": "LazyFrame",
+    "op": "sql",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 112941,
+    "python_sec_per_op": 0.000011016696225851774,
+    "ratio": 0.09754381691194317
+  },
+  {
+    "object": "LazyFrame",
+    "op": "sql",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 53346,
+    "python_sec_per_op": 0.000011150003410875798,
+    "ratio": 0.20901292338461736
+  },
+  {
+    "object": "LazyFrame",
+    "op": "sql",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 52243,
+    "python_sec_per_op": 0.000011179200373589993,
+    "ratio": 0.21398465581207038
+  },
+  {
+    "object": "LazyFrame",
+    "op": "inspect",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 25958,
+    "python_sec_per_op": 0.0000011958996765315534,
+    "ratio": 0.04607056308388756
+  },
+  {
+    "object": "LazyFrame",
+    "op": "inspect",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 257,
+    "python_sec_per_op": 0.000001266703475266695,
+    "ratio": 4.928807296757569
+  },
+  {
+    "object": "LazyFrame",
+    "op": "inspect",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 66,
+    "python_sec_per_op": 0.0000012208009138703347,
+    "ratio": 18.49698354348992
+  },
+  {
+    "object": "LazyFrame",
+    "op": "inspect",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 28,
+    "python_sec_per_op": 0.000001237494871020317,
+    "ratio": 44.19624539358276
+  },
+  {
+    "object": "LazyFrame",
+    "op": "inspect",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 27,
+    "python_sec_per_op": 0.0000012542004697024822,
+    "ratio": 46.45186924824008
+  },
+  {
+    "object": "LazyFrame",
+    "op": "inspect",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 22791,
+    "python_sec_per_op": 0.0000012832926586270332,
+    "ratio": 0.056306992173534874
+  },
+  {
+    "object": "LazyFrame",
+    "op": "inspect",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 245,
+    "python_sec_per_op": 0.0000016166944988071918,
+    "ratio": 6.598753056355886
+  },
+  {
+    "object": "LazyFrame",
+    "op": "inspect",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 37,
+    "python_sec_per_op": 0.0000022124964743852616,
+    "ratio": 59.79720201041248
+  },
+  {
+    "object": "LazyFrame",
+    "op": "inspect",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 23,
+    "python_sec_per_op": 0.000002516701351851225,
+    "ratio": 109.421797906575
+  },
+  {
+    "object": "LazyFrame",
+    "op": "inspect",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 19,
+    "python_sec_per_op": 0.000001862493809312582,
+    "ratio": 98.02598996382011
+  },
+  {
+    "object": "SQLContext",
+    "op": "execute",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 33167,
+    "python_sec_per_op": 0.000005545897874981165,
+    "ratio": 0.16721132073992717
+  },
+  {
+    "object": "SQLContext",
+    "op": "execute",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 2496,
+    "python_sec_per_op": 0.000005554209928959608,
+    "ratio": 2.225244362563946
+  },
+  {
+    "object": "SQLContext",
+    "op": "execute",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 1850,
+    "python_sec_per_op": 0.000005529192276299,
+    "ratio": 2.988752581783243
+  },
+  {
+    "object": "SQLContext",
+    "op": "execute",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 1589,
+    "python_sec_per_op": 0.000005558400880545378,
+    "ratio": 3.4980496416270475
+  },
+  {
+    "object": "SQLContext",
+    "op": "execute",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 38791,
+    "python_sec_per_op": 0.0000056417076848447325,
+    "ratio": 0.14543857298973298
+  },
+  {
+    "object": "SQLContext",
+    "op": "execute",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2826,
+    "python_sec_per_op": 0.000005845900159329176,
+    "ratio": 2.068612936776071
+  },
+  {
+    "object": "SQLContext",
+    "op": "execute",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 1598,
+    "python_sec_per_op": 0.0000055292039178311825,
+    "ratio": 3.4600775455764596
+  },
+  {
+    "object": "SQLContext",
+    "op": "execute",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 1398,
+    "python_sec_per_op": 0.000005574990063905716,
+    "ratio": 3.9878326637379944
+  },
+  {
+    "object": "SQLContext",
+    "op": "register",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 22583,
+    "python_sec_per_op": 0.000002408295404165983,
+    "ratio": 0.10664196095142288
+  },
+  {
+    "object": "SQLContext",
+    "op": "register",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 956,
+    "python_sec_per_op": 0.0000021290965378284453,
+    "ratio": 2.227088428690842
+  },
+  {
+    "object": "SQLContext",
+    "op": "register",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 275,
+    "python_sec_per_op": 0.0000023665954358875753,
+    "ratio": 8.605801585045729
+  },
+  {
+    "object": "SQLContext",
+    "op": "register",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 188,
+    "python_sec_per_op": 0.0000024792039766907693,
+    "ratio": 13.187255195163667
+  },
+  {
+    "object": "SQLContext",
+    "op": "register",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 179,
+    "python_sec_per_op": 0.000003374996595084667,
+    "ratio": 18.854729581478587
+  },
+  {
+    "object": "SQLContext",
+    "op": "register",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 30291,
+    "python_sec_per_op": 0.000002391601447016001,
+    "ratio": 0.07895419256597673
+  },
+  {
+    "object": "SQLContext",
+    "op": "register",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 915,
+    "python_sec_per_op": 0.0000023999949917197227,
+    "ratio": 2.622945346141773
+  },
+  {
+    "object": "SQLContext",
+    "op": "register",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 222,
+    "python_sec_per_op": 0.0000024209031835198404,
+    "ratio": 10.904969295134416
+  },
+  {
+    "object": "SQLContext",
+    "op": "register",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 166,
+    "python_sec_per_op": 0.0000024084001779556274,
+    "ratio": 14.508434806961612
+  },
+  {
+    "object": "SQLContext",
+    "op": "register",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 162,
+    "python_sec_per_op": 0.0000023833010345697405,
+    "ratio": 14.711734781294695
+  },
+  {
+    "object": "SQLContext",
+    "op": "tables",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 24209,
+    "python_sec_per_op": 0.0000019875005818903446,
+    "ratio": 0.08209759105664606
+  },
+  {
+    "object": "SQLContext",
+    "op": "tables",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 796,
+    "python_sec_per_op": 0.0000019541941583156587,
+    "ratio": 2.455017786828717
+  },
+  {
+    "object": "SQLContext",
+    "op": "tables",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 445,
+    "python_sec_per_op": 0.000002033298369497061,
+    "ratio": 4.569209819094519
+  },
+  {
+    "object": "SQLContext",
+    "op": "tables",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 250,
+    "python_sec_per_op": 0.000001791701652109623,
+    "ratio": 7.166806608438493
+  },
+  {
+    "object": "SQLContext",
+    "op": "tables",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 237,
+    "python_sec_per_op": 0.0000018874998204410076,
+    "ratio": 7.964134263464167
+  },
+  {
+    "object": "SQLContext",
+    "op": "tables",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 26667,
+    "python_sec_per_op": 0.0000019959057681262494,
+    "ratio": 0.07484553073560016
+  },
+  {
+    "object": "SQLContext",
+    "op": "tables",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 733,
+    "python_sec_per_op": 0.0000020209001377224924,
+    "ratio": 2.7570261087619268
+  },
+  {
+    "object": "SQLContext",
+    "op": "tables",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 401,
+    "python_sec_per_op": 0.0000020916922949254513,
+    "ratio": 5.216190261659479
+  },
+  {
+    "object": "SQLContext",
+    "op": "tables",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 303,
+    "python_sec_per_op": 0.0000034624943509697912,
+    "ratio": 11.427374095609872
+  },
+  {
+    "object": "SQLContext",
+    "op": "tables",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 280,
+    "python_sec_per_op": 0.0000019290950149297713,
+    "ratio": 6.889625053320612
+  }
+]

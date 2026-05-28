@@ -1,0 +1,6 @@
+{
+  "default_tolerance": 0.10,
+  "overrides": {
+    "rolling_mean": 0.20
+  }
+}

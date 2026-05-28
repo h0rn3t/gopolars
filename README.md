@@ -1,5 +1,11 @@
 # gopolars
 
+[![CI](https://github.com/h0rn3t/gopolars/actions/workflows/ci.yml/badge.svg)](https://github.com/h0rn3t/gopolars/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/github/go-mod/go-version/h0rn3t/gopolars)](https://go.dev/dl/)
+[![codecov](https://codecov.io/gh/h0rn3t/gopolars/graph/badge.svg)](https://codecov.io/gh/h0rn3t/gopolars)
+
+> Codecov setup (private repo): install the [Codecov GitHub App](https://github.com/apps/codecov), add the `CODECOV_TOKEN` repository secret, then run CI. See [`docs/codecov.md`](docs/codecov.md).
+
 `gopolars` is a high-performance Go DataFrame library inspired by Polars Python API.
 
 ## Current status
@@ -78,7 +84,7 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 | Arrow interoperability                                            | ✅ ready        |
 | Cloud-style partitioned dataset scans                             | ✅ ready        |
 | Explain/telemetry schema v2 and perf markers                      | ✅ ready        |
-| Full Python Polars API parity (680-method tracked matrix)        | ✅ ~99.3% (675/680) |
+| Full Python Polars API parity (680-method tracked matrix)         | ✅ ~99.3% (675/680) |
 | Full SQL parity with Python Polars SQLContext                     | 🚧 in progress |
 | Performance parity on all workloads                               | 🚧 in progress |
 | Ecosystem parity (all namespaces, plugins, advanced UDF patterns) | 🚧 in progress |
@@ -137,6 +143,34 @@ To position `gopolars` as a practical replacement for Python Polars in most team
 - **Near term:** expand SQL/catalog surface, align remaining semantic edge cases on the covered API surface, and harden performance budgets on larger datasets.
 - **Mid term:** improve planner/runtime adaptability for mixed temporal + join + reshape workloads.
 - **Final parity push:** close long-tail semantic differences and publish repeatable parity evidence for release readiness.
+
+## Performance / SIMD Acceleration
+
+`gopolars` can optionally use SIMD-accelerated numeric aggregations on AMD64
+when built with Go 1.26+ and the experimental `simd` flag.
+
+Supported operations:
+- `Sum`, `Min`, `Max`, `MinMax` on `[]float64`
+- Element-wise `AddSlices`, `MulSlices`
+
+Build with SIMD acceleration:
+
+```bash
+GOEXPERIMENT=simd go build ./...
+```
+
+Build without (fully functional scalar fallback):
+
+```bash
+go build ./...
+```
+
+On non-AMD64 architectures (e.g., ARM64) or without `GOEXPERIMENT=simd`, the
+library automatically falls back to optimized scalar loops with identical
+results. No public API changes are required.
+
+Micro-benchmarks and observed speedups are documented in
+[`bench/micro/simd_results.md`](bench/micro/simd_results.md).
 
 ## Quick start
 
