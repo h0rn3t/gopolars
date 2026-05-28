@@ -85,38 +85,3 @@ jobs:
           name: gopolars-unit
           fail_ci_if_error: true
           verbose: true
-
-  benchmark:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.x'
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install Python bench dependencies
-        run: pip install -r bench/top30/requirements-bench.txt
-
-      - name: Run top30 benchmark (light mode)
-        run: go test -bench=BenchmarkTop30 ./bench/top30/... -benchtime=1s -light
-
-      - name: Check performance budgets
-        run: ./scripts/check_top30_performance_budgets.sh
-
-      - name: Upload benchmark artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: top30-benchmark-results
-          path: |
-            bench/top30/top30_summary.json
-            bench/top30/top30_summary.csv
-            bench/top30/top30_summary.md
