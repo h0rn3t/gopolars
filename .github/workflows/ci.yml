@@ -40,7 +40,8 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.64
+          # v1.x binaries are built with Go <1.26 and cannot lint go 1.26.1 modules.
+          version: v2.12.2
           args: --timeout=5m
         env:
           GOEXPERIMENT: ${{ matrix.goexperiment }}
