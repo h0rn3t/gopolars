@@ -9,7 +9,7 @@
 
 | | |
 | --- | --- |
-| **API docs** | [https://h0rn3t.github.io/gopolars/](https://h0rn3t.github.io/gopolars/) — interactive reference for `pkg/polars` |
+| **API docs** | [https://h0rn3t.github.io/gopolars/](https://h0rn3t.github.io/gopolars/) — interactive reference for `pkg/polars` (UK / EN, Go syntax highlighting) |
 | **Module** | `github.com/eugeneshershen/gopolars/pkg/polars` |
 | **Godoc** | [pkg.go.dev/.../pkg/polars](https://pkg.go.dev/github.com/eugeneshershen/gopolars/pkg/polars) |
 
@@ -218,7 +218,15 @@ _ = out
 - [Lazy pushdown](examples/lazy_pushdown/main.go)
 - [Join variants](examples/join_variants/main.go)
 - [Streaming collect](examples/streaming_collect/main.go)
-  ```go
-  ```
 
-collect
+## API documentation (local)
+
+Bilingual static reference (Ukrainian / English) with Go syntax highlighting in examples:
+
+```bash
+# from repo root — open in browser
+open docs/index.html   # macOS
+# or: python3 -m http.server 8765 --directory docs
+```
+
+Published on push to `main` when `docs/**` changes — see [`.github/workflows/pages.yml`](.github/workflows/pages.yml).

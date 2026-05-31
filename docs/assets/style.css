@@ -327,9 +327,51 @@ section > p.lead {
   color: var(--accent-2);
 }
 
-pre {
+.lang-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+  padding: 0 0.25rem;
+}
+
+.lang-switch-label {
+  flex: 1;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.lang-btn {
+  padding: 0.3rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.lang-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.lang-btn.active {
+  background: var(--accent-soft);
+  border-color: rgba(59, 130, 246, 0.45);
+  color: #93c5fd;
+}
+
+pre.code-block {
   margin: 1rem 0;
   padding: 1.1rem 1.25rem;
+  padding-top: 2.1rem;
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -338,11 +380,65 @@ pre {
   box-shadow: var(--shadow);
 }
 
-pre code {
+pre.code-block code {
   font-family: var(--mono);
   font-size: 0.82rem;
   line-height: 1.55;
   color: #c9d1d9;
+  background: transparent !important;
+  text-shadow: none;
+}
+
+/* Prism tokens — узгоджено з темною темою сторінки */
+pre.code-block .token.comment,
+pre.code-block .token.prolog,
+pre.code-block .token.doctype,
+pre.code-block .token.cdata {
+  color: #8b949e;
+}
+
+pre.code-block .token.punctuation {
+  color: #c9d1d9;
+}
+
+pre.code-block .token.property,
+pre.code-block .token.tag,
+pre.code-block .token.boolean,
+pre.code-block .token.number,
+pre.code-block .token.constant,
+pre.code-block .token.symbol {
+  color: #79c0ff;
+}
+
+pre.code-block .token.selector,
+pre.code-block .token.attr-name,
+pre.code-block .token.string,
+pre.code-block .token.char,
+pre.code-block .token.builtin {
+  color: #a5d6ff;
+}
+
+pre.code-block .token.operator,
+pre.code-block .token.entity,
+pre.code-block .token.url {
+  color: #ff7b72;
+}
+
+pre.code-block .token.atrule,
+pre.code-block .token.attr-value,
+pre.code-block .token.keyword {
+  color: #ff7b72;
+}
+
+pre.code-block .token.function,
+pre.code-block .token.class-name {
+  color: #d2a8ff;
+}
+
+pre.code-block .token.regex,
+pre.code-block .token.important,
+pre.code-block .token.variable {
+  color: #ffa657;
 }
 
 .copy-btn {
