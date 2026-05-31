@@ -3,7 +3,7 @@ package optimizer
 import (
 	"testing"
 
-	"github.com/eugeneshershen/gopolars/pkg/plan/logical"
+	"github.com/h0rn3t/gopolars/pkg/plan/logical"
 )
 
 func TestSimplifyLimitsKeepsSmallestConsecutiveLimit(t *testing.T) {

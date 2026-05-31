@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
-	"github.com/eugeneshershen/gopolars/pkg/frame"
-	"github.com/eugeneshershen/gopolars/pkg/series"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/frame"
+	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
 type ReadInput struct {

@@ -9,16 +9,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
-	"github.com/eugeneshershen/gopolars/pkg/exec"
-	"github.com/eugeneshershen/gopolars/pkg/frame"
-	iarrow "github.com/eugeneshershen/gopolars/pkg/io/arrow"
-	icsv "github.com/eugeneshershen/gopolars/pkg/io/csv"
-	iipc "github.com/eugeneshershen/gopolars/pkg/io/ipc"
-	ijson "github.com/eugeneshershen/gopolars/pkg/io/json"
-	iparquet "github.com/eugeneshershen/gopolars/pkg/io/parquet"
-	"github.com/eugeneshershen/gopolars/pkg/plan/logical"
-	"github.com/eugeneshershen/gopolars/pkg/series"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/exec"
+	"github.com/h0rn3t/gopolars/pkg/frame"
+	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
+	icsv "github.com/h0rn3t/gopolars/pkg/io/csv"
+	iipc "github.com/h0rn3t/gopolars/pkg/io/ipc"
+	ijson "github.com/h0rn3t/gopolars/pkg/io/json"
+	iparquet "github.com/h0rn3t/gopolars/pkg/io/parquet"
+	"github.com/h0rn3t/gopolars/pkg/plan/logical"
+	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
 type df struct {

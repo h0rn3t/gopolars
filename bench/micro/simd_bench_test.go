@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/eugeneshershen/gopolars/pkg/simd"
+	"github.com/h0rn3t/gopolars/pkg/simd"
 )
 
 var benchSizes = []int{1_000, 10_000, 100_000, 1_000_000, 10_000_000}

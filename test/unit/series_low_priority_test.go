@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
-	"github.com/eugeneshershen/gopolars/pkg/polars"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/polars"
 )
 
 func TestSeriesCountApproxEqualsFilter(t *testing.T) {

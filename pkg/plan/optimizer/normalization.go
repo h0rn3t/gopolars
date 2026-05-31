@@ -1,6 +1,6 @@
 package optimizer
 
-import "github.com/eugeneshershen/gopolars/pkg/plan/logical"
+import "github.com/h0rn3t/gopolars/pkg/plan/logical"
 
 func SimplifyLimits(nodes []logical.Node) []logical.Node {
 	if len(nodes) == 0 {

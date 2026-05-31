@@ -3,7 +3,7 @@ package exec
 import (
 	"runtime"
 
-	"github.com/eugeneshershen/gopolars/pkg/plan/physical"
+	"github.com/h0rn3t/gopolars/pkg/plan/physical"
 )
 
 type Scheduler struct {

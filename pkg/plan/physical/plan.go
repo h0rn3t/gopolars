@@ -1,6 +1,6 @@
 package physical
 
-import "github.com/eugeneshershen/gopolars/pkg/plan/logical"
+import "github.com/h0rn3t/gopolars/pkg/plan/logical"
 
 type Plan struct {
 	Operators []Operator

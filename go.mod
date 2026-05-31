@@ -1,4 +1,4 @@
-module github.com/eugeneshershen/gopolars
+module github.com/h0rn3t/gopolars
 
 go 1.26.1
 

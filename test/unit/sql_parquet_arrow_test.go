@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eugeneshershen/gopolars/pkg/frame"
-	iarrow "github.com/eugeneshershen/gopolars/pkg/io/arrow"
-	"github.com/eugeneshershen/gopolars/pkg/polars"
+	"github.com/h0rn3t/gopolars/pkg/frame"
+	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
+	"github.com/h0rn3t/gopolars/pkg/polars"
 )
 
 func TestParquetAndArrowRoundtrip(t *testing.T) {

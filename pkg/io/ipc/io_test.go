@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/eugeneshershen/gopolars/pkg/frame"
+	"github.com/h0rn3t/gopolars/pkg/frame"
 )
 
 func TestIPCRoundtripWithProjection(t *testing.T) {

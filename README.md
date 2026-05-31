@@ -10,8 +10,8 @@
 | | |
 | --- | --- |
 | **API docs** | [UK](https://h0rn3t.github.io/gopolars/) · [EN](https://h0rn3t.github.io/gopolars/en.html) — `pkg/polars` reference (Go syntax highlighting) |
-| **Module** | `github.com/eugeneshershen/gopolars/pkg/polars` |
-| **Godoc** | [pkg.go.dev/.../pkg/polars](https://pkg.go.dev/github.com/eugeneshershen/gopolars/pkg/polars) |
+| **Module** | `github.com/h0rn3t/gopolars/pkg/polars` |
+| **Godoc** | [pkg.go.dev/.../pkg/polars](https://pkg.go.dev/github.com/h0rn3t/gopolars/pkg/polars) |
 
 Set the repository **Website** (GitHub → Settings → About) to the API docs URL above so it appears in the sidebar.
 
@@ -22,7 +22,7 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 
 - ✅ Strong DataFrame/LazyFrame core for real analytics workloads
 - ✅ Stable IO surface (CSV/JSON/Parquet/IPC + scans + pushdown)
-- ✅ **71%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
+- ✅ **75%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
 - ✅ **675 / 680** tracked Python Polars methods implemented on the [full parity matrix](docs/parity/python_polars_full_matrix.md) (5 rows intentionally out of scope: `DataFrame.__setitem__` + four Series non-goals — see matrix notes)
 
 ## Implemented capabilities
@@ -70,7 +70,7 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 - Streaming collect with bounded-memory path and deterministic fallback
 - Explain and diagnostics output with stable schema for automation (`schema_version: v2`)
 - Operator-level execution report structure for telemetry integrations (duration, memory, temporal operator markers)
-- Unit/conformance tests (**71%** `pkg/` statement coverage), benchmarks, `go vet`, race tests, CI quality gates
+- Unit/conformance tests (**75%** `pkg/` statement coverage), benchmarks, `go vet`, race tests, CI quality gates
 - Compatibility governance artifacts:
   - versioning policy
   - migration notes
@@ -98,12 +98,6 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 | Ecosystem parity (all namespaces, plugins, advanced UDF patterns) | 🚧 in progress |
 
 ## Python Polars vs gopolars function matrix
-
-Canonical row-by-row coverage lives in the machine matrix:
-
-- [`docs/parity/python_polars_full_matrix.md`](docs/parity/python_polars_full_matrix.md)
-- [`docs/parity/v1_0_coverage.json`](docs/parity/v1_0_coverage.json) (generated counters)
-- Near-term focus shortlist: [`docs/parity/v0_7_top30_functions.md`](docs/parity/v0_7_top30_functions.md)
 
 **Full-matrix totals (680 tracked Python Polars methods on DataFrame, LazyFrame, Expr, Series, SQLContext):** **675 implemented**, **5** intentionally remaining (`DataFrame.__setitem__` plus four documented Series non-goals). Coverage **≈99.3%**.
 
@@ -152,14 +146,57 @@ To position `gopolars` as a practical replacement for Python Polars in most team
 - **Mid term:** improve planner/runtime adaptability for mixed temporal + join + reshape workloads.
 - **Final parity push:** close long-tail semantic differences and publish repeatable parity evidence for release readiness.
 
+## Internal storage architecture
+
+Each column is backed by a **typed `chunk.Column`** (dense typed slice + validity
+mask) rather than a boxed `[]any`. This eliminates per-element heap allocations
+on all hot paths.
+
+| dtype | backing type |
+| ----- | ------------ |
+| `Int64` | `[]int64` |
+| `Float64` | `[]float64` |
+| `Boolean` | `[]bool` |
+| `String` / `Categorical` / `Enum` | `[]string` |
+| `Datetime` | `[]time.Time` |
+| nested / other | `[]any` (slow boxed path) |
+
+### Vectorized hot paths
+
+| Operation | Typed fast path |
+| --------- | --------------- |
+| `Filter` | `evalbatch.Plan` produces a `[]bool` mask; `chunk.Column.Filter` gathers with a single typed copy — no `expr.Eval` per row |
+| `WithColumns` (arithmetic/compare/logic) | batch kernel over typed backing — no `[]any` intermediate |
+| `GroupBy` sum/mean/min/max on numeric columns | reads `[]float64` / `[]int64` directly, skipping `expr.Eval` per row |
+| `Sort` on Int64/Float64 | pre-built typed comparator reads the backing slice — no `Value(i)` boxing in the hot path |
+| `Join` key building on Int64/String | reads typed buffer; avoids `fmt.Sprintf` of `any` |
+| `ToTable` / `ToArrowRecord` | reads typed backing; does not call `s.Value(i)` for primitive dtypes |
+| Concat (lazy scan materialize) | `chunk.ConcatColumns` copies typed slices with `copy()` — no boxing |
+| Series aggregations (`Sum`/`Min`/`Max`/`Mean`/etc.) | reads `[]float64` or `[]int64` directly |
+
+Row-wise `expr.Eval` is preserved as a fallback for unsupported operations
+(reverse access, dynamic JSON, unknown ops) and emits a debug log when triggered.
+
+### Rollback
+
+Set `GOPOLARS_TYPED_STORAGE=0` to force the row-wise path everywhere. This flag
+is available for diagnosing regressions and will be removed after the typed path
+matures.
+
 ## Performance / SIMD Acceleration
 
-`gopolars` can optionally use SIMD-accelerated numeric aggregations on AMD64
-when built with Go 1.26+ and the experimental `simd` flag.
+`gopolars` can optionally use SIMD-accelerated numeric kernels on AMD64 when
+built with **Go 1.26+** and the experimental `simd` flag.
 
-Supported operations:
-- `Sum`, `Min`, `Max`, `MinMax` on `[]float64`
-- Element-wise `AddSlices`, `MulSlices`
+Supported SIMD-accelerated operations (in `pkg/simd`):
+
+- `SumFloat64`, `MinFloat64`, `MaxFloat64`, `MinMaxFloat64` on `[]float64`
+- Element-wise `AddSlicesFloat64`, `MulSlicesFloat64`
+- `CompareGTFloat64`, `CompareEQInt64` — filter mask generation
+- `AndMask` — boolean mask combination
+- `CompressIndices` — compress bool mask to `[]int` for gather
+
+**SIMD requires**: Go 1.26+, `amd64` target, `GOEXPERIMENT=simd`.
 
 Build with SIMD acceleration:
 
@@ -167,17 +204,37 @@ Build with SIMD acceleration:
 GOEXPERIMENT=simd go build ./...
 ```
 
-Build without (fully functional scalar fallback):
+Build without (fully functional scalar fallback on all platforms):
 
 ```bash
 go build ./...
 ```
 
 On non-AMD64 architectures (e.g., ARM64) or without `GOEXPERIMENT=simd`, the
-library automatically falls back to optimized scalar loops with identical
-results. No public API changes are required.
+library automatically falls back to scalar loops with **identical results**.
+Correctness never depends on SIMD being enabled — the CI pipeline runs without
+`GOEXPERIMENT=simd` by default.
 
-Micro-benchmarks and observed speedups are documented in
+### Expected performance profile
+
+| Workload | Expected speedup vs old `[]any` path |
+| -------- | ------------------------------------ |
+| `filter+sum` on 1M Float64 rows | ~3–8× (vectorized mask + typed sum) |
+| `group_by` sum/mean on 1M rows (100 groups) | ~4–6× (direct slice read, no per-row eval) |
+| `sort` on 1M Int64/Float64 rows | ~1.5–2× (typed comparator, no boxing) |
+| Arrow IPC round-trip (1M rows) | ~2–3× (no intermediate `[]any`) |
+
+Run the built-in benchmarks to measure on your hardware:
+
+```bash
+# Filter + sum on 1M rows
+go test ./bench/micro -bench=BenchmarkFilterSum -benchmem
+
+# Full cross-engine comparison vs Python Polars (requires Python + polars installed)
+go test ./bench/cross -bench=BenchmarkCross -benchmem
+```
+
+Micro-benchmark results are documented in
 [`bench/micro/simd_results.md`](bench/micro/simd_results.md).
 
 ## Testing
@@ -188,7 +245,7 @@ Statement coverage is measured over library code in `./pkg/...` using both packa
 go test ./pkg/... ./test/unit/... -coverpkg=./pkg/... -skip V06Performance
 ```
 
-Current coverage: **71%** (as of the latest local run with the command above).
+Current coverage: **75%** (as of the latest local run with the command above).
 
 Codecov tracks `./pkg/...` on CI; see [`docs/codecov.md`](docs/codecov.md) for upload details.
 

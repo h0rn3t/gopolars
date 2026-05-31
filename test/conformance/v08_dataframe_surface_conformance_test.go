@@ -3,8 +3,8 @@ package conformance
 import (
 	"testing"
 
-	"github.com/eugeneshershen/gopolars/pkg/frame"
-	"github.com/eugeneshershen/gopolars/pkg/polars"
+	"github.com/h0rn3t/gopolars/pkg/frame"
+	"github.com/h0rn3t/gopolars/pkg/polars"
 )
 
 func TestDataFrameSurfaceV08Conformance(t *testing.T) {

@@ -1,8 +1,8 @@
 package optimizer
 
 import (
-	"github.com/eugeneshershen/gopolars/pkg/expr"
-	"github.com/eugeneshershen/gopolars/pkg/plan/logical"
+	"github.com/h0rn3t/gopolars/pkg/expr"
+	"github.com/h0rn3t/gopolars/pkg/plan/logical"
 )
 
 func AdaptivePlanning(nodes []logical.Node) []logical.Node {

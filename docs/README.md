@@ -21,15 +21,18 @@ python3 -m http.server 8765
 ## Структура
 
 - `index.html` — розмітка секцій API
-- `assets/i18n.js` — рядки UI (uk / en)
-- `assets/app.js` — i18n, Prism, пошук, копіювання
+- `assets/i18n.js` + `assets/app.js` — вихідники перекладів і логіки
+- `assets/docs.js` — збірка (`cat i18n.js app.js > docs.js`), підключається в `index.html`
 - `assets/style.css` — тема та стилі токенів Prism
 
 ## Оновлення перекладів
 
 1. Додайте ключ у `assets/i18n.js` для `uk` і `en`.
-2. Повісьте `data-i18n="ключ"` на елемент у `index.html`.
-3. Для атрибутів: `data-i18n-attr="placeholder:search.placeholder"`.
+2. Перезберіть: `cat assets/i18n.js assets/app.js > assets/docs.js`
+3. Повісьте `data-i18n="ключ"` на елемент у `index.html`.
+4. Для атрибутів: `data-i18n-attr="placeholder:search.placeholder"`.
+
+Перемикання мов — посилання `?lang=en` / `?lang=uk` (повне перезавантаження сторінки, працює без JS).
 
 Приклади коду залишаються спільними; мова UI не змінює Go-фрагменти.
 

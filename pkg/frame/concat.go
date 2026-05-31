@@ -3,7 +3,8 @@ package frame
 import (
 	"fmt"
 
-	"github.com/eugeneshershen/gopolars/pkg/series"
+	"github.com/h0rn3t/gopolars/pkg/chunk"
+	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
 func ConcatVertical(base DataFrame, others ...DataFrame) (DataFrame, error) {
@@ -12,31 +13,22 @@ func ConcatVertical(base DataFrame, others ...DataFrame) (DataFrame, error) {
 		return DataFrame{}, nil
 	}
 	columns := frames[0].Columns()
-	valuesByCol := map[string][]any{}
-	for _, c := range columns {
-		valuesByCol[c] = make([]any, 0)
-	}
 	for _, f := range frames {
 		if len(f.Columns()) != len(columns) {
 			return DataFrame{}, fmt.Errorf("concat vertical schema mismatch")
 		}
-		for _, c := range columns {
-			s, ok := f.Series(c)
-			if !ok {
-				return DataFrame{}, fmt.Errorf("column %s not found", c)
-			}
-			for i := 0; i < f.Height(); i++ {
-				valuesByCol[c] = append(valuesByCol[c], s.Value(i))
-			}
-		}
 	}
 	out := make([]series.Series, 0, len(columns))
 	for _, field := range frames[0].Schema() {
-		s, err := series.New(field.Name, field.Type, valuesByCol[field.Name])
-		if err != nil {
-			return DataFrame{}, err
+		chunks := make([]*chunk.Column, len(frames))
+		for i, f := range frames {
+			s, ok := f.Series(field.Name)
+			if !ok {
+				return DataFrame{}, fmt.Errorf("column %s not found", field.Name)
+			}
+			chunks[i] = s.Column()
 		}
-		out = append(out, s)
+		out = append(out, series.FromColumn(field.Name, chunk.ConcatColumns(chunks)))
 	}
 	return New(NewInput{Series: out})
 }

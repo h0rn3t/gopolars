@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
-	iarrow "github.com/eugeneshershen/gopolars/pkg/io/arrow"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
 )
 
 type DataFrame interface {

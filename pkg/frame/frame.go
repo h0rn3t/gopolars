@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
-	"github.com/eugeneshershen/gopolars/pkg/expr"
-	"github.com/eugeneshershen/gopolars/pkg/series"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/expr"
+	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
 type DataFrame struct {
@@ -256,6 +256,11 @@ func (d DataFrame) Select(exprs ...expr.Expr) (DataFrame, error) {
 }
 
 func (d DataFrame) Filter(predicate expr.Expr) (DataFrame, error) {
+	if useTypedStorage() {
+		if df, ok, err := d.filterBatch(predicate); ok {
+			return df, err
+		}
+	}
 	mask := make([]bool, d.height)
 	if err := d.parallelForRows(func(start int, end int) error {
 		for i := start; i < end; i++ {
@@ -338,19 +343,20 @@ func (d DataFrame) Sort(input SortInput) (DataFrame, error) {
 		}
 		sortSeries = append(sortSeries, s)
 	}
+	// Pre-extract typed comparators so the sort hot path reads chunk buffers
+	// directly instead of calling s.Value(i) (boxing) per comparison.
+	comparators := buildColumnComparators(sortSeries)
 	sort.Slice(indexes, func(i, j int) bool {
-		for colIdx, s := range sortSeries {
-			li := s.Value(indexes[i])
-			rj := s.Value(indexes[j])
-			cmp := compareSortValues(li, rj, input.NullsLast)
-			if cmp == 0 {
+		for colIdx, cmp := range comparators {
+			c := cmp(indexes[i], indexes[j], input.NullsLast)
+			if c == 0 {
 				continue
 			}
 			desc := colIdx < len(input.Descending) && input.Descending[colIdx]
 			if desc {
-				return cmp > 0
+				return c > 0
 			}
-			return cmp < 0
+			return c < 0
 		}
 		return false
 	})
@@ -359,6 +365,96 @@ func (d DataFrame) Sort(input SortInput) (DataFrame, error) {
 		out = append(out, d.cols[name].Slice(indexes))
 	}
 	return New(NewInput{Series: out})
+}
+
+// columnComparatorFn compares rows i and j, returning -1, 0, or 1.
+type columnComparatorFn func(i, j int, nullsLast bool) int
+
+// buildColumnComparators returns one comparator per sort key. For Float64 and
+// Int64 columns the comparator reads the typed backing buffer directly;
+// all other dtypes fall back to s.Value(i) boxing.
+func buildColumnComparators(cols []series.Series) []columnComparatorFn {
+	out := make([]columnComparatorFn, len(cols))
+	for k, s := range cols {
+		col := s.Column()
+		if f64s, ok := col.Float64s(); ok {
+			nulls := col.Nulls()
+			f64sCopy := f64s
+			nullsCopy := nulls
+			out[k] = func(i, j int, nullsLast bool) int {
+				ni := nullsCopy != nil && nullsCopy[i]
+				nj := nullsCopy != nil && nullsCopy[j]
+				if ni || nj {
+					return compareNulls(ni, nj, nullsLast)
+				}
+				lv, rv := f64sCopy[i], f64sCopy[j]
+				// NaN always sorts last, matching compareSortValues semantics.
+				lNaN, rNaN := math.IsNaN(lv), math.IsNaN(rv)
+				if lNaN && rNaN {
+					return 0
+				}
+				if lNaN {
+					return 1
+				}
+				if rNaN {
+					return -1
+				}
+				switch {
+				case lv < rv:
+					return -1
+				case lv > rv:
+					return 1
+				default:
+					return 0
+				}
+			}
+			continue
+		}
+		if i64s, ok := col.Int64s(); ok {
+			nulls := col.Nulls()
+			i64sCopy := i64s
+			nullsCopy := nulls
+			out[k] = func(i, j int, nullsLast bool) int {
+				ni := nullsCopy != nil && nullsCopy[i]
+				nj := nullsCopy != nil && nullsCopy[j]
+				if ni || nj {
+					return compareNulls(ni, nj, nullsLast)
+				}
+				switch {
+				case i64sCopy[i] < i64sCopy[j]:
+					return -1
+				case i64sCopy[i] > i64sCopy[j]:
+					return 1
+				default:
+					return 0
+				}
+			}
+			continue
+		}
+		// Generic fallback for other dtypes.
+		sCopy := s
+		out[k] = func(i, j int, nullsLast bool) int {
+			return compareSortValues(sCopy.Value(i), sCopy.Value(j), nullsLast)
+		}
+	}
+	return out
+}
+
+// compareNulls returns the ordering when at least one side is null.
+func compareNulls(ni, nj, nullsLast bool) int {
+	if ni && nj {
+		return 0
+	}
+	if ni {
+		if nullsLast {
+			return 1
+		}
+		return -1
+	}
+	if nullsLast {
+		return -1
+	}
+	return 1
 }
 
 func (d DataFrame) Limit(n int) DataFrame {
@@ -1552,6 +1648,11 @@ func (d DataFrame) evalExprAsSeriesVectorized(e expr.Expr) (series.Series, error
 			return d.evalRolling(*e.Target(), e.Op(), e.Name())
 		case strings.HasPrefix(e.Op(), "over:"):
 			return d.evalOver(*e.Target(), strings.TrimPrefix(e.Op(), "over:"), e.Name())
+		}
+	}
+	if useTypedStorage() {
+		if s, ok := d.batchEvalColumn(e, e.Name()); ok {
+			return s, nil
 		}
 	}
 	values := make([]any, d.height)

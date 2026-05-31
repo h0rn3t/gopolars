@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/frame"
-	"github.com/eugeneshershen/gopolars/pkg/polars"
+	"github.com/h0rn3t/gopolars/pkg/frame"
+	"github.com/h0rn3t/gopolars/pkg/polars"
 )
 
 func TestNamespaceParityFixtureV05(t *testing.T) {

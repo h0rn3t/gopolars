@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/exec"
-	"github.com/eugeneshershen/gopolars/pkg/frame"
-	"github.com/eugeneshershen/gopolars/pkg/plan/logical"
+	"github.com/h0rn3t/gopolars/pkg/exec"
+	"github.com/h0rn3t/gopolars/pkg/frame"
+	"github.com/h0rn3t/gopolars/pkg/plan/logical"
 )
 
 func TestExecutionReportSchemaV2(t *testing.T) {

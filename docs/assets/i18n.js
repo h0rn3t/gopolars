@@ -27,7 +27,7 @@ window.GOPOLARS_I18N = {
     "hero.badge": "pkg/polars · v0.6+",
     "hero.title": "DataFrame API для Go",
     "hero.lead":
-      "<strong>gopolars</strong> — колонкова бібліотека з eager/lazy виконанням, SQL-планувальником та IO для CSV, JSON, Parquet і IPC. Публічний API зосередений у пакеті <code>github.com/eugeneshershen/gopolars/pkg/polars</code>.",
+      "<strong>gopolars</strong> — колонкова бібліотека з eager/lazy виконанням, SQL-планувальником та IO для CSV, JSON, Parquet і IPC. Публічний API зосередений у пакеті <code>github.com/h0rn3t/gopolars/pkg/polars</code>.",
     "hero.cta.start": "Швидкий старт",
     "hero.cta.repo": "Репозиторій",
     "hero.stat.parity": "методів Polars parity",
@@ -143,7 +143,7 @@ window.GOPOLARS_I18N = {
     "hero.badge": "pkg/polars · v0.6+",
     "hero.title": "DataFrame API for Go",
     "hero.lead":
-      "<strong>gopolars</strong> is a columnar library with eager/lazy execution, a SQL planner, and IO for CSV, JSON, Parquet, and IPC. The public API lives in <code>github.com/eugeneshershen/gopolars/pkg/polars</code>.",
+      "<strong>gopolars</strong> is a columnar library with eager/lazy execution, a SQL planner, and IO for CSV, JSON, Parquet, and IPC. The public API lives in <code>github.com/h0rn3t/gopolars/pkg/polars</code>.",
     "hero.cta.start": "Quick start",
     "hero.cta.repo": "Repository",
     "hero.stat.parity": "Polars parity methods",

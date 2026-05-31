@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	iarrow "github.com/eugeneshershen/gopolars/pkg/io/arrow"
-	"github.com/eugeneshershen/gopolars/pkg/polars"
+	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
+	"github.com/h0rn3t/gopolars/pkg/polars"
 )
 
 func TestV10WaveESeriesMathAndStatsSurface(t *testing.T) {

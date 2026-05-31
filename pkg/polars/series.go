@@ -9,11 +9,11 @@ import (
 	"sort"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
-	"github.com/eugeneshershen/gopolars/pkg/frame"
-	iarrow "github.com/eugeneshershen/gopolars/pkg/io/arrow"
-	iseries "github.com/eugeneshershen/gopolars/pkg/series"
-	"github.com/eugeneshershen/gopolars/pkg/simd"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/frame"
+	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
+	iseries "github.com/h0rn3t/gopolars/pkg/series"
+	"github.com/h0rn3t/gopolars/pkg/simd"
 )
 
 type seriesFacade struct {
@@ -2097,6 +2097,35 @@ func (s seriesFacade) unaryNumeric(op string) Series {
 }
 
 func (s seriesFacade) numericValues(skipNaN bool) []float64 {
+	col := s.value.Column()
+	// Float64 fast path: read typed backing directly, skip per-element boxing.
+	if f64s, ok := col.Float64s(); ok {
+		nulls := col.Nulls()
+		out := make([]float64, 0, len(f64s))
+		for i, v := range f64s {
+			if nulls != nil && nulls[i] {
+				continue
+			}
+			if skipNaN && math.IsNaN(v) {
+				continue
+			}
+			out = append(out, v)
+		}
+		return out
+	}
+	// Int64 fast path.
+	if i64s, ok := col.Int64s(); ok {
+		nulls := col.Nulls()
+		out := make([]float64, 0, len(i64s))
+		for i, v := range i64s {
+			if nulls != nil && nulls[i] {
+				continue
+			}
+			out = append(out, float64(v))
+		}
+		return out
+	}
+	// Slow path for other dtypes.
 	values := make([]float64, 0, s.Len())
 	for i := 0; i < s.Len(); i++ {
 		v := s.Value(i)

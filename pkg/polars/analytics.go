@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	iarrow "github.com/eugeneshershen/gopolars/pkg/io/arrow"
+	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
 )
 
 type WindowSumInput struct {

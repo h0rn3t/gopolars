@@ -2,36 +2,48 @@ package series
 
 import (
 	"fmt"
-	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/chunk"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
 )
 
+// Series is a named column. Its canonical storage is a typed *chunk.Column;
+// the legacy []any input accepted by New is converted to a typed chunk once at
+// construction time and not retained.
 type Series struct {
-	name  string
-	dtype dtypes.DataType
-	data  []any
-	nulls []bool
+	name string
+	col  *chunk.Column
 }
 
+// New builds a Series from legacy []any values, converting them to a typed
+// chunk. The []any is not kept as canonical storage.
 func New(name string, dtype dtypes.DataType, values []any) (Series, error) {
-	s := Series{
-		name:  name,
-		dtype: dtype,
-		data:  make([]any, len(values)),
-		nulls: make([]bool, len(values)),
+	col, err := chunk.FromAny(dtype, values)
+	if err != nil {
+		return Series{}, fmt.Errorf("invalid value for series %s: %w", name, err)
 	}
-	for i, v := range values {
-		if v == nil {
-			s.nulls[i] = true
-			continue
-		}
-		if err := validateType(dtype, v); err != nil {
-			return Series{}, fmt.Errorf("invalid value for series %s: %w", name, err)
-		}
-		s.data[i] = v
-	}
-	return s, nil
+	return Series{name: name, col: col}, nil
+}
+
+// FromColumn wraps an existing typed chunk as a named Series (zero-copy).
+func FromColumn(name string, col *chunk.Column) Series {
+	return Series{name: name, col: col}
+}
+
+// FromInt64 builds an Int64 series directly from a typed slice (zero-copy;
+// ownership of values/nulls transfers to the series).
+func FromInt64(name string, values []int64, nulls []bool) Series {
+	return Series{name: name, col: chunk.NewInt64(values, nulls)}
+}
+
+// FromFloat64 builds a Float64 series directly from a typed slice (zero-copy).
+func FromFloat64(name string, values []float64, nulls []bool) Series {
+	return Series{name: name, col: chunk.NewFloat64(values, nulls)}
+}
+
+// FromString builds a String series directly from a typed slice (zero-copy).
+func FromString(name string, values []string, nulls []bool) Series {
+	return Series{name: name, col: chunk.NewString(values, nulls)}
 }
 
 func (s Series) Name() string {
@@ -39,30 +51,35 @@ func (s Series) Name() string {
 }
 
 func (s Series) DataType() dtypes.DataType {
-	return s.dtype
+	if s.col == nil {
+		return ""
+	}
+	return s.col.DataType()
 }
 
 func (s Series) Len() int {
-	return len(s.data)
+	return s.col.Len()
 }
 
 func (s Series) IsNull(i int) bool {
-	return s.nulls[i]
+	return s.col.IsNull(i)
 }
 
 func (s Series) Value(i int) any {
-	if s.nulls[i] {
-		return nil
-	}
-	return s.data[i]
+	return s.col.ValueAt(i)
+}
+
+// Column returns the underlying typed chunk for internal zero-copy access.
+// It may be nil for the zero-value Series.
+func (s Series) Column() *chunk.Column {
+	return s.col
 }
 
 func (s Series) Clone() Series {
-	data := make([]any, len(s.data))
-	copy(data, s.data)
-	nulls := make([]bool, len(s.nulls))
-	copy(nulls, s.nulls)
-	return Series{name: s.name, dtype: s.dtype, data: data, nulls: nulls}
+	if s.col == nil {
+		return s
+	}
+	return Series{name: s.name, col: s.col.Clone()}
 }
 
 func (s Series) Rename(name string) Series {
@@ -72,91 +89,17 @@ func (s Series) Rename(name string) Series {
 }
 
 func (s Series) Slice(indexes []int) Series {
-	out := Series{
-		name:  s.name,
-		dtype: s.dtype,
-		data:  make([]any, 0, len(indexes)),
-		nulls: make([]bool, 0, len(indexes)),
-	}
-	for _, idx := range indexes {
-		out.data = append(out.data, s.data[idx])
-		out.nulls = append(out.nulls, s.nulls[idx])
-	}
-	return out
+	return Series{name: s.name, col: s.col.Slice(indexes)}
+}
+
+// Filter keeps rows where mask[i] is true.
+func (s Series) Filter(mask []bool) Series {
+	return Series{name: s.name, col: s.col.Filter(mask)}
 }
 
 func (s Series) Shift(periods int) Series {
 	if periods == 0 || s.Len() == 0 {
 		return s.Clone()
 	}
-	out := Series{
-		name:  s.name,
-		dtype: s.dtype,
-		data:  make([]any, s.Len()),
-		nulls: make([]bool, s.Len()),
-	}
-	for i := 0; i < s.Len(); i++ {
-		out.nulls[i] = true
-	}
-	if periods > 0 {
-		if periods < s.Len() {
-			copy(out.data[periods:], s.data[:s.Len()-periods])
-			copy(out.nulls[periods:], s.nulls[:s.Len()-periods])
-		}
-	} else {
-		absPeriods := -periods
-		if absPeriods < s.Len() {
-			copy(out.data[:s.Len()-absPeriods], s.data[absPeriods:])
-			copy(out.nulls[:s.Len()-absPeriods], s.nulls[absPeriods:])
-		}
-	}
-	return out
-}
-
-func validateType(dt dtypes.DataType, v any) error {
-	switch dt {
-	case dtypes.Int64:
-		if _, ok := v.(int64); !ok {
-			return fmt.Errorf("expected int64")
-		}
-	case dtypes.Float64:
-		if _, ok := v.(float64); !ok {
-			return fmt.Errorf("expected float64")
-		}
-	case dtypes.Decimal:
-		if _, ok := v.(dtypes.DecimalValue); ok {
-			return nil
-		}
-		if _, ok := v.(string); ok {
-			return nil
-		}
-		return fmt.Errorf("expected decimal value")
-	case dtypes.String:
-		if _, ok := v.(string); !ok {
-			return fmt.Errorf("expected string")
-		}
-	case dtypes.Categorical, dtypes.Enum:
-		if _, ok := v.(string); !ok {
-			return fmt.Errorf("expected string")
-		}
-	case dtypes.Boolean:
-		if _, ok := v.(bool); !ok {
-			return fmt.Errorf("expected bool")
-		}
-	case dtypes.Datetime:
-		if _, ok := v.(time.Time); !ok {
-			return fmt.Errorf("expected time.Time")
-		}
-	case dtypes.List:
-		if _, ok := v.([]any); !ok {
-			return fmt.Errorf("expected []any")
-		}
-	case dtypes.Struct:
-		if _, ok := v.(map[string]any); !ok {
-			return fmt.Errorf("expected map[string]any")
-		}
-	default:
-		return fmt.Errorf("unsupported data type %s", dt)
-	}
-	return nil
+	return Series{name: s.name, col: s.col.Shift(periods)}
 }

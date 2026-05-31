@@ -1,7 +1,7 @@
 package frame
 
 import (
-	"github.com/eugeneshershen/gopolars/pkg/series"
+	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
 type NewInput struct {

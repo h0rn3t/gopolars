@@ -5,9 +5,9 @@ import (
 	"math"
 	"strings"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
-	"github.com/eugeneshershen/gopolars/pkg/expr"
-	"github.com/eugeneshershen/gopolars/pkg/series"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/expr"
+	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
 type GroupBy struct {
@@ -128,6 +128,50 @@ func (g GroupBy) sum(target expr.Expr, idxs []int) (any, error) {
 }
 
 func (g GroupBy) sumAndCount(target expr.Expr, idxs []int) (any, int, error) {
+	// Fast path: simple column reference — read typed chunk directly.
+	if target.Kind() == expr.KindCol {
+		s, ok := g.df.cols[target.ColName()]
+		if ok {
+			col := s.Column()
+			if f64s, ok2 := col.Float64s(); ok2 {
+				nulls := col.Nulls()
+				var sum float64
+				count := 0
+				for _, idx := range idxs {
+					if nulls != nil && nulls[idx] {
+						continue
+					}
+					v := f64s[idx]
+					if math.IsNaN(v) {
+						continue
+					}
+					sum += v
+					count++
+				}
+				if count == 0 {
+					return nil, 0, nil
+				}
+				return sum, count, nil
+			}
+			if i64s, ok2 := col.Int64s(); ok2 {
+				nulls := col.Nulls()
+				var sum int64
+				count := 0
+				for _, idx := range idxs {
+					if nulls != nil && nulls[idx] {
+						continue
+					}
+					sum += i64s[idx]
+					count++
+				}
+				if count == 0 {
+					return nil, 0, nil
+				}
+				return sum, count, nil
+			}
+		}
+	}
+	// Slow path: row-wise expression eval.
 	var intSum int64
 	var floatSum float64
 	isFloat := false
@@ -169,6 +213,55 @@ func (g GroupBy) extreme(aggExpr expr.Expr, idxs []int, isMin bool) (any, error)
 	if target == nil {
 		return nil, fmt.Errorf("aggregate target is nil")
 	}
+	// Fast path: simple column reference on typed float64/int64 chunk.
+	if target.Kind() == expr.KindCol {
+		s, ok := g.df.cols[target.ColName()]
+		if ok {
+			col := s.Column()
+			if f64s, ok2 := col.Float64s(); ok2 {
+				nulls := col.Nulls()
+				hasBest := false
+				var best float64
+				for _, idx := range idxs {
+					if nulls != nil && nulls[idx] {
+						continue
+					}
+					v := f64s[idx]
+					if math.IsNaN(v) {
+						continue
+					}
+					if !hasBest || (isMin && v < best) || (!isMin && v > best) {
+						best = v
+						hasBest = true
+					}
+				}
+				if !hasBest {
+					return nil, nil
+				}
+				return best, nil
+			}
+			if i64s, ok2 := col.Int64s(); ok2 {
+				nulls := col.Nulls()
+				hasBest := false
+				var best int64
+				for _, idx := range idxs {
+					if nulls != nil && nulls[idx] {
+						continue
+					}
+					v := i64s[idx]
+					if !hasBest || (isMin && v < best) || (!isMin && v > best) {
+						best = v
+						hasBest = true
+					}
+				}
+				if !hasBest {
+					return nil, nil
+				}
+				return best, nil
+			}
+		}
+	}
+	// Slow path: row-wise eval.
 	var best any
 	hasBest := false
 	for _, idx := range idxs {

@@ -5,9 +5,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/frame"
-	"github.com/eugeneshershen/gopolars/pkg/plan/logical"
-	"github.com/eugeneshershen/gopolars/pkg/plan/optimizer"
+	"github.com/h0rn3t/gopolars/pkg/frame"
+	"github.com/h0rn3t/gopolars/pkg/plan/logical"
+	"github.com/h0rn3t/gopolars/pkg/plan/optimizer"
 )
 
 type ExecutionReport struct {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
 )
 
 // SeriesStrNS — простір імен string для Series (аналог Python Series.str.*).

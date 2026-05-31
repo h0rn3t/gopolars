@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
-	"github.com/eugeneshershen/gopolars/pkg/frame"
-	"github.com/eugeneshershen/gopolars/pkg/plan/logical"
-	"github.com/eugeneshershen/gopolars/pkg/plan/optimizer"
-	"github.com/eugeneshershen/gopolars/pkg/plan/physical"
-	"github.com/eugeneshershen/gopolars/pkg/series"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/frame"
+	"github.com/h0rn3t/gopolars/pkg/plan/logical"
+	"github.com/h0rn3t/gopolars/pkg/plan/optimizer"
+	"github.com/h0rn3t/gopolars/pkg/plan/physical"
+	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
 type Engine struct{}
@@ -537,30 +537,9 @@ func concatFrames(parts []frame.DataFrame) (frame.DataFrame, error) {
 	if len(parts) == 1 {
 		return parts[0], nil
 	}
-	columns := parts[0].Columns()
-	resultCols := make([]series.Series, 0, len(columns))
-	for _, name := range columns {
-		values := make([]any, 0)
-		var dtype dtypes.DataType
-		for i, p := range parts {
-			s, ok := p.Series(name)
-			if !ok {
-				return frame.DataFrame{}, fmt.Errorf("column %s not found in part", name)
-			}
-			if i == 0 {
-				dtype = s.DataType()
-			}
-			for row := 0; row < p.Height(); row++ {
-				values = append(values, s.Value(row))
-			}
-		}
-		col, err := series.New(name, dtype, values)
-		if err != nil {
-			return frame.DataFrame{}, err
-		}
-		resultCols = append(resultCols, col)
-	}
-	return frame.New(frame.NewInput{Series: resultCols})
+	// Use chunk-level concat to avoid per-element []any boxing.
+	others := parts[1:]
+	return frame.ConcatVertical(parts[0], others...)
 }
 
 func extractGlobalLimit(nodes []logical.Node) ([]logical.Node, int) {

@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/eugeneshershen/gopolars/pkg/exec"
-	"github.com/eugeneshershen/gopolars/pkg/frame"
-	icsv "github.com/eugeneshershen/gopolars/pkg/io/csv"
-	iipc "github.com/eugeneshershen/gopolars/pkg/io/ipc"
-	ijson "github.com/eugeneshershen/gopolars/pkg/io/json"
-	"github.com/eugeneshershen/gopolars/pkg/plan/logical"
+	"github.com/h0rn3t/gopolars/pkg/exec"
+	"github.com/h0rn3t/gopolars/pkg/frame"
+	icsv "github.com/h0rn3t/gopolars/pkg/io/csv"
+	iipc "github.com/h0rn3t/gopolars/pkg/io/ipc"
+	ijson "github.com/h0rn3t/gopolars/pkg/io/json"
+	"github.com/h0rn3t/gopolars/pkg/plan/logical"
 )
 
 type IO interface {

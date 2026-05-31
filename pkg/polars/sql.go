@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/eugeneshershen/gopolars/pkg/exec"
-	"github.com/eugeneshershen/gopolars/pkg/frame"
-	gsql "github.com/eugeneshershen/gopolars/pkg/sql"
+	"github.com/h0rn3t/gopolars/pkg/exec"
+	"github.com/h0rn3t/gopolars/pkg/frame"
+	gsql "github.com/h0rn3t/gopolars/pkg/sql"
 )
 
 type ParseSQLInput struct {

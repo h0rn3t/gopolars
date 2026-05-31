@@ -1,8 +1,8 @@
 package polars
 
 import (
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
-	e "github.com/eugeneshershen/gopolars/pkg/expr"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	e "github.com/h0rn3t/gopolars/pkg/expr"
 )
 
 type Expr = e.Expr

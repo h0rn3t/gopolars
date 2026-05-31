@@ -1,6 +1,6 @@
 package polars
 
-import "github.com/eugeneshershen/gopolars/pkg/dtypes"
+import "github.com/h0rn3t/gopolars/pkg/dtypes"
 
 type JoinType string
 

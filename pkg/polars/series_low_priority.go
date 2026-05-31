@@ -6,8 +6,8 @@ import (
 	"math/bits"
 	"sort"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
-	iseries "github.com/eugeneshershen/gopolars/pkg/series"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	iseries "github.com/h0rn3t/gopolars/pkg/series"
 )
 
 func (s seriesFacade) Count() int {

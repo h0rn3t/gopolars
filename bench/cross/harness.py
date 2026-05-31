@@ -16,7 +16,17 @@ _OPS = {
     "minmax": lambda a, b: (a.min(), a.max()),
     "add": lambda a, b: a + b,
     "mul": lambda a, b: a * b,
+    # Full DataFrame filter+sum: filters rows where col("a") > 50, sums result.
+    # The "b" argument is unused; the harness passes a DataFrame-aware lambda.
+    "filter_sum": lambda a, b: _filter_sum_op(a),
 }
+
+
+def _filter_sum_op(series_a):
+    """Reconstruct a one-column DataFrame from the Series, filter, then sum."""
+    import polars as pl
+    df = pl.DataFrame({"a": series_a})
+    return df.filter(pl.col("a") > 50)["a"].sum()
 
 
 def main():

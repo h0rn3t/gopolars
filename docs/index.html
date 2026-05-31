@@ -12,7 +12,6 @@
   <link rel="stylesheet" href="assets/style.css" />
   <link rel="alternate" hreflang="uk" href="index.html?lang=uk" />
   <link rel="alternate" hreflang="en" href="index.html?lang=en" />
-  <script src="assets/i18n.js"></script>
   <script>
     (function () {
       function pickLang() {
@@ -46,8 +45,8 @@
 
       <div class="lang-switch" role="group" aria-label="Language">
         <span class="lang-switch-label" data-i18n="lang.label">Мова</span>
-        <a href="?lang=uk" class="lang-btn lang-link active" data-lang="uk" aria-pressed="true">УК</a>
-        <a href="?lang=en" class="lang-btn lang-link" data-lang="en" aria-pressed="false">EN</a>
+        <a href="?lang=uk" class="lang-btn active" data-lang="uk" aria-pressed="true">УК</a>
+        <a href="?lang=en" class="lang-btn" data-lang="en" aria-pressed="false">EN</a>
       </div>
 
       <input type="search" id="api-search" class="search-box" data-i18n-attr="placeholder:search.placeholder" placeholder="Пошук методів…" aria-label="API search" />
@@ -82,24 +81,27 @@
       </nav>
       <div class="sidebar-footer">
         <p class="lang-footer-links">
-          <a href="uk.html" class="lang-link" data-lang="uk">UA</a>
+          <a href="?lang=uk" class="lang-link" data-lang="uk">UA</a>
           <span aria-hidden="true">·</span>
-          <a href="en.html" class="lang-link" data-lang="en">EN</a>
+          <a href="?lang=en" class="lang-link" data-lang="en">EN</a>
         </p>
         <a href="https://github.com/h0rn3t/gopolars">GitHub</a>
-        <a href="https://pkg.go.dev/github.com/eugeneshershen/gopolars/pkg/polars">pkg.go.dev</a>
+        <a href="https://pkg.go.dev/github.com/h0rn3t/gopolars/pkg/polars">pkg.go.dev</a>
         <a href="https://github.com/h0rn3t/gopolars/blob/main/README.md">README</a>
       </div>
     </aside>
 
     <main>
       <header class="hero" id="overview">
-        <div class="hero-badge" data-i18n="hero.badge">pkg/polars · v0.6+</div>
+        <div class="hero-badges">
+          <div class="hero-badge" data-i18n="hero.badge">pkg/polars · v0.6+</div>
+          <div id="docs-lang-pill" class="hero-lang-pill" hidden>—</div>
+        </div>
         <h2 data-i18n="hero.title">DataFrame API для Go</h2>
         <p data-i18n="hero.lead">
           <strong>gopolars</strong> — колонкова бібліотека з eager/lazy виконанням, SQL-планувальником
           та IO для CSV, JSON, Parquet і IPC. Публічний API зосередений у пакеті
-          <code>github.com/eugeneshershen/gopolars/pkg/polars</code>.
+          <code>github.com/h0rn3t/gopolars/pkg/polars</code>.
         </p>
         <div class="hero-actions">
           <a class="btn btn-primary" href="#quickstart" data-i18n="hero.cta.start">Швидкий старт</a>
@@ -124,7 +126,7 @@
       <section id="install">
         <h3 data-i18n="install.title">Встановлення</h3>
         <p class="lead" data-i18n="install.lead">Потрібен Go 1.26+. Опційне SIMD-прискорення — через <code>GOEXPERIMENT=simd</code> на AMD64.</p>
-        <pre class="code-block"><code class="language-bash">go get github.com/eugeneshershen/gopolars/pkg/polars</code></pre>
+        <pre class="code-block"><code class="language-bash">go get github.com/h0rn3t/gopolars/pkg/polars</code></pre>
         <div class="callout" data-i18n="install.callout">
           <strong>Імпорт:</strong> у коді використовуйте аліас <code>polars</code> для зручності —
           як у прикладах Polars Python.
@@ -139,7 +141,7 @@
 import (
     "context"
 
-    "github.com/eugeneshershen/gopolars/pkg/polars"
+    "github.com/h0rn3t/gopolars/pkg/polars"
 )
 
 func main() {
@@ -211,7 +213,7 @@ func main() {
           <code>WriteCSV</code><code>WriteJSON</code><code>WriteParquet</code>
           <code>WriteIPC</code><code>ToArrow</code><code>Lazy</code>
         </div>
-        <pre class="code-block"><code class="language-go">import "github.com/eugeneshershen/gopolars/pkg/frame"
+        <pre class="code-block"><code class="language-go">import "github.com/h0rn3t/gopolars/pkg/frame"
 
 df, _ := polars.NewDataFrame(polars.NewDataFrameInput{
     Columns: []frame.SeriesInput{
@@ -481,8 +483,8 @@ out, _ := lf.Collect(context.Background())</code></pre>
       </section>
     </main>
   </div>
-  <!-- app.js перед Prism: якщо підсвітка недоступна, i18n все одно працює -->
-  <script src="assets/app.js"></script>
+  <!-- docs.js = i18n + app; завантажується до Prism -->
+  <script src="assets/docs.js"></script>
   <script src="assets/prism.min.js"></script>
   <script src="assets/prism-go.min.js"></script>
   <script src="assets/prism-bash.min.js"></script>

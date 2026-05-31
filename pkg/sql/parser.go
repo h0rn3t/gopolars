@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eugeneshershen/gopolars/pkg/expr"
+	"github.com/h0rn3t/gopolars/pkg/expr"
 )
 
 type ParsedQuery struct {

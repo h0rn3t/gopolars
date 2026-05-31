@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
 )
 
 type Kind string

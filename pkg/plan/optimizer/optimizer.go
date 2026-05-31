@@ -1,6 +1,6 @@
 package optimizer
 
-import "github.com/eugeneshershen/gopolars/pkg/plan/logical"
+import "github.com/h0rn3t/gopolars/pkg/plan/logical"
 
 func Optimize(nodes []logical.Node) []logical.Node {
 	current := make([]logical.Node, len(nodes))

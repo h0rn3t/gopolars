@@ -3,7 +3,7 @@ package polars
 import (
 	"fmt"
 
-	iarrow "github.com/eugeneshershen/gopolars/pkg/io/arrow"
+	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
 )
 
 // ErrPySetItemNotSupported відповідає відсутності Python __setitem__ у статичному Go API.

@@ -5,8 +5,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
-	"github.com/eugeneshershen/gopolars/pkg/series"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
 func join(left DataFrame, input JoinInput) (DataFrame, error) {
@@ -302,6 +302,24 @@ func makeJoinKey(df DataFrame, keys []string, row int) (string, error) {
 		s, ok := df.cols[k]
 		if !ok {
 			return "", fmt.Errorf("join key %s not found", k)
+		}
+		col := s.Column()
+		// Read typed buffers directly to avoid per-element interface boxing.
+		if col.IsNull(row) {
+			out += "|<null>"
+			continue
+		}
+		if i64s, ok2 := col.Int64s(); ok2 {
+			out += fmt.Sprintf("|%d", i64s[row])
+			continue
+		}
+		if strs, ok2 := col.Strings(); ok2 {
+			out += "|" + strs[row]
+			continue
+		}
+		if f64s, ok2 := col.Float64s(); ok2 {
+			out += fmt.Sprintf("|%g", f64s[row])
+			continue
 		}
 		out += fmt.Sprintf("|%v", s.Value(row))
 	}

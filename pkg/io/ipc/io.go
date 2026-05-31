@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/frame"
-	iarrow "github.com/eugeneshershen/gopolars/pkg/io/arrow"
+	"github.com/h0rn3t/gopolars/pkg/frame"
+	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
 )
 
 type WriteInput struct {

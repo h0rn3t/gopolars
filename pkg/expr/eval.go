@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
 )
 
 type RowValueGetter interface {

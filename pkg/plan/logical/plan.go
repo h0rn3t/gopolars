@@ -1,8 +1,8 @@
 package logical
 
 import (
-	"github.com/eugeneshershen/gopolars/pkg/expr"
-	"github.com/eugeneshershen/gopolars/pkg/frame"
+	"github.com/h0rn3t/gopolars/pkg/expr"
+	"github.com/h0rn3t/gopolars/pkg/frame"
 )
 
 type NodeType string

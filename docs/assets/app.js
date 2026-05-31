@@ -68,12 +68,17 @@
     document.documentElement.dataset.docsLang = lang;
 
     document.querySelectorAll("[data-i18n]").forEach((el) => {
-      if (el.closest(".lang-switch")) return;
       const key = el.getAttribute("data-i18n");
       const value = pack[key];
       if (value == null) return;
       el.innerHTML = value;
     });
+
+    const pill = document.getElementById("docs-lang-pill");
+    if (pill) {
+      pill.textContent = lang === "en" ? "English" : "Українська";
+      pill.hidden = false;
+    }
 
     document.querySelectorAll("[data-i18n-attr]").forEach((el) => {
       const spec = el.getAttribute("data-i18n-attr");
@@ -104,7 +109,10 @@
     });
 
     writeStoredLang(lang);
-    syncURL(lang);
+
+    if (langFromURL() !== lang) {
+      syncURL(lang);
+    }
   }
 
   function highlightCode() {
@@ -140,27 +148,27 @@
     });
   }
 
-  function bindLangControl(el) {
-    const lang = el.getAttribute("data-lang");
-    if (!lang) return;
-
-    if (el.tagName === "A") {
-      el.addEventListener("click", (e) => {
-        if (!i18nReady()) return;
-        e.preventDefault();
-        applyLanguage(lang);
-      });
-      return;
+  function langHref(lang) {
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set("lang", lang);
+      return u.pathname + u.search + u.hash;
+    } catch {
+      return `?lang=${lang}`;
     }
-
-    el.addEventListener("click", () => {
-      if (!i18nReady()) return;
-      applyLanguage(lang);
-    });
   }
 
   function setupLanguageSwitch() {
-    document.querySelectorAll(".lang-btn, .lang-link[data-lang]").forEach(bindLangControl);
+    const current = getLang();
+    document.querySelectorAll(".lang-btn[data-lang], .lang-footer-links .lang-link[data-lang]").forEach((el) => {
+      const lang = el.getAttribute("data-lang");
+      if (lang) el.href = langHref(lang);
+      const active = lang === current;
+      el.classList.toggle("active", active);
+      if (el.classList.contains("lang-btn")) {
+        el.setAttribute("aria-pressed", active ? "true" : "false");
+      }
+    });
   }
 
   function setupNavHighlight() {

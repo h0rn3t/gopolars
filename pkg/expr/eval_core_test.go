@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eugeneshershen/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
 )
 
 type mapRow map[string]any
@@ -40,6 +40,43 @@ func TestEvalCastAndComparisons(t *testing.T) {
 	mul, err := Eval(Col("score").Mul(Lit(float64(2))), row)
 	if err != nil || mul != float64(5) {
 		t.Fatalf("mul: %v err=%v", mul, err)
+	}
+
+	ge, err := Eval(Col("score").Ge(Lit(float64(2))), row)
+	if err != nil || ge != true {
+		t.Fatalf("float ge: %v err=%v", ge, err)
+	}
+
+	asStr, err := Eval(Col("id").Cast(dtypes.String), row)
+	if err != nil || asStr != "2" {
+		t.Fatalf("cast to string: %v err=%v", asStr, err)
+	}
+
+	toInt, err := Eval(Col("score").Cast(dtypes.Int64), row)
+	if err != nil || toInt != int64(2) {
+		t.Fatalf("cast float to int64: %v err=%v", toInt, err)
+	}
+}
+
+func TestEvalBooleanAndDatetimeCast(t *testing.T) {
+	t.Parallel()
+
+	ts := time.Date(2026, 5, 31, 8, 0, 0, 0, time.UTC)
+	row := mapRow{"flag": true, "ts": ts}
+
+	asBool, err := Eval(Col("flag").Cast(dtypes.Boolean), row)
+	if err != nil || asBool != true {
+		t.Fatalf("cast bool: %v err=%v", asBool, err)
+	}
+
+	_, err = Eval(Lit("x").Cast(dtypes.Datetime), row)
+	if err == nil {
+		t.Fatal("очікували помилку cast до datetime")
+	}
+
+	le, err := Eval(Col("ts").Le(Lit(ts.Add(time.Hour))), row)
+	if err != nil || le != true {
+		t.Fatalf("datetime le: %v err=%v", le, err)
 	}
 }
 
