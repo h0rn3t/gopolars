@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Довідка з публічного API gopolars — високопродуктивна DataFrame-бібліотека для Go, натхненна Polars." />
+  <title>gopolars — API Reference</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">
+        <div class="logo-mark">gp</div>
+        <div>
+          <h1>gopolars</h1>
+          <span>API Reference</span>
+        </div>
+      </div>
+      <input type="search" id="api-search" class="search-box" placeholder="Пошук методів…" aria-label="Пошук по API" />
+      <nav>
+        <div class="nav-group">
+          <div class="nav-group-title">Початок</div>
+          <a href="#overview">Огляд</a>
+          <a href="#install">Встановлення</a>
+          <a href="#quickstart">Швидкий старт</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-title">Типи</div>
+          <a href="#dataframe">DataFrame</a>
+          <a href="#lazyframe">LazyFrame</a>
+          <a href="#series">Series</a>
+          <a href="#expr">Expr</a>
+          <a href="#groupby">GroupBy</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-title">Інтеграції</div>
+          <a href="#io">IO</a>
+          <a href="#sql">SQL</a>
+          <a href="#joins">Joins</a>
+          <a href="#dtypes">Типи даних</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-title">Інше</div>
+          <a href="#parity">Parity</a>
+          <a href="#simd">SIMD</a>
+        </div>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="https://github.com/h0rn3t/gopolars">GitHub</a>
+        <a href="https://pkg.go.dev/github.com/eugeneshershen/gopolars/pkg/polars">pkg.go.dev</a>
+        <a href="https://github.com/h0rn3t/gopolars/blob/main/README.md">README</a>
+      </div>
+    </aside>
+
+    <main>
+      <header class="hero" id="overview">
+        <div class="hero-badge">pkg/polars · v0.6+</div>
+        <h2>DataFrame API для Go</h2>
+        <p>
+          <strong>gopolars</strong> — колонкова бібліотека з eager/lazy виконанням, SQL-планувальником
+          та IO для CSV, JSON, Parquet і IPC. Публічний API зосередений у пакеті
+          <code>github.com/eugeneshershen/gopolars/pkg/polars</code>.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#quickstart">Швидкий старт</a>
+          <a class="btn btn-ghost" href="https://github.com/h0rn3t/gopolars">Репозиторій</a>
+        </div>
+        <div class="card-grid">
+          <div class="stat-card">
+            <strong>675/680</strong>
+            <span>методів Polars parity</span>
+          </div>
+          <div class="stat-card">
+            <strong>71%</strong>
+            <span>покриття тестами pkg/</span>
+          </div>
+          <div class="stat-card">
+            <strong>5</strong>
+            <span>основних інтерфейсів API</span>
+          </div>
+        </div>
+      </header>
+
+      <section id="install">
+        <h3>Встановлення</h3>
+        <p class="lead">Потрібен Go 1.26+. Опційне SIMD-прискорення — через <code>GOEXPERIMENT=simd</code> на AMD64.</p>
+        <pre><code>go get github.com/eugeneshershen/gopolars/pkg/polars</code></pre>
+        <div class="callout">
+          <strong>Імпорт:</strong> у коді використовуйте аліас <code>polars</code> для зручності —
+          як у прикладах Polars Python.
+        </div>
+      </section>
+
+      <section id="quickstart">
+        <h3>Швидкий старт</h3>
+        <p class="lead">Типовий lazy-пайплайн: scan → filter → group → collect.</p>
+        <pre><code>package main
+
+import (
+    "context"
+
+    "github.com/eugeneshershen/gopolars/pkg/polars"
+)
+
+func main() {
+    io := polars.NewIO()
+    df, err := io.ReadCSV(polars.ReadCSVInput{
+        Path:      "data.csv",
+        HasHeader: true,
+        Separator: ',',
+    })
+    if err != nil {
+        panic(err)
+    }
+
+    out, err := df.
+        Lazy().
+        Filter(polars.Col("value").Gt(polars.Lit(int64(10)))).
+        GroupBy("city").
+        Agg(polars.Sum(polars.Col("value"))).
+        Collect(context.Background())
+    if err != nil {
+        panic(err)
+    }
+    _ = out
+}</code></pre>
+      </section>
+
+      <section id="dataframe">
+        <h3>DataFrame</h3>
+        <p class="lead">Eager-таблиця. Створення через <code>NewDataFrame</code>, Arrow або IO.</p>
+        <table class="api-table">
+          <thead>
+            <tr><th>Конструктор / фабрика</th><th>Опис</th></tr>
+          </thead>
+          <tbody>
+            <tr data-search="NewDataFrame NewDataFrameFromArrow">
+              <td><code>NewDataFrame(input)</code></td>
+              <td>З колонок <code>[]frame.SeriesInput</code></td>
+            </tr>
+            <tr data-search="NewDataFrameFromArrow">
+              <td><code>NewDataFrameFromArrow(table)</code></td>
+              <td>Імпорт з Arrow Table</td>
+            </tr>
+            <tr data-search="NewIO ReadCSV ReadParquet">
+              <td><code>NewIO().ReadCSV / ReadParquet / …</code></td>
+              <td>Завантаження з файлів</td>
+            </tr>
+          </tbody>
+        </table>
+        <p><strong>Трансформації</strong></p>
+        <div class="method-list">
+          <code>Select</code><code>Filter</code><code>WithColumns</code><code>Sort</code>
+          <code>GroupBy</code><code>Join</code><code>JoinAsof</code><code>Limit</code>
+          <code>Slice</code><code>Head</code><code>Tail</code><code>Unique</code>
+          <code>Drop</code><code>Rename</code><code>Cast</code><code>FillNull</code>
+          <code>DropNulls</code><code>Explode</code><code>Melt</code><code>Pivot</code>
+          <code>GroupByDynamic</code><code>RollingMean</code>
+        </div>
+        <p><strong>Агрегації та опис</strong></p>
+        <div class="method-list">
+          <code>Sum</code><code>Mean</code><code>Min</code><code>Max</code><code>Std</code>
+          <code>Var</code><code>Median</code><code>Quantile</code><code>Describe</code>
+          <code>NullCount</code><code>NUnique</code>
+        </div>
+        <p><strong>Експорт</strong></p>
+        <div class="method-list">
+          <code>WriteCSV</code><code>WriteJSON</code><code>WriteParquet</code>
+          <code>WriteIPC</code><code>ToArrow</code><code>Lazy</code>
+        </div>
+        <pre><code>import "github.com/eugeneshershen/gopolars/pkg/frame"
+
+df, _ := polars.NewDataFrame(polars.NewDataFrameInput{
+    Columns: []frame.SeriesInput{
+        {Name: "id", Values: []any{1, 2, 3}},
+        {Name: "name", Values: []any{"a", "b", "c"}},
+    },
+})
+
+filtered, _ := df.Filter(polars.Col("id").Gt(polars.Lit(1)))
+sorted, _ := filtered.Sort(polars.SortInput{
+    By: "id", Descending: false,
+})</code></pre>
+      </section>
+
+      <section id="lazyframe">
+        <h3>LazyFrame</h3>
+        <p class="lead">Відкладене виконання з pushdown на scan. Завершення — <code>Collect</code> або streaming.</p>
+        <table class="api-table">
+          <thead>
+            <tr><th>Метод</th><th>Призначення</th></tr>
+          </thead>
+          <tbody>
+            <tr data-search="Collect CollectStreaming">
+              <td><code>Collect(ctx)</code></td>
+              <td>Materialize у DataFrame</td>
+            </tr>
+            <tr data-search="CollectStreaming">
+              <td><code>CollectStreaming(ctx, chunkSize)</code></td>
+              <td>Streaming collect з обмеженою пам'яттю</td>
+            </tr>
+            <tr data-search="Explain ExplainDiagnostics">
+              <td><code>Explain(optimized)</code></td>
+              <td>План виконання для діагностики</td>
+            </tr>
+            <tr data-search="ScanCSV ScanParquet pushdown">
+              <td><code>NewIO().ScanCSV / ScanParquet / …</code></td>
+              <td>Lazy scan + projection/predicate pushdown</td>
+            </tr>
+            <tr data-search="SinkCSV SinkParquet">
+              <td><code>SinkCSV / SinkParquet / SinkIPC</code></td>
+              <td>Запис без повного materialize в пам'яті</td>
+            </tr>
+          </tbody>
+        </table>
+        <pre><code>lf, _ := polars.NewIO().ScanParquet(polars.ScanParquetInput{
+    Path: "dataset/**/*.parquet",
+})
+
+out, _ := lf.
+    Filter(polars.Col("year").Ge(polars.Lit(2020))).
+    Select(polars.Col("region"), polars.Sum(polars.Col("amount"))).
+    Collect(context.Background())
+
+fmt.Println(lf.Explain(true))</code></pre>
+      </section>
+
+      <section id="series">
+        <h3>Series</h3>
+        <p class="lead">Колонка з null-aware арифметикою, rolling-операціями та namespaces.</p>
+        <table class="api-table">
+          <thead>
+            <tr><th>API</th><th>Опис</th></tr>
+          </thead>
+          <tbody>
+            <tr data-search="NewSeries">
+              <td><code>NewSeries(input)</code></td>
+              <td>Створення серії з типом і значеннями</td>
+            </tr>
+            <tr data-search="Str Dt Arr Struct">
+              <td><code>Str() / Dt() / Arr() / Struct()</code></td>
+              <td>String, datetime, list, struct namespaces</td>
+            </tr>
+            <tr data-search="RollingMean RollingSum">
+              <td><code>RollingMean / RollingSum / …</code></td>
+              <td>Віконні агрегації</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="method-list">
+          <code>FillNull</code><code>Filter</code><code>Sort</code><code>Unique</code>
+          <code>Sum</code><code>Mean</code><code>ValueCounts</code><code>Cast</code>
+          <code>Add</code><code>Sub</code><code>Mul</code><code>Eq</code><code>Gt</code>
+        </div>
+      </section>
+
+      <section id="expr">
+        <h3>Expr</h3>
+        <p class="lead">Вирази для <code>Select</code>, <code>Filter</code>, <code>WithColumns</code>, <code>Agg</code>.</p>
+        <table class="api-table">
+          <thead>
+            <tr><th>Функція</th><th>Приклад</th></tr>
+          </thead>
+          <tbody>
+            <tr data-search="Col Lit">
+              <td><code>Col(name)</code>, <code>Lit(v)</code></td>
+              <td>Колонка та літерал</td>
+            </tr>
+            <tr data-search="Sum Min Max Mean Count">
+              <td><code>Sum</code>, <code>Min</code>, <code>Max</code>, <code>Mean</code>, <code>Count</code></td>
+              <td>Агрегації в GroupBy</td>
+            </tr>
+            <tr data-search="When">
+              <td><code>When(cond, then, otherwise)</code></td>
+              <td>Умовні вирази</td>
+            </tr>
+            <tr data-search="list_len str_lower dt_year">
+              <td>Namespaces на Expr</td>
+              <td><code>list_len</code>, <code>str_lower</code>, <code>dt_year</code>, <code>explode</code>, …</td>
+            </tr>
+          </tbody>
+        </table>
+        <pre><code>polars.Col("amount").
+    Mul(polars.Lit(1.1)).
+    Alias("amount_with_tax")
+
+polars.When(
+    polars.Col("status").Eq(polars.Lit("ok")),
+    polars.Lit(1),
+    polars.Lit(0),
+)</code></pre>
+      </section>
+
+      <section id="groupby">
+        <h3>GroupBy</h3>
+        <p class="lead"><code>df.GroupBy(keys...).Agg(exprs...)</code> — eager; lazy через <code>LazyFrame.GroupBy</code>.</p>
+        <pre><code>result, _ := df.
+    GroupBy("region", "year").
+    Agg(
+        polars.Sum(polars.Col("sales")),
+        polars.Mean(polars.Col("margin")),
+    )</code></pre>
+      </section>
+
+      <section id="io">
+        <h3>IO</h3>
+        <p class="lead">Фасад <code>NewIO()</code> — читання, scan і SQL на джерелах.</p>
+        <table class="api-table">
+          <thead>
+            <tr><th>Eager read</th><th>Lazy scan</th></tr>
+          </thead>
+          <tbody>
+            <tr data-search="ReadCSV ScanCSV">
+              <td><code>ReadCSV</code></td><td><code>ScanCSV</code></td>
+            </tr>
+            <tr data-search="ReadJSON ScanJSON">
+              <td><code>ReadJSON</code></td><td><code>ScanJSON</code></td>
+            </tr>
+            <tr data-search="ReadParquet ScanParquet partition">
+              <td><code>ReadParquet</code></td><td><code>ScanParquet</code> (partition datasets)</td>
+            </tr>
+            <tr data-search="ReadIPC ScanIPC">
+              <td><code>ReadIPC</code></td><td><code>ScanIPC</code></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="callout">
+          <strong>Object store:</strong> URI <code>s3://</code>, <code>gcs://</code>, <code>az://</code> через
+          env-профіль кореневих шляхів (див. тести <code>object_store</code> у репозиторії).
+        </div>
+      </section>
+
+      <section id="sql">
+        <h3>SQL</h3>
+        <p class="lead"><code>NewSQLContext()</code> — реєстрація таблиць і виконання SELECT з CTE, вікнами, set-ops.</p>
+        <pre><code>ctx := polars.NewSQLContext()
+_ = ctx.Register("orders", df)
+
+lf, err := ctx.Execute(context.Background(), `
+    WITH top AS (
+        SELECT region, sum(amount) AS total
+        FROM orders
+        GROUP BY region
+    )
+    SELECT * FROM top WHERE total > 1000
+`)
+out, _ := lf.Collect(context.Background())</code></pre>
+        <table class="api-table">
+          <thead><tr><th>SQLContext</th><th></th></tr></thead>
+          <tbody>
+            <tr data-search="Register RegisterMany"><td><code>Register</code> / <code>RegisterMany</code></td><td>Локальні таблиці</td></tr>
+            <tr data-search="Execute ExecuteGlobal"><td><code>Execute</code> / <code>ExecuteGlobal</code></td><td>Запит → LazyFrame</td></tr>
+            <tr data-search="Tables Unregister"><td><code>Tables</code> / <code>Unregister</code></td><td>Каталог</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="joins">
+        <h3>Joins</h3>
+        <p class="lead">Режими через <code>JoinInput.Type</code>:</p>
+        <div class="method-list">
+          <code>Inner</code><code>Left</code><code>Right</code><code>Full</code>
+          <code>Semi</code><code>Anti</code><code>Cross</code><code>Asof</code>
+        </div>
+        <pre><code>joined, _ := left.Join(polars.JoinInput{
+    Other:   right,
+    LeftOn:  []string{"user_id"},
+    RightOn: []string{"user_id"},
+    Type:    polars.JoinLeft,
+})</code></pre>
+      </section>
+
+      <section id="dtypes">
+        <h3>Типи даних</h3>
+        <p class="lead">Аліаси в <code>polars</code> з пакета <code>pkg/dtypes</code>:</p>
+        <div class="method-list">
+          <code>Int64</code><code>Float64</code><code>String</code><code>Boolean</code>
+          <code>Datetime</code><code>Decimal</code><code>Categorical</code>
+          <code>List</code><code>Struct</code>
+        </div>
+        <pre><code>casted, _ := df.Cast(map[string]dtypes.DataType{
+    "id":   polars.Int64,
+    "tags": polars.List(polars.String),
+})</code></pre>
+      </section>
+
+      <section id="parity">
+        <h3>Parity з Python Polars</h3>
+        <p class="lead">Повна матриця методів — у репозиторії; на цій сторінці — зведення.</p>
+        <table class="api-table">
+          <thead>
+            <tr><th>Об'єкт</th><th>Реалізовано</th><th>Статус</th></tr>
+          </thead>
+          <tbody>
+            <tr data-search="DataFrame"><td>DataFrame</td><td>140 / 141</td><td><span class="tag tag-ready">ready</span></td></tr>
+            <tr data-search="LazyFrame"><td>LazyFrame</td><td>89 / 89</td><td><span class="tag tag-ready">ready</span></td></tr>
+            <tr data-search="Expr"><td>Expr</td><td>217 / 217</td><td><span class="tag tag-ready">ready</span></td></tr>
+            <tr data-search="Series"><td>Series</td><td>222 / 226</td><td><span class="tag tag-progress">5 non-goals</span></td></tr>
+            <tr data-search="SQLContext"><td>SQLContext</td><td>7 / 7</td><td><span class="tag tag-ready">ready</span></td></tr>
+          </tbody>
+        </table>
+        <p>
+          Деталі:
+          <a href="https://github.com/h0rn3t/gopolars/blob/main/docs/parity/python_polars_full_matrix.md">python_polars_full_matrix.md</a>
+        </p>
+      </section>
+
+      <section id="simd">
+        <h3>SIMD (опційно)</h3>
+        <p class="lead">AMD64 + Go 1.26+ + <code>GOEXPERIMENT=simd</code> для прискорених Sum/Min/Max на float64.</p>
+        <pre><code>GOEXPERIMENT=simd go build ./...</code></pre>
+        <p>Без прапорця — автоматичний scalar fallback з тими самими результатами.</p>
+      </section>
+    </main>
+  </div>
+  <script src="assets/app.js"></script>
+</body>
+</html>

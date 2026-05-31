@@ -5,6 +5,16 @@
 
 `gopolars` is a high-performance Go DataFrame library inspired by Polars Python API.
 
+## About
+
+| | |
+| --- | --- |
+| **API docs** | [https://h0rn3t.github.io/gopolars/](https://h0rn3t.github.io/gopolars/) — interactive reference for `pkg/polars` |
+| **Module** | `github.com/eugeneshershen/gopolars/pkg/polars` |
+| **Godoc** | [pkg.go.dev/.../pkg/polars](https://pkg.go.dev/github.com/eugeneshershen/gopolars/pkg/polars) |
+
+Set the repository **Website** (GitHub → Settings → About) to the API docs URL above so it appears in the sidebar.
+
 ## Current status
 
 The project has completed parity waves through **v0.6** and now covers a broad core for Go-native analytics pipelines, including advanced joins, reshape operations, temporal windows, and performance diagnostics.\
