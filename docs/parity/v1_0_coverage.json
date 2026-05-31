@@ -1,0 +1,57 @@
+{
+  "version": "v1.0",
+  "full_matrix": {
+    "implemented_methods": 675,
+    "total_methods": 680,
+    "remaining_methods": 5,
+    "coverage": 0.9926470588235294
+  },
+  "release_scope": {
+    "implemented_methods": 675,
+    "total_methods": 675,
+    "remaining_methods": 0,
+    "coverage": 1.0
+  },
+  "objects": {
+    "DataFrame": {
+      "release_scope": {
+        "implemented_methods": 140,
+        "total_methods": 140,
+        "remaining_methods": 0,
+        "coverage": 1.0
+      }
+    },
+    "LazyFrame": {
+      "release_scope": {
+        "implemented_methods": 89,
+        "total_methods": 89,
+        "remaining_methods": 0,
+        "coverage": 1.0
+      }
+    },
+    "Expr": {
+      "release_scope": {
+        "implemented_methods": 217,
+        "total_methods": 217,
+        "remaining_methods": 0,
+        "coverage": 1.0
+      }
+    },
+    "Series": {
+      "release_scope": {
+        "implemented_methods": 222,
+        "total_methods": 222,
+        "remaining_methods": 0,
+        "coverage": 1.0
+      }
+    },
+    "SQLContext": {
+      "release_scope": {
+        "implemented_methods": 7,
+        "total_methods": 7,
+        "remaining_methods": 0,
+        "coverage": 1.0
+      }
+    }
+  }
+}
