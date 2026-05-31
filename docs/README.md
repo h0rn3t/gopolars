@@ -5,7 +5,7 @@
 | | |
 | --- | --- |
 | **Сайт** | [https://h0rn3t.github.io/gopolars/](https://h0rn3t.github.io/gopolars/) |
-| **Мови** | Українська (за замовчуванням), English — перемикач **УК / EN** у сайдбарі |
+| **Мови** | Українська (за замовчуванням), English — перемикач **УК / EN**, або [`en.html`](en.html) / [`?lang=en`](index.html?lang=en) |
 | **Підсвітка** | [Prism.js](https://prismjs.com/) — `language-go`, `language-bash` у прикладах |
 
 ## Локальний перегляд

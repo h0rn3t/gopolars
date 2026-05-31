@@ -8,8 +8,30 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" />
+  <link rel="stylesheet" href="assets/prism-tomorrow.min.css" />
   <link rel="stylesheet" href="assets/style.css" />
+  <link rel="alternate" hreflang="uk" href="index.html?lang=uk" />
+  <link rel="alternate" hreflang="en" href="index.html?lang=en" />
+  <script src="assets/i18n.js"></script>
+  <script>
+    (function () {
+      function pickLang() {
+        try {
+          var q = new URLSearchParams(location.search).get("lang");
+          if (q === "uk" || q === "en") return q;
+          var s = localStorage.getItem("gopolars-docs-lang");
+          if (s === "uk" || s === "en") return s;
+        } catch (e) {}
+        var nav = (navigator.language || "").toLowerCase();
+        if (nav.indexOf("uk") === 0) return "uk";
+        if (nav.indexOf("en") === 0) return "en";
+        return "uk";
+      }
+      var lang = pickLang();
+      document.documentElement.lang = lang;
+      document.documentElement.dataset.docsLang = lang;
+    })();
+  </script>
 </head>
 <body>
   <div class="layout">
@@ -24,8 +46,8 @@
 
       <div class="lang-switch" role="group" aria-label="Language">
         <span class="lang-switch-label" data-i18n="lang.label">Мова</span>
-        <button type="button" class="lang-btn active" data-lang="uk" aria-pressed="true">УК</button>
-        <button type="button" class="lang-btn" data-lang="en" aria-pressed="false">EN</button>
+        <a href="?lang=uk" class="lang-btn lang-link active" data-lang="uk" aria-pressed="true">УК</a>
+        <a href="?lang=en" class="lang-btn lang-link" data-lang="en" aria-pressed="false">EN</a>
       </div>
 
       <input type="search" id="api-search" class="search-box" data-i18n-attr="placeholder:search.placeholder" placeholder="Пошук методів…" aria-label="API search" />
@@ -59,6 +81,11 @@
         </div>
       </nav>
       <div class="sidebar-footer">
+        <p class="lang-footer-links">
+          <a href="uk.html" class="lang-link" data-lang="uk">UA</a>
+          <span aria-hidden="true">·</span>
+          <a href="en.html" class="lang-link" data-lang="en">EN</a>
+        </p>
         <a href="https://github.com/h0rn3t/gopolars">GitHub</a>
         <a href="https://pkg.go.dev/github.com/eugeneshershen/gopolars/pkg/polars">pkg.go.dev</a>
         <a href="https://github.com/h0rn3t/gopolars/blob/main/README.md">README</a>
@@ -454,10 +481,15 @@ out, _ := lf.Collect(context.Background())</code></pre>
       </section>
     </main>
   </div>
-  <script src="assets/i18n.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-go.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+  <!-- app.js перед Prism: якщо підсвітка недоступна, i18n все одно працює -->
   <script src="assets/app.js"></script>
+  <script src="assets/prism.min.js"></script>
+  <script src="assets/prism-go.min.js"></script>
+  <script src="assets/prism-bash.min.js"></script>
+  <script>
+    if (typeof window.gopolarsDocsHighlight === "function") {
+      window.gopolarsDocsHighlight();
+    }
+  </script>
 </body>
 </html>

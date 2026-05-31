@@ -9,7 +9,7 @@
 
 | | |
 | --- | --- |
-| **API docs** | [https://h0rn3t.github.io/gopolars/](https://h0rn3t.github.io/gopolars/) — interactive reference for `pkg/polars` (UK / EN, Go syntax highlighting) |
+| **API docs** | [UK](https://h0rn3t.github.io/gopolars/) · [EN](https://h0rn3t.github.io/gopolars/en.html) — `pkg/polars` reference (Go syntax highlighting) |
 | **Module** | `github.com/eugeneshershen/gopolars/pkg/polars` |
 | **Godoc** | [pkg.go.dev/.../pkg/polars](https://pkg.go.dev/github.com/eugeneshershen/gopolars/pkg/polars) |
 
