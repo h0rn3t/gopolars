@@ -1,0 +1,36 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/h0rn3t/gopolars/pkg/simd
+cpu: Apple M4 Pro
+BenchmarkCompressIndices/empty-12         	    1798	    612674 ns/op	 8003590 B/op	       1 allocs/op
+BenchmarkCompressIndices/empty-12         	    1852	    626852 ns/op	 8003590 B/op	       1 allocs/op
+BenchmarkCompressIndices/empty-12         	    1998	    601633 ns/op	 8003588 B/op	       1 allocs/op
+BenchmarkCompressIndices/empty-12         	    2012	    592913 ns/op	 8003588 B/op	       1 allocs/op
+BenchmarkCompressIndices/empty-12         	    1995	    607617 ns/op	 8003588 B/op	       1 allocs/op
+BenchmarkCompressIndices/empty-12         	    2005	    599143 ns/op	 8003587 B/op	       1 allocs/op
+BenchmarkCompressIndices/empty-12         	    1905	    598957 ns/op	 8003587 B/op	       1 allocs/op
+BenchmarkCompressIndices/empty-12         	    2011	    596801 ns/op	 8003589 B/op	       1 allocs/op
+BenchmarkCompressIndices/empty-12         	    2022	    594569 ns/op	 8003588 B/op	       1 allocs/op
+BenchmarkCompressIndices/empty-12         	    1966	    609322 ns/op	 8003588 B/op	       1 allocs/op
+BenchmarkCompressIndices/half-12          	    2012	    600704 ns/op	 8003587 B/op	       1 allocs/op
+BenchmarkCompressIndices/half-12          	    2010	    602383 ns/op	 8003587 B/op	       1 allocs/op
+BenchmarkCompressIndices/half-12          	    2012	    673693 ns/op	 8003589 B/op	       1 allocs/op
+BenchmarkCompressIndices/half-12          	    1964	    594688 ns/op	 8003588 B/op	       1 allocs/op
+BenchmarkCompressIndices/half-12          	    2052	    603042 ns/op	 8003588 B/op	       1 allocs/op
+BenchmarkCompressIndices/half-12          	    2023	    600578 ns/op	 8003588 B/op	       1 allocs/op
+BenchmarkCompressIndices/half-12          	    1963	    613730 ns/op	 8003588 B/op	       1 allocs/op
+BenchmarkCompressIndices/half-12          	    2022	    597967 ns/op	 8003588 B/op	       1 allocs/op
+BenchmarkCompressIndices/half-12          	    2006	    598754 ns/op	 8003587 B/op	       1 allocs/op
+BenchmarkCompressIndices/half-12          	    1977	    605678 ns/op	 8003587 B/op	       1 allocs/op
+BenchmarkCompressIndices/full-12          	    1995	    593081 ns/op	 8003586 B/op	       1 allocs/op
+BenchmarkCompressIndices/full-12          	    2017	    602682 ns/op	 8003590 B/op	       1 allocs/op
+BenchmarkCompressIndices/full-12          	    1986	    598687 ns/op	 8003588 B/op	       1 allocs/op
+BenchmarkCompressIndices/full-12          	    2004	    601381 ns/op	 8003587 B/op	       1 allocs/op
+BenchmarkCompressIndices/full-12          	    2037	    598097 ns/op	 8003587 B/op	       1 allocs/op
+BenchmarkCompressIndices/full-12          	    1958	    873062 ns/op	 8003589 B/op	       1 allocs/op
+BenchmarkCompressIndices/full-12          	    2026	    601042 ns/op	 8003586 B/op	       1 allocs/op
+BenchmarkCompressIndices/full-12          	    1959	    600316 ns/op	 8003586 B/op	       1 allocs/op
+BenchmarkCompressIndices/full-12          	    2048	    593565 ns/op	 8003587 B/op	       1 allocs/op
+BenchmarkCompressIndices/full-12          	    1957	    605102 ns/op	 8003586 B/op	       1 allocs/op
+PASS
+ok  	github.com/h0rn3t/gopolars/pkg/simd	36.843s

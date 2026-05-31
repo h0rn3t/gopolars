@@ -305,6 +305,33 @@ func (c *Column) Slice(indices []int) *Column {
 	return out
 }
 
+// View returns a Column over rows [start,end) that SHARES this column's backing
+// arrays (no copy is made). It is intended for read-only, range-parallel
+// evaluation (e.g. a parallel Filter splitting a column into worker chunks):
+// callers must treat the view — and must not mutate the source — for the view's
+// lifetime. start and end must satisfy 0 <= start <= end <= c.Len().
+func (c *Column) View(start, end int) *Column {
+	out := &Column{dtype: c.dtype, n: end - start}
+	if c.nulls != nil {
+		out.nulls = c.nulls[start:end]
+	}
+	switch c.dtype {
+	case dtypes.Int64:
+		out.i64 = c.i64[start:end]
+	case dtypes.Float64:
+		out.f64 = c.f64[start:end]
+	case dtypes.String, dtypes.Categorical, dtypes.Enum:
+		out.str = c.str[start:end]
+	case dtypes.Boolean:
+		out.bln = c.bln[start:end]
+	case dtypes.Datetime:
+		out.tim = c.tim[start:end]
+	default:
+		out.boxed = c.boxed[start:end]
+	}
+	return out
+}
+
 // Filter keeps rows where mask[i] is true, producing a new Column.
 func (c *Column) Filter(mask []bool) *Column {
 	keep := make([]int, 0, len(mask))

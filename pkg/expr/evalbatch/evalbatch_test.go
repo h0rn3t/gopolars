@@ -119,6 +119,37 @@ func valuesEqual(a, b any) bool {
 	}
 }
 
+// Sinks keep EvalBool's results live so the compiler cannot drop the call.
+var (
+	benchMaskSink []bool
+	benchNullSink []bool
+)
+
+// BenchmarkEvalBool measures evaluating a float64 > literal predicate to a bool
+// result over 1M rows. -benchmem exposes the two redundant N-length []bool
+// allocations the old EvalBool made (the mask/valid copy loop).
+func BenchmarkEvalBool(b *testing.B) {
+	const n = 1_000_000
+	data := make([]float64, n)
+	for i := range data {
+		data[i] = float64(i%100) - 50
+	}
+	cols := map[string]*chunk.Column{"a": chunk.NewFloat64(data, nil)}
+	plan, ok := Compile(expr.Col("a").Gt(expr.Lit(0.0)))
+	if !ok {
+		b.Fatal("compile failed")
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		mask, nulls, err := plan.EvalBool(cols, n)
+		if err != nil {
+			b.Fatalf("EvalBool: %v", err)
+		}
+		benchMaskSink = mask
+		benchNullSink = nulls
+	}
+}
+
 func TestCompileRejectsUnsupported(t *testing.T) {
 	t.Parallel()
 
@@ -141,15 +172,15 @@ func TestEvalBoolMaskAndValidity(t *testing.T) {
 	if !ok {
 		t.Fatal("compile failed")
 	}
-	mask, valid, err := plan.EvalBool(cols, height)
+	mask, nulls, err := plan.EvalBool(cols, height)
 	if err != nil {
 		t.Fatalf("EvalBool: %v", err)
 	}
 	// a = {1,2,3,4,null} > 2 -> compare with null operand yields false (not null)
 	want := []bool{false, false, true, true, false}
 	for i := 0; i < height; i++ {
-		if mask[i] != want[i] || !valid[i] {
-			t.Fatalf("row %d: mask=%v valid=%v want mask=%v valid=true", i, mask[i], valid[i], want[i])
+		if mask[i] != want[i] || nulls[i] {
+			t.Fatalf("row %d: mask=%v null=%v want mask=%v null=false", i, mask[i], nulls[i], want[i])
 		}
 	}
 }

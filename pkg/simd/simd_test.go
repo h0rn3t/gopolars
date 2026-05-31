@@ -1,10 +1,56 @@
 package simd
 
 import (
+	"fmt"
 	"math"
 	"reflect"
 	"testing"
 )
+
+// Sinks keep reduction results live against dead-code elimination.
+var (
+	sumSink    float64
+	minSink    float64
+	maxSink    float64
+	minmaxSink float64
+)
+
+// BenchmarkReductions measures the unconditional float64 reductions on this
+// architecture (arm64 builds the generic path). It is the baseline/after harness
+// for the auto-vectorization / multiple-accumulator restructuring.
+func BenchmarkReductions(b *testing.B) {
+	for _, n := range []int{1_000_000, 10_000_000} {
+		data := make([]float64, n)
+		for i := range data {
+			data[i] = float64(i%1000)*0.5 - 250
+		}
+		label := fmt.Sprintf("%dM", n/1_000_000)
+		b.Run("Sum/"+label, func(b *testing.B) {
+			b.SetBytes(int64(n * 8))
+			for b.Loop() {
+				sumSink = SumFloat64(data)
+			}
+		})
+		b.Run("Min/"+label, func(b *testing.B) {
+			b.SetBytes(int64(n * 8))
+			for b.Loop() {
+				minSink = MinFloat64(data)
+			}
+		})
+		b.Run("Max/"+label, func(b *testing.B) {
+			b.SetBytes(int64(n * 8))
+			for b.Loop() {
+				maxSink = MaxFloat64(data)
+			}
+		})
+		b.Run("MinMax/"+label, func(b *testing.B) {
+			b.SetBytes(int64(n * 8))
+			for b.Loop() {
+				minmaxSink, maxSink = MinMaxFloat64(data)
+			}
+		})
+	}
+}
 
 func TestSumFloat64(t *testing.T) {
 	cases := []struct {

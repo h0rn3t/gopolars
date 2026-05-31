@@ -83,10 +83,18 @@ func (p *Plan) Eval(cols map[string]*chunk.Column, height int) (*chunk.Column, e
 	return r.col, nil
 }
 
-// EvalBool evaluates a predicate plan and returns the boolean mask plus a
-// validity slice (valid[i] == false means the predicate was null/undefined at
-// row i and the caller should treat the result as not-true).
-func (p *Plan) EvalBool(cols map[string]*chunk.Column, height int) (mask []bool, valid []bool, err error) {
+// EvalBool evaluates a predicate plan and returns the boolean mask and the
+// null mask, both BORROWED from the evaluated result chunk. nulls[i] == true
+// means the predicate was null/undefined at row i and the caller should treat
+// the result as not-true (mask[i] is only meaningful where nulls[i] is false).
+//
+// Both returned slices alias the chunk's internal buffers and MUST be treated
+// as read-only by the caller; the chunk's backing arrays stay alive for as long
+// as the caller holds the slices. This deliberately avoids the old contract's
+// two fresh N-length []bool allocations and the element-by-element copy loop —
+// for a supported predicate over N rows the result chunk already holds exactly
+// these buffers.
+func (p *Plan) EvalBool(cols map[string]*chunk.Column, height int) (mask []bool, nulls []bool, err error) {
 	c, err := p.Eval(cols, height)
 	if err != nil {
 		return nil, nil, err
@@ -95,15 +103,7 @@ func (p *Plan) EvalBool(cols map[string]*chunk.Column, height int) (mask []bool,
 		return nil, nil, fmt.Errorf("predicate did not evaluate to bool")
 	}
 	bln, _ := c.Bools()
-	mask = make([]bool, height)
-	valid = make([]bool, height)
-	for i := 0; i < height; i++ {
-		valid[i] = !c.IsNull(i)
-		if valid[i] {
-			mask[i] = bln[i]
-		}
-	}
-	return mask, valid, nil
+	return bln, c.Nulls(), nil
 }
 
 func evalNode(e expr.Expr, cols map[string]*chunk.Column, height int) (vresult, error) {

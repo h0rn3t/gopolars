@@ -107,12 +107,23 @@ func writeArrowIPC(path string, cols map[string][]float64) error {
 	return writer.Write(rec)
 }
 
-func runPythonHarness(op, inputPath string, iters int) (harnessResult, error) {
+func pythonBin() string {
+	for _, name := range []string{"python3", "python"} {
+		if path, err := exec.LookPath(name); err == nil {
+			_ = path
+			return name
+		}
+	}
+	return "python3"
+}
+
+func runPythonHarness(op, inputPath string, iters int, threshold float64) (harnessResult, error) {
 	_, testFile, _, _ := runtime.Caller(0)
 	benchDir := filepath.Dir(testFile)
 	harnessPath := filepath.Join(benchDir, "harness.py")
 
-	cmd := exec.Command("python", harnessPath, "--op", op, "--input", inputPath, "--iters", fmt.Sprint(iters))
+	cmd := exec.Command(pythonBin(), harnessPath, "--op", op, "--input", inputPath,
+		"--iters", fmt.Sprint(iters), "--threshold", fmt.Sprint(threshold))
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -147,7 +158,7 @@ func BenchmarkCross(b *testing.B) {
 					_ = os.Remove(tmpFile)
 				})
 
-				pyRes, err := runPythonHarness(op, tmpFile, 10)
+				pyRes, err := runPythonHarness(op, tmpFile, 10, 50.0)
 				if err != nil {
 					b.Fatalf("python harness: %v", err)
 				}
@@ -208,7 +219,7 @@ func BenchmarkCross(b *testing.B) {
 					_ = os.Remove(tmpFile)
 				})
 
-				pyRes, err := runPythonHarness(op, tmpFile, 10)
+				pyRes, err := runPythonHarness(op, tmpFile, 10, 50.0)
 				if err != nil {
 					b.Fatalf("python harness: %v", err)
 				}

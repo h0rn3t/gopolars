@@ -16,24 +16,25 @@ _OPS = {
     "minmax": lambda a, b: (a.min(), a.max()),
     "add": lambda a, b: a + b,
     "mul": lambda a, b: a * b,
-    # Full DataFrame filter+sum: filters rows where col("a") > 50, sums result.
-    # The "b" argument is unused; the harness passes a DataFrame-aware lambda.
-    "filter_sum": lambda a, b: _filter_sum_op(a),
+    # Full DataFrame filter+sum: filters rows where col("a") > threshold, sums
+    # the result. The "b" argument is unused; filter_sum is dispatched specially
+    # in main() so the --threshold flag can be threaded through.
 }
 
 
-def _filter_sum_op(series_a):
+def _filter_sum_op(series_a, threshold):
     """Reconstruct a one-column DataFrame from the Series, filter, then sum."""
     import polars as pl
     df = pl.DataFrame({"a": series_a})
-    return df.filter(pl.col("a") > 50)["a"].sum()
+    return df.filter(pl.col("a") > threshold)["a"].sum()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Run a Polars operation benchmark and emit JSON results.")
-    parser.add_argument("--op", required=True, choices=list(_OPS.keys()), help="Operation to benchmark")
+    parser.add_argument("--op", required=True, choices=list(_OPS.keys()) + ["filter_sum"], help="Operation to benchmark")
     parser.add_argument("--input", required=True, help="Path to Arrow IPC input file")
     parser.add_argument("--iters", type=int, required=True, help="Number of timed iterations")
+    parser.add_argument("--threshold", type=float, default=50.0, help="filter_sum predicate threshold (col('a') > threshold)")
     args = parser.parse_args()
 
     try:
@@ -55,7 +56,10 @@ def main():
         print(f"Operation '{args.op}' requires two columns, but only one found", file=sys.stderr)
         sys.exit(1)
 
-    op_fn = _OPS[args.op]
+    if args.op == "filter_sum":
+        op_fn = lambda a, b: _filter_sum_op(a, args.threshold)
+    else:
+        op_fn = _OPS[args.op]
 
     # Warm-up to avoid amortizing Python import / JIT overhead
     try:

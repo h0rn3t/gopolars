@@ -58,7 +58,33 @@ func (e Engine) ExecuteStreaming(ctx context.Context, source frame.DataFrame, no
 	return merged, nil
 }
 
+// fuseFilterFrameAgg rewrites a NodeFilter immediately followed by a plain
+// full-frame NodeFrameAgg into a single NodeFrameAgg that carries the filter
+// predicate in Exprs[0]. The executor then runs the fused single-pass masked
+// reduce (frame.DataFrame.FilterAggregate) instead of materializing the
+// filtered frame and aggregating it. Only plain FrameAgg nodes (no existing
+// Exprs) are fused; everything else is left untouched.
+func fuseFilterFrameAgg(nodes []logical.Node) []logical.Node {
+	out := make([]logical.Node, 0, len(nodes))
+	for i := 0; i < len(nodes); i++ {
+		if i+1 < len(nodes) &&
+			nodes[i].Type == logical.NodeFilter &&
+			len(nodes[i].Exprs) == 1 &&
+			nodes[i+1].Type == logical.NodeFrameAgg &&
+			len(nodes[i+1].Exprs) == 0 {
+			fused := nodes[i+1]
+			fused.Exprs = nodes[i].Exprs
+			out = append(out, fused)
+			i++ // also consume the FrameAgg
+			continue
+		}
+		out = append(out, nodes[i])
+	}
+	return out
+}
+
 func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.DataFrame, error) {
+	optimized = fuseFilterFrameAgg(optimized)
 	physicalPlan := physical.Build(optimized)
 	scheduler := NewScheduler()
 	current := source
@@ -286,6 +312,23 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 		case logical.NodeFrameAgg:
 			if len(n.Strings) < 1 {
 				return fmt.Errorf("frame_agg node missing aggregation type")
+			}
+			if len(n.Exprs) >= 1 {
+				// Fused filter+aggregate: try the single-pass masked path; fall
+				// back to materialize-then-aggregate when it declines.
+				fused, ok, err := current.FilterAggregate(n.Exprs[0], n.Strings[0], n.Strings[1:])
+				if err != nil {
+					return err
+				}
+				if ok {
+					current = fused
+					return nil
+				}
+				filtered, err := current.Filter(n.Exprs[0])
+				if err != nil {
+					return err
+				}
+				current = filtered
 			}
 			next, err := aggregateFrame(current, n.Strings[0], n.Strings[1:])
 			if err != nil {

@@ -1,0 +1,54 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/h0rn3t/gopolars/pkg/frame
+cpu: Apple M4 Pro
+BenchmarkFilterSumFused/materialize/empty/1M-12         	    3154	    332708 ns/op	24045.08 MB/s	 2170603 B/op	      83 allocs/op
+BenchmarkFilterSumFused/materialize/empty/1M-12         	    3644	    329167 ns/op	24303.76 MB/s	 2170523 B/op	      83 allocs/op
+BenchmarkFilterSumFused/materialize/empty/1M-12         	    3748	    324379 ns/op	24662.54 MB/s	 2170518 B/op	      83 allocs/op
+BenchmarkFilterSumFused/materialize/empty/1M-12         	    3656	    333043 ns/op	24020.91 MB/s	 2170521 B/op	      83 allocs/op
+BenchmarkFilterSumFused/materialize/empty/1M-12         	    3660	    325537 ns/op	24574.75 MB/s	 2170526 B/op	      83 allocs/op
+BenchmarkFilterSumFused/materialize/empty/1M-12         	    3673	    328474 ns/op	24355.08 MB/s	 2170522 B/op	      83 allocs/op
+BenchmarkFilterSumFused/fused/empty/1M-12               	    2876	    415284 ns/op	19263.91 MB/s	 2171723 B/op	      98 allocs/op
+BenchmarkFilterSumFused/fused/empty/1M-12               	    2959	    412258 ns/op	19405.34 MB/s	 2171725 B/op	      98 allocs/op
+BenchmarkFilterSumFused/fused/empty/1M-12               	    2799	    417110 ns/op	19179.60 MB/s	 2171722 B/op	      98 allocs/op
+BenchmarkFilterSumFused/fused/empty/1M-12               	    2815	    417862 ns/op	19145.08 MB/s	 2171722 B/op	      98 allocs/op
+BenchmarkFilterSumFused/fused/empty/1M-12               	    2925	    411549 ns/op	19438.78 MB/s	 2171720 B/op	      98 allocs/op
+BenchmarkFilterSumFused/fused/empty/1M-12               	    2913	    412726 ns/op	19383.34 MB/s	 2171719 B/op	      98 allocs/op
+BenchmarkFilterSumFused/materialize/empty/10M-12        	     536	   2238842 ns/op	35732.76 MB/s	20061841 B/op	      83 allocs/op
+BenchmarkFilterSumFused/materialize/empty/10M-12        	     540	   2240011 ns/op	35714.10 MB/s	20061841 B/op	      83 allocs/op
+BenchmarkFilterSumFused/materialize/empty/10M-12        	     538	   2228775 ns/op	35894.15 MB/s	20061846 B/op	      83 allocs/op
+BenchmarkFilterSumFused/materialize/empty/10M-12        	     538	   2240690 ns/op	35703.29 MB/s	20061843 B/op	      83 allocs/op
+BenchmarkFilterSumFused/materialize/empty/10M-12        	     542	   2280977 ns/op	35072.69 MB/s	20061848 B/op	      83 allocs/op
+BenchmarkFilterSumFused/materialize/empty/10M-12        	     544	   2232258 ns/op	35838.15 MB/s	20061845 B/op	      83 allocs/op
+BenchmarkFilterSumFused/fused/empty/10M-12              	     390	   3087926 ns/op	25907.36 MB/s	20063045 B/op	      98 allocs/op
+BenchmarkFilterSumFused/fused/empty/10M-12              	     396	   3024337 ns/op	26452.08 MB/s	20063044 B/op	      98 allocs/op
+BenchmarkFilterSumFused/fused/empty/10M-12              	     367	   3115770 ns/op	25675.83 MB/s	20063046 B/op	      98 allocs/op
+BenchmarkFilterSumFused/fused/empty/10M-12              	     339	   3244190 ns/op	24659.47 MB/s	20063045 B/op	      98 allocs/op
+BenchmarkFilterSumFused/fused/empty/10M-12              	     372	   3130615 ns/op	25554.09 MB/s	20063043 B/op	      98 allocs/op
+BenchmarkFilterSumFused/fused/empty/10M-12              	     396	   3068564 ns/op	26070.83 MB/s	20063044 B/op	      98 allocs/op
+BenchmarkFilterSumFused/materialize/half/1M-12          	     667	   1876300 ns/op	4263.71 MB/s	14442196 B/op	      98 allocs/op
+BenchmarkFilterSumFused/materialize/half/1M-12          	     663	   1801980 ns/op	4439.56 MB/s	14442251 B/op	      98 allocs/op
+BenchmarkFilterSumFused/materialize/half/1M-12          	     662	   1826990 ns/op	4378.79 MB/s	14442197 B/op	      98 allocs/op
+BenchmarkFilterSumFused/materialize/half/1M-12          	     657	   1817171 ns/op	4402.45 MB/s	14442177 B/op	      98 allocs/op
+BenchmarkFilterSumFused/materialize/half/1M-12          	     646	   1868979 ns/op	4280.41 MB/s	14442186 B/op	      98 allocs/op
+BenchmarkFilterSumFused/materialize/half/1M-12          	     643	   1843206 ns/op	4340.26 MB/s	14442171 B/op	      98 allocs/op
+BenchmarkFilterSumFused/fused/half/1M-12                	    2596	    461856 ns/op	17321.41 MB/s	 2171731 B/op	      99 allocs/op
+BenchmarkFilterSumFused/fused/half/1M-12                	    2612	    456616 ns/op	17520.19 MB/s	 2171733 B/op	      99 allocs/op
+BenchmarkFilterSumFused/fused/half/1M-12                	    2575	    458840 ns/op	17435.27 MB/s	 2171736 B/op	      99 allocs/op
+BenchmarkFilterSumFused/fused/half/1M-12                	    2690	    455324 ns/op	17569.89 MB/s	 2171730 B/op	      99 allocs/op
+BenchmarkFilterSumFused/fused/half/1M-12                	    2648	    454583 ns/op	17598.56 MB/s	 2171735 B/op	      99 allocs/op
+BenchmarkFilterSumFused/fused/half/1M-12                	    2655	    486071 ns/op	16458.50 MB/s	 2171733 B/op	      99 allocs/op
+BenchmarkFilterSumFused/materialize/half/10M-12         	      70	  16615899 ns/op	4814.67 MB/s	142605971 B/op	      98 allocs/op
+BenchmarkFilterSumFused/materialize/half/10M-12         	      69	  16640291 ns/op	4807.61 MB/s	142605968 B/op	      98 allocs/op
+BenchmarkFilterSumFused/materialize/half/10M-12         	      72	  16490188 ns/op	4851.37 MB/s	142605999 B/op	      98 allocs/op
+BenchmarkFilterSumFused/materialize/half/10M-12         	      69	  16432386 ns/op	4868.43 MB/s	142606026 B/op	      98 allocs/op
+BenchmarkFilterSumFused/materialize/half/10M-12         	      75	  16558073 ns/op	4831.48 MB/s	142606011 B/op	      98 allocs/op
+BenchmarkFilterSumFused/materialize/half/10M-12         	      74	  16381363 ns/op	4883.60 MB/s	142606019 B/op	      98 allocs/op
+BenchmarkFilterSumFused/fused/half/10M-12               	     325	   3560995 ns/op	22465.63 MB/s	20063056 B/op	      99 allocs/op
+BenchmarkFilterSumFused/fused/half/10M-12               	     344	   3543928 ns/op	22573.82 MB/s	20063052 B/op	      99 allocs/op
+BenchmarkFilterSumFused/fused/half/10M-12               	     340	   3571989 ns/op	22396.48 MB/s	20063053 B/op	      99 allocs/op
+BenchmarkFilterSumFused/fused/half/10M-12               	     309	   3666390 ns/op	21819.83 MB/s	20063052 B/op	      99 allocs/op
+BenchmarkFilterSumFused/fused/half/10M-12               	     337	   3597439 ns/op	22238.04 MB/s	20063055 B/op	      99 allocs/op
+BenchmarkFilterSumFused/fused/half/10M-12               	     326	   3723044 ns/op	21487.79 MB/s	20063053 B/op	      99 allocs/op
+PASS
+ok  	github.com/h0rn3t/gopolars/pkg/frame	58.028s

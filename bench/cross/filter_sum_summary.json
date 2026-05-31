@@ -1,0 +1,254 @@
+[
+  {
+    "op": "filter_sum/empty",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 75708,
+    "python_sec_per_op": 0.00008995839161798357
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 2837,
+    "python_sec_per_op": 0.0000797834014520049
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 2175,
+    "python_sec_per_op": 0.00007805000059306622
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 2152,
+    "python_sec_per_op": 0.000059874996077269314
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 2168,
+    "python_sec_per_op": 0.0002238333923742175
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "10K",
+    "elements": 10000,
+    "go_ns_per_op": 43834,
+    "python_sec_per_op": 0.00009834159864112735
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "10K",
+    "elements": 10000,
+    "go_ns_per_op": 19943,
+    "python_sec_per_op": 0.00007169159362092614
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "10K",
+    "elements": 10000,
+    "go_ns_per_op": 15839,
+    "python_sec_per_op": 0.000070433400105685
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "10K",
+    "elements": 10000,
+    "go_ns_per_op": 15414,
+    "python_sec_per_op": 0.00006195839960128069
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "100K",
+    "elements": 100000,
+    "go_ns_per_op": 159667,
+    "python_sec_per_op": 0.00008949999464675784
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "100K",
+    "elements": 100000,
+    "go_ns_per_op": 85030,
+    "python_sec_per_op": 0.00009599159238860011
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "100K",
+    "elements": 100000,
+    "go_ns_per_op": 77058,
+    "python_sec_per_op": 0.00008893340127542615
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "100K",
+    "elements": 100000,
+    "go_ns_per_op": 75404,
+    "python_sec_per_op": 0.00008330839918926358
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 471917,
+    "python_sec_per_op": 0.00021902499720454215
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 322320,
+    "python_sec_per_op": 0.00021469159983098507
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 326452,
+    "python_sec_per_op": 0.00019505840027704834
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "10M",
+    "elements": 10000000,
+    "go_ns_per_op": 4375625,
+    "python_sec_per_op": 0.0012942416011355816
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "10M",
+    "elements": 10000000,
+    "go_ns_per_op": 2464451,
+    "python_sec_per_op": 0.0013072583940811455
+  },
+  {
+    "op": "filter_sum/empty",
+    "size": "10M",
+    "elements": 10000000,
+    "go_ns_per_op": 2280950,
+    "python_sec_per_op": 0.001324666803702712
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 41000,
+    "python_sec_per_op": 0.00008733338909223675
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 8972,
+    "python_sec_per_op": 0.00008110840572044254
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 5835,
+    "python_sec_per_op": 0.00008222500327974558
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "1K",
+    "elements": 1000,
+    "go_ns_per_op": 5348,
+    "python_sec_per_op": 0.00008106660097837449
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "10K",
+    "elements": 10000,
+    "go_ns_per_op": 107166,
+    "python_sec_per_op": 0.000080783199518919
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "10K",
+    "elements": 10000,
+    "go_ns_per_op": 60067,
+    "python_sec_per_op": 0.00010017500026151537
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "10K",
+    "elements": 10000,
+    "go_ns_per_op": 45834,
+    "python_sec_per_op": 0.00007055839523673058
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "10K",
+    "elements": 10000,
+    "go_ns_per_op": 45243,
+    "python_sec_per_op": 0.00007618339732289315
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "100K",
+    "elements": 100000,
+    "go_ns_per_op": 828166,
+    "python_sec_per_op": 0.00008226680802181363
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "100K",
+    "elements": 100000,
+    "go_ns_per_op": 419770,
+    "python_sec_per_op": 0.00009151659905910492
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "100K",
+    "elements": 100000,
+    "go_ns_per_op": 398789,
+    "python_sec_per_op": 0.00008198339492082596
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 3040042,
+    "python_sec_per_op": 0.0004354499978944659
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2487697,
+    "python_sec_per_op": 0.0004296415951102972
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "1M",
+    "elements": 1000000,
+    "go_ns_per_op": 2368535,
+    "python_sec_per_op": 0.00040037500439211727
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "10M",
+    "elements": 10000000,
+    "go_ns_per_op": 28986417,
+    "python_sec_per_op": 0.007447900006081909
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "10M",
+    "elements": 10000000,
+    "go_ns_per_op": 21917109,
+    "python_sec_per_op": 0.00681802500039339
+  },
+  {
+    "op": "filter_sum/half",
+    "size": "10M",
+    "elements": 10000000,
+    "go_ns_per_op": 21492667,
+    "python_sec_per_op": 0.007714516599662602
+  }
+]

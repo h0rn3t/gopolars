@@ -1,0 +1,16 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/h0rn3t/gopolars/pkg/expr/evalbatch
+cpu: Apple M4 Pro
+BenchmarkEvalBool-12    	     987	   1182585 ns/op	 4030677 B/op	       5 allocs/op
+BenchmarkEvalBool-12    	    1016	   1195855 ns/op	 4030659 B/op	       5 allocs/op
+BenchmarkEvalBool-12    	    1009	   1200658 ns/op	 4030660 B/op	       5 allocs/op
+BenchmarkEvalBool-12    	    1034	   1174409 ns/op	 4030659 B/op	       5 allocs/op
+BenchmarkEvalBool-12    	    1020	   1168193 ns/op	 4030658 B/op	       5 allocs/op
+BenchmarkEvalBool-12    	    1045	   1171726 ns/op	 4030658 B/op	       5 allocs/op
+BenchmarkEvalBool-12    	    1039	   1171299 ns/op	 4030660 B/op	       5 allocs/op
+BenchmarkEvalBool-12    	    1008	   1193603 ns/op	 4030659 B/op	       5 allocs/op
+BenchmarkEvalBool-12    	    1042	   1160644 ns/op	 4030661 B/op	       5 allocs/op
+BenchmarkEvalBool-12    	     984	   1167031 ns/op	 4030658 B/op	       5 allocs/op
+PASS
+ok  	github.com/h0rn3t/gopolars/pkg/expr/evalbatch	12.307s
