@@ -1481,7 +1481,7 @@ func (s seriesFacade) Hash(seed uint64) Series {
 	values := make([]any, s.Len())
 	for i := 0; i < s.Len(); i++ {
 		h := fnv.New64a()
-		_, _ = h.Write([]byte(fmt.Sprintf("%d:%v", seed, s.Value(i))))
+		_, _ = fmt.Fprintf(h, "%d:%v", seed, s.Value(i))
 		values[i] = int64(h.Sum64())
 	}
 	out, _ := iseries.New(s.value.Name()+"_hash", dtypes.Int64, values)
@@ -2369,7 +2369,8 @@ func (s seriesFacade) ewm(alpha float64, mode string) Series {
 			initialized = true
 		} else {
 			mean = alpha*current + (1-alpha)*mean
-			variance = alpha*math.Pow(current-mean, 2) + (1-alpha)*variance
+			diff := current - mean
+			variance = alpha*diff*diff + (1-alpha)*variance
 		}
 		switch mode {
 		case "mean":

@@ -232,8 +232,8 @@ func (s seriesFacade) GetChunks() ([]Series, error) {
 
 func (s seriesFacade) Flags() map[string]bool {
 	return map[string]bool{
-		"sorted":     s.IsSorted(),
-		"has_nulls":  s.HasNulls(),
+		"sorted":       s.IsSorted(),
+		"has_nulls":    s.HasNulls(),
 		"has_validity": s.HasValidity(),
 	}
 }

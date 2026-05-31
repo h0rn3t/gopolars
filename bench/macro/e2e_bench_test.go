@@ -13,11 +13,12 @@ func BenchmarkE2ELazyGroupBySortLimit(b *testing.B) {
 	city := make([]any, n)
 	value := make([]any, n)
 	for i := 0; i < n; i++ {
-		if i%3 == 0 {
+		switch i % 3 {
+		case 0:
 			city[i] = "kyiv"
-		} else if i%3 == 1 {
+		case 1:
 			city[i] = "lviv"
-		} else {
+		default:
 			city[i] = "odesa"
 		}
 		value[i] = int64(i % 1000)

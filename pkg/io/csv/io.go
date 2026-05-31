@@ -31,7 +31,7 @@ func Read(input ReadInput) (frame.DataFrame, error) {
 	if err != nil {
 		return frame.DataFrame{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	r := csv.NewReader(f)
 	if input.Separator != 0 {
 		r.Comma = input.Separator
@@ -89,7 +89,7 @@ func Write(df frame.DataFrame, input WriteInput) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	w := csv.NewWriter(f)
 	if input.Separator != 0 {
 		w.Comma = input.Separator

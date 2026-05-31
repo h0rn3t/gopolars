@@ -45,7 +45,7 @@ func Write(df frame.DataFrame, input WriteInput) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if input.NDJSON {
 		w := bufio.NewWriter(f)
 		for _, row := range rows {
@@ -77,7 +77,7 @@ func readNDJSON(input ReadInput) (frame.DataFrame, error) {
 	if err != nil {
 		return frame.DataFrame{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	scanner := bufio.NewScanner(f)
 	rows := make([]map[string]any, 0)
 	for scanner.Scan() {

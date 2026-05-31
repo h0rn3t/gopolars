@@ -75,7 +75,7 @@ func planSingle(parsed ParsedQuery) []logical.Node {
 			}
 			selectExprs = append(selectExprs, item.Expr)
 		}
-		if len(selectExprs) > 0 && !(len(selectExprs) == 1 && selectExprs[0].Kind() == expr.KindCol && selectExprs[0].ColName() == "*") {
+		if len(selectExprs) > 0 && (len(selectExprs) != 1 || selectExprs[0].Kind() != expr.KindCol || selectExprs[0].ColName() != "*") {
 			nodes = append(nodes, logical.Node{Type: logical.NodeSelect, Exprs: selectExprs})
 		}
 	} else {

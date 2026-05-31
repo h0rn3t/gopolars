@@ -572,7 +572,7 @@ func evalBin(op string, left any, right any) (any, error) {
 		return left == right, nil
 	case "ne":
 		if left == nil || right == nil {
-			return !(left == nil && right == nil), nil
+			return left != nil || right != nil, nil
 		}
 		if lf, ok := left.(float64); ok && math.IsNaN(lf) {
 			return true, nil

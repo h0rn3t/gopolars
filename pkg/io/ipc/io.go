@@ -31,7 +31,7 @@ func Write(df frame.DataFrame, input WriteInput) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	enc := gob.NewEncoder(f)
 	return enc.Encode(iarrow.ToTable(df))
 }
@@ -41,7 +41,7 @@ func Read(input ReadInput) (frame.DataFrame, error) {
 	if err != nil {
 		return frame.DataFrame{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var table iarrow.Table
 	dec := gob.NewDecoder(f)
 	if err := dec.Decode(&table); err != nil {

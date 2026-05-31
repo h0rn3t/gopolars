@@ -225,15 +225,15 @@ func (d DataFrame) Glimpse(maxRows int) string {
 		maxRows = d.height
 	}
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("rows=%d cols=%d\n", d.height, len(d.order)))
+	fmt.Fprintf(&b, "rows=%d cols=%d\n", d.height, len(d.order))
 	for _, f := range d.schema {
-		b.WriteString(fmt.Sprintf("%s:%s ", f.Name, f.Type))
+		fmt.Fprintf(&b, "%s:%s ", f.Name, f.Type)
 	}
 	b.WriteString("\n")
 	for row := 0; row < maxRows; row++ {
-		b.WriteString(fmt.Sprintf("[%d] ", row))
+		fmt.Fprintf(&b, "[%d] ", row)
 		for _, col := range d.order {
-			b.WriteString(fmt.Sprintf("%s=%v ", col, d.cols[col].Value(row)))
+			fmt.Fprintf(&b, "%s=%v ", col, d.cols[col].Value(row))
 		}
 		b.WriteString("\n")
 	}
@@ -929,9 +929,9 @@ func (d DataFrame) HashRows(seed uint64) ([]uint64, error) {
 	out := make([]uint64, d.height)
 	for row := 0; row < d.height; row++ {
 		h := fnv.New64a()
-		_, _ = h.Write([]byte(fmt.Sprintf("%d", seed)))
+		_, _ = fmt.Fprintf(h, "%d", seed)
 		for _, col := range d.order {
-			_, _ = h.Write([]byte(fmt.Sprintf("|%v", d.cols[col].Value(row))))
+			_, _ = fmt.Fprintf(h, "|%v", d.cols[col].Value(row))
 		}
 		out[row] = h.Sum64()
 	}

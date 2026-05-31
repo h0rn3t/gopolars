@@ -46,17 +46,19 @@ type harnessResult struct {
 }
 
 type summaryEntry struct {
-	Op          string  `json:"op"`
-	Size        string  `json:"size"`
-	Elements    int     `json:"elements"`
-	GoNsPerOp   int64   `json:"go_ns_per_op"`
+	Op             string  `json:"op"`
+	Size           string  `json:"size"`
+	Elements       int     `json:"elements"`
+	GoNsPerOp      int64   `json:"go_ns_per_op"`
 	PythonSecPerOp float64 `json:"python_sec_per_op"`
 }
+
+var benchRNG = rand.New(rand.NewSource(42))
 
 func makeFloat64Slice(n int) []float64 {
 	s := make([]float64, n)
 	for i := range s {
-		s[i] = rand.Float64()*100 - 50
+		s[i] = benchRNG.Float64()*100 - 50
 	}
 	return s
 }
@@ -91,13 +93,13 @@ func writeArrowIPC(path string, cols map[string][]float64) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	writer, err := ipc.NewFileWriter(f, ipc.WithSchema(schema))
 	if err != nil {
 		return err
 	}
-	defer writer.Close()
+	defer func() { _ = writer.Close() }()
 
 	rec := array.NewRecord(schema, arrays, int64(rowCount))
 	defer rec.Release()
@@ -127,8 +129,6 @@ func runPythonHarness(op, inputPath string, iters int) (harnessResult, error) {
 }
 
 func BenchmarkCross(b *testing.B) {
-	rand.Seed(42)
-
 	var mu sync.Mutex
 	var results []summaryEntry
 
@@ -144,7 +144,7 @@ func BenchmarkCross(b *testing.B) {
 					b.Fatalf("write arrow ipc: %v", err)
 				}
 				b.Cleanup(func() {
-					os.Remove(tmpFile)
+					_ = os.Remove(tmpFile)
 				})
 
 				pyRes, err := runPythonHarness(op, tmpFile, 10)
@@ -205,7 +205,7 @@ func BenchmarkCross(b *testing.B) {
 					b.Fatalf("write arrow ipc: %v", err)
 				}
 				b.Cleanup(func() {
-					os.Remove(tmpFile)
+					_ = os.Remove(tmpFile)
 				})
 
 				pyRes, err := runPythonHarness(op, tmpFile, 10)
@@ -252,7 +252,7 @@ func BenchmarkCross(b *testing.B) {
 		if err != nil {
 			b.Fatalf("create summary file: %v", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		enc := json.NewEncoder(f)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(results); err != nil {

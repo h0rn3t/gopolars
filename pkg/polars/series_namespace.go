@@ -26,8 +26,8 @@ type SeriesCatNS struct{ s Series }
 // SeriesBinNS — простір імен binary/bitwise для Series.
 type SeriesBinNS struct{ s Series }
 
-func (s seriesFacade) Str() SeriesStrNS   { return SeriesStrNS{s: s} }
-func (s seriesFacade) Arr() SeriesArrNS  { return SeriesArrNS{s: s} }
+func (s seriesFacade) Str() SeriesStrNS { return SeriesStrNS{s: s} }
+func (s seriesFacade) Arr() SeriesArrNS { return SeriesArrNS{s: s} }
 func (s seriesFacade) Dt() SeriesDtNS   { return SeriesDtNS{s: s} }
 func (s seriesFacade) Struct() SeriesStructNS {
 	return SeriesStructNS{s: s}
