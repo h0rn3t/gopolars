@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
@@ -29,23 +29,29 @@ func join(left DataFrame, input JoinInput) (DataFrame, error) {
 		return asofJoin(left, input)
 	}
 
-	rightIndex := map[string][]int{}
+	rightKeyCols, err := joinKeyColumns(input.Other, input.RightOn)
+	if err != nil {
+		return DataFrame{}, err
+	}
+	leftKeyCols, err := joinKeyColumns(left, input.LeftOn)
+	if err != nil {
+		return DataFrame{}, err
+	}
+
+	// Build the probe index with typed, collision-resistant keys (no per-row
+	// fmt.Sprintf): a reused scratch buffer encodes each key row's typed values.
+	rightIndex := make(map[string][]int, input.Other.height)
+	var scratch []byte
 	for i := 0; i < input.Other.height; i++ {
-		k, err := makeJoinKey(input.Other, input.RightOn, i)
-		if err != nil {
-			return DataFrame{}, err
-		}
-		rightIndex[k] = append(rightIndex[k], i)
+		scratch = chunk.AppendRowKey(scratch[:0], rightKeyCols, i)
+		rightIndex[string(scratch)] = append(rightIndex[string(scratch)], i)
 	}
 
 	pairs := make([]pair, 0, left.height)
 	matchedRight := map[int]struct{}{}
 	for i := 0; i < left.height; i++ {
-		k, err := makeJoinKey(left, input.LeftOn, i)
-		if err != nil {
-			return DataFrame{}, err
-		}
-		rightRows := rightIndex[k]
+		scratch = chunk.AppendRowKey(scratch[:0], leftKeyCols, i)
+		rightRows := rightIndex[string(scratch)]
 		if len(rightRows) == 0 {
 			if input.How == JoinTypeAnti {
 				pairs = append(pairs, pair{left: i, right: -1})
@@ -81,57 +87,51 @@ func join(left DataFrame, input JoinInput) (DataFrame, error) {
 	}
 
 	rightIncluded := input.How != JoinTypeSemi && input.How != JoinTypeAnti
-	outOrder := make([]string, 0, len(left.order)+len(input.Other.order))
-	outSchema := make(dtypes.Schema, 0, len(left.schema)+len(input.Other.schema))
-	outCols := map[string][]any{}
+	return materializeJoin(left, input.Other, pairs, input.Suffix, rightIncluded)
+}
 
+// joinKeyColumns resolves the typed key columns for the given key names.
+func joinKeyColumns(df DataFrame, keys []string) ([]*chunk.Column, error) {
+	cols := make([]*chunk.Column, len(keys))
+	for j, k := range keys {
+		s, ok := df.cols[k]
+		if !ok {
+			return nil, fmt.Errorf("join key %s not found", k)
+		}
+		cols[j] = s.Column()
+	}
+	return cols, nil
+}
+
+// materializeJoin builds the joined output columns by a single typed gather per
+// column over the collected (left,right) index pairs, null-filling unmatched
+// (-1) indices. This replaces the prior map[string][]any per-cell assembly,
+// cutting allocations from O(rows×columns) to O(columns).
+func materializeJoin(left, other DataFrame, pairs []pair, suffix string, rightIncluded bool) (DataFrame, error) {
+	if suffix == "" {
+		suffix = "_right"
+	}
+	leftIdx := make([]int, len(pairs))
+	rightIdx := make([]int, len(pairs))
+	for i, p := range pairs {
+		leftIdx[i] = p.left
+		rightIdx[i] = p.right
+	}
+
+	outSeries := make([]series.Series, 0, len(left.order)+len(other.order))
 	for _, name := range left.order {
-		outOrder = append(outOrder, name)
-		outSchema = append(outSchema, dtypes.Field{Name: name, Type: left.cols[name].DataType()})
-		outCols[name] = make([]any, 0, len(pairs))
+		col := left.cols[name].Column().Gather(leftIdx)
+		outSeries = append(outSeries, series.FromColumn(name, col))
 	}
 	if rightIncluded {
-		for _, name := range input.Other.order {
+		for _, name := range other.order {
 			outName := name
 			if _, exists := left.cols[name]; exists {
-				outName = name + input.Suffix
+				outName = name + suffix
 			}
-			outOrder = append(outOrder, outName)
-			outSchema = append(outSchema, dtypes.Field{Name: outName, Type: input.Other.cols[name].DataType()})
-			outCols[outName] = make([]any, 0, len(pairs))
+			col := other.cols[name].Column().Gather(rightIdx)
+			outSeries = append(outSeries, series.FromColumn(outName, col))
 		}
-	}
-
-	for _, p := range pairs {
-		for _, name := range left.order {
-			if p.left == -1 {
-				outCols[name] = append(outCols[name], nil)
-				continue
-			}
-			outCols[name] = append(outCols[name], left.cols[name].Value(p.left))
-		}
-		if rightIncluded {
-			for _, name := range input.Other.order {
-				outName := name
-				if _, exists := left.cols[name]; exists {
-					outName = name + input.Suffix
-				}
-				if p.right == -1 {
-					outCols[outName] = append(outCols[outName], nil)
-					continue
-				}
-				outCols[outName] = append(outCols[outName], input.Other.cols[name].Value(p.right))
-			}
-		}
-	}
-
-	outSeries := make([]series.Series, 0, len(outOrder))
-	for _, f := range outSchema {
-		s, err := series.New(f.Name, f.Type, outCols[f.Name])
-		if err != nil {
-			return DataFrame{}, err
-		}
-		outSeries = append(outSeries, s)
 	}
 	return New(NewInput{Series: outSeries})
 }
@@ -213,56 +213,7 @@ func asofJoin(left DataFrame, input JoinInput) (DataFrame, error) {
 }
 
 func materializePairs(left DataFrame, input JoinInput, pairs []pair, rightIncluded bool) (DataFrame, error) {
-	outOrder := make([]string, 0, len(left.order)+len(input.Other.order))
-	outSchema := make(dtypes.Schema, 0, len(left.schema)+len(input.Other.schema))
-	outCols := map[string][]any{}
-	for _, name := range left.order {
-		outOrder = append(outOrder, name)
-		outSchema = append(outSchema, dtypes.Field{Name: name, Type: left.cols[name].DataType()})
-		outCols[name] = make([]any, 0, len(pairs))
-	}
-	if rightIncluded {
-		for _, name := range input.Other.order {
-			outName := name
-			if _, exists := left.cols[name]; exists {
-				outName = name + input.Suffix
-			}
-			outOrder = append(outOrder, outName)
-			outSchema = append(outSchema, dtypes.Field{Name: outName, Type: input.Other.cols[name].DataType()})
-			outCols[outName] = make([]any, 0, len(pairs))
-		}
-	}
-	for _, p := range pairs {
-		for _, name := range left.order {
-			if p.left == -1 {
-				outCols[name] = append(outCols[name], nil)
-				continue
-			}
-			outCols[name] = append(outCols[name], left.cols[name].Value(p.left))
-		}
-		if rightIncluded {
-			for _, name := range input.Other.order {
-				outName := name
-				if _, exists := left.cols[name]; exists {
-					outName = name + input.Suffix
-				}
-				if p.right == -1 {
-					outCols[outName] = append(outCols[outName], nil)
-					continue
-				}
-				outCols[outName] = append(outCols[outName], input.Other.cols[name].Value(p.right))
-			}
-		}
-	}
-	outSeries := make([]series.Series, 0, len(outOrder))
-	for _, f := range outSchema {
-		s, err := series.New(f.Name, f.Type, outCols[f.Name])
-		if err != nil {
-			return DataFrame{}, err
-		}
-		outSeries = append(outSeries, s)
-	}
-	return New(NewInput{Series: outSeries})
+	return materializeJoin(left, input.Other, pairs, input.Suffix, rightIncluded)
 }
 
 func asofDiff(left any, right any) (int64, bool) {
@@ -294,34 +245,4 @@ func abs64(v int64) int64 {
 		return -v
 	}
 	return v
-}
-
-func makeJoinKey(df DataFrame, keys []string, row int) (string, error) {
-	out := ""
-	for _, k := range keys {
-		s, ok := df.cols[k]
-		if !ok {
-			return "", fmt.Errorf("join key %s not found", k)
-		}
-		col := s.Column()
-		// Read typed buffers directly to avoid per-element interface boxing.
-		if col.IsNull(row) {
-			out += "|<null>"
-			continue
-		}
-		if i64s, ok2 := col.Int64s(); ok2 {
-			out += fmt.Sprintf("|%d", i64s[row])
-			continue
-		}
-		if strs, ok2 := col.Strings(); ok2 {
-			out += "|" + strs[row]
-			continue
-		}
-		if f64s, ok2 := col.Float64s(); ok2 {
-			out += fmt.Sprintf("|%g", f64s[row])
-			continue
-		}
-		out += fmt.Sprintf("|%v", s.Value(row))
-	}
-	return out, nil
 }

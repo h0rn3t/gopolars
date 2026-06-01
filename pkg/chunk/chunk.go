@@ -19,10 +19,27 @@ import (
 //
 // Exactly one typed backing slice is populated for a given dtype; boxed holds
 // values for dtypes without a typed mapping. nulls has length n (true == null).
+//
+// A Column is treated as immutable once it may be shared by more than one
+// frame (see MarkShared / zero-copy projection). Slicing, gathering, filtering,
+// shifting, cloning and concatenating all allocate new columns and never mutate
+// the receiver, so read-only sharing by pointer is safe; any future in-place
+// mutator must clone a shared column first (cloneIfShared).
 type Column struct {
 	dtype dtypes.DataType
 	n     int
 	nulls []bool
+
+	// nullCount caches the number of null rows. unknownNullCount (-1) means the
+	// count has not been computed yet; it is recomputed lazily on first request
+	// and is left unknown at every site that produces or mutates validity.
+	// Accessed atomically (NullCount) so concurrent readers of a shared column
+	// are race-free.
+	nullCount int64
+
+	// shared marks a column that may be referenced by more than one frame. A
+	// shared column must be treated as read-only; in-place mutators clone first.
+	shared bool
 
 	f64   []float64
 	i64   []int64
@@ -31,6 +48,10 @@ type Column struct {
 	tim   []time.Time
 	boxed []any
 }
+
+// unknownNullCount is the sentinel for a not-yet-computed cached null count
+// (mirrors Arrow's kUnknownNullCount).
+const unknownNullCount = -1
 
 // normalizeNulls returns a validity slice of length n. A nil input means no
 // nulls. The returned slice is owned by the Column.
@@ -49,33 +70,33 @@ func normalizeNulls(nulls []bool, n int) []bool {
 // NewFloat64 builds a Float64 column. The caller transfers ownership of values
 // and nulls (no copy is made).
 func NewFloat64(values []float64, nulls []bool) *Column {
-	return &Column{dtype: dtypes.Float64, n: len(values), f64: values, nulls: normalizeNulls(nulls, len(values))}
+	return &Column{dtype: dtypes.Float64, n: len(values), f64: values, nulls: normalizeNulls(nulls, len(values)), nullCount: unknownNullCount}
 }
 
 // NewInt64 builds an Int64 column (ownership transferred).
 func NewInt64(values []int64, nulls []bool) *Column {
-	return &Column{dtype: dtypes.Int64, n: len(values), i64: values, nulls: normalizeNulls(nulls, len(values))}
+	return &Column{dtype: dtypes.Int64, n: len(values), i64: values, nulls: normalizeNulls(nulls, len(values)), nullCount: unknownNullCount}
 }
 
 // NewString builds a String column (ownership transferred).
 func NewString(values []string, nulls []bool) *Column {
-	return &Column{dtype: dtypes.String, n: len(values), str: values, nulls: normalizeNulls(nulls, len(values))}
+	return &Column{dtype: dtypes.String, n: len(values), str: values, nulls: normalizeNulls(nulls, len(values)), nullCount: unknownNullCount}
 }
 
 // NewBool builds a Boolean column (ownership transferred).
 func NewBool(values []bool, nulls []bool) *Column {
-	return &Column{dtype: dtypes.Boolean, n: len(values), bln: values, nulls: normalizeNulls(nulls, len(values))}
+	return &Column{dtype: dtypes.Boolean, n: len(values), bln: values, nulls: normalizeNulls(nulls, len(values)), nullCount: unknownNullCount}
 }
 
 // NewTime builds a Datetime column (ownership transferred).
 func NewTime(values []time.Time, nulls []bool) *Column {
-	return &Column{dtype: dtypes.Datetime, n: len(values), tim: values, nulls: normalizeNulls(nulls, len(values))}
+	return &Column{dtype: dtypes.Datetime, n: len(values), tim: values, nulls: normalizeNulls(nulls, len(values)), nullCount: unknownNullCount}
 }
 
 // NewBoxed builds a boxed column for a dtype without a typed mapping
 // (ownership transferred).
 func NewBoxed(dtype dtypes.DataType, values []any, nulls []bool) *Column {
-	return &Column{dtype: dtype, n: len(values), boxed: values, nulls: normalizeNulls(nulls, len(values))}
+	return &Column{dtype: dtype, n: len(values), boxed: values, nulls: normalizeNulls(nulls, len(values)), nullCount: unknownNullCount}
 }
 
 // FromAny converts a legacy []any input into a typed Column for the given
@@ -98,7 +119,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 			}
 			buf[i] = x
 		}
-		return &Column{dtype: dtype, n: n, i64: buf, nulls: nulls}, nil
+		return &Column{dtype: dtype, n: n, i64: buf, nulls: nulls, nullCount: unknownNullCount}, nil
 	case dtypes.Float64:
 		buf := make([]float64, n)
 		for i, v := range values {
@@ -112,7 +133,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 			}
 			buf[i] = x
 		}
-		return &Column{dtype: dtype, n: n, f64: buf, nulls: nulls}, nil
+		return &Column{dtype: dtype, n: n, f64: buf, nulls: nulls, nullCount: unknownNullCount}, nil
 	case dtypes.String, dtypes.Categorical, dtypes.Enum:
 		buf := make([]string, n)
 		for i, v := range values {
@@ -126,7 +147,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 			}
 			buf[i] = x
 		}
-		return &Column{dtype: dtype, n: n, str: buf, nulls: nulls}, nil
+		return &Column{dtype: dtype, n: n, str: buf, nulls: nulls, nullCount: unknownNullCount}, nil
 	case dtypes.Boolean:
 		buf := make([]bool, n)
 		for i, v := range values {
@@ -140,7 +161,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 			}
 			buf[i] = x
 		}
-		return &Column{dtype: dtype, n: n, bln: buf, nulls: nulls}, nil
+		return &Column{dtype: dtype, n: n, bln: buf, nulls: nulls, nullCount: unknownNullCount}, nil
 	case dtypes.Datetime:
 		buf := make([]time.Time, n)
 		for i, v := range values {
@@ -154,7 +175,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 			}
 			buf[i] = x
 		}
-		return &Column{dtype: dtype, n: n, tim: buf, nulls: nulls}, nil
+		return &Column{dtype: dtype, n: n, tim: buf, nulls: nulls, nullCount: unknownNullCount}, nil
 	case dtypes.Decimal:
 		buf := make([]any, n)
 		for i, v := range values {
@@ -169,7 +190,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 				return nil, fmt.Errorf("expected decimal value at index %d", i)
 			}
 		}
-		return &Column{dtype: dtype, n: n, boxed: buf, nulls: nulls}, nil
+		return &Column{dtype: dtype, n: n, boxed: buf, nulls: nulls, nullCount: unknownNullCount}, nil
 	case dtypes.List:
 		buf := make([]any, n)
 		for i, v := range values {
@@ -182,7 +203,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 			}
 			buf[i] = v
 		}
-		return &Column{dtype: dtype, n: n, boxed: buf, nulls: nulls}, nil
+		return &Column{dtype: dtype, n: n, boxed: buf, nulls: nulls, nullCount: unknownNullCount}, nil
 	case dtypes.Struct:
 		buf := make([]any, n)
 		for i, v := range values {
@@ -195,7 +216,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 			}
 			buf[i] = v
 		}
-		return &Column{dtype: dtype, n: n, boxed: buf, nulls: nulls}, nil
+		return &Column{dtype: dtype, n: n, boxed: buf, nulls: nulls, nullCount: unknownNullCount}, nil
 	default:
 		return nil, fmt.Errorf("unsupported data type %s", dtype)
 	}
@@ -284,7 +305,7 @@ func (c *Column) Times() ([]time.Time, bool) {
 
 // Slice gathers rows at the given indices into a new Column, preserving order.
 func (c *Column) Slice(indices []int) *Column {
-	out := &Column{dtype: c.dtype, n: len(indices), nulls: make([]bool, len(indices))}
+	out := &Column{dtype: c.dtype, n: len(indices), nulls: make([]bool, len(indices)), nullCount: unknownNullCount}
 	switch c.dtype {
 	case dtypes.Int64:
 		out.i64 = make([]int64, len(indices))
@@ -311,7 +332,7 @@ func (c *Column) Slice(indices []int) *Column {
 // callers must treat the view — and must not mutate the source — for the view's
 // lifetime. start and end must satisfy 0 <= start <= end <= c.Len().
 func (c *Column) View(start, end int) *Column {
-	out := &Column{dtype: c.dtype, n: end - start}
+	out := &Column{dtype: c.dtype, n: end - start, nullCount: unknownNullCount}
 	if c.nulls != nil {
 		out.nulls = c.nulls[start:end]
 	}
@@ -348,7 +369,7 @@ func (c *Column) Shift(periods int) *Column {
 	if periods == 0 {
 		return c.Clone()
 	}
-	out := &Column{dtype: c.dtype, n: c.n, nulls: make([]bool, c.n)}
+	out := &Column{dtype: c.dtype, n: c.n, nulls: make([]bool, c.n), nullCount: unknownNullCount}
 	switch c.dtype {
 	case dtypes.Int64:
 		out.i64 = make([]int64, c.n)
@@ -379,9 +400,10 @@ func (c *Column) Shift(periods int) *Column {
 	return out
 }
 
-// Clone returns a deep copy of the column.
+// Clone returns a deep copy of the column. The copy is private (not shared) and
+// its cached null count is left unknown.
 func (c *Column) Clone() *Column {
-	out := &Column{dtype: c.dtype, n: c.n}
+	out := &Column{dtype: c.dtype, n: c.n, nullCount: unknownNullCount}
 	if c.nulls != nil {
 		out.nulls = make([]bool, len(c.nulls))
 		copy(out.nulls, c.nulls)
@@ -412,7 +434,7 @@ func (c *Column) Clone() *Column {
 // cols is empty.
 func ConcatColumns(cols []*Column) *Column {
 	if len(cols) == 0 {
-		return &Column{}
+		return &Column{nullCount: unknownNullCount}
 	}
 	dtype := cols[0].dtype
 	total := 0
@@ -435,7 +457,7 @@ func ConcatColumns(cols []*Column) *Column {
 			copy(buf[off:], c.f64)
 			off += c.n
 		}
-		return &Column{dtype: dtype, n: total, f64: buf, nulls: nulls}
+		return &Column{dtype: dtype, n: total, f64: buf, nulls: nulls, nullCount: unknownNullCount}
 	case dtypes.Int64:
 		buf := make([]int64, total)
 		off = 0
@@ -443,7 +465,7 @@ func ConcatColumns(cols []*Column) *Column {
 			copy(buf[off:], c.i64)
 			off += c.n
 		}
-		return &Column{dtype: dtype, n: total, i64: buf, nulls: nulls}
+		return &Column{dtype: dtype, n: total, i64: buf, nulls: nulls, nullCount: unknownNullCount}
 	case dtypes.String, dtypes.Categorical, dtypes.Enum:
 		buf := make([]string, total)
 		off = 0
@@ -451,7 +473,7 @@ func ConcatColumns(cols []*Column) *Column {
 			copy(buf[off:], c.str)
 			off += c.n
 		}
-		return &Column{dtype: dtype, n: total, str: buf, nulls: nulls}
+		return &Column{dtype: dtype, n: total, str: buf, nulls: nulls, nullCount: unknownNullCount}
 	case dtypes.Boolean:
 		buf := make([]bool, total)
 		off = 0
@@ -459,7 +481,7 @@ func ConcatColumns(cols []*Column) *Column {
 			copy(buf[off:], c.bln)
 			off += c.n
 		}
-		return &Column{dtype: dtype, n: total, bln: buf, nulls: nulls}
+		return &Column{dtype: dtype, n: total, bln: buf, nulls: nulls, nullCount: unknownNullCount}
 	case dtypes.Datetime:
 		buf := make([]time.Time, total)
 		off = 0
@@ -467,7 +489,7 @@ func ConcatColumns(cols []*Column) *Column {
 			copy(buf[off:], c.tim)
 			off += c.n
 		}
-		return &Column{dtype: dtype, n: total, tim: buf, nulls: nulls}
+		return &Column{dtype: dtype, n: total, tim: buf, nulls: nulls, nullCount: unknownNullCount}
 	default:
 		buf := make([]any, total)
 		off = 0
@@ -475,7 +497,7 @@ func ConcatColumns(cols []*Column) *Column {
 			copy(buf[off:], c.boxed)
 			off += c.n
 		}
-		return &Column{dtype: dtype, n: total, boxed: buf, nulls: nulls}
+		return &Column{dtype: dtype, n: total, boxed: buf, nulls: nulls, nullCount: unknownNullCount}
 	}
 }
 

@@ -14,7 +14,7 @@ _DATAFRAME_OPS = {
     "with_columns": lambda df: df.with_columns(pl.col("v").alias("v2")),
     "sort": lambda df: df.sort("v"),
     "group_by": lambda df: df.group_by("g").agg(pl.col("v").sum()),
-    "join": lambda df: df.join(df, on="g", how="inner"),
+    "join": lambda df: df.join(df.unique(subset=["i"]), on="i", how="inner"),
     "head": lambda df: df.head(100),
     "tail": lambda df: df.tail(100),
     "unique": lambda df: df.select("g").unique(),

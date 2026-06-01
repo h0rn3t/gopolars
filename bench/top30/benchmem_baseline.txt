@@ -1,0 +1,69 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/h0rn3t/gopolars/bench/top30
+cpu: Apple M4 Pro
+BenchmarkTop30/DataFrame/filter/size_1K-12         	  139476	     15213 ns/op	   28912 B/op	      25 allocs/op
+BenchmarkTop30/DataFrame/filter/size_1M-12         	     386	   6203175 ns/op	26333909 B/op	     112 allocs/op
+BenchmarkTop30/DataFrame/select/size_1K-12         	  254196	      8173 ns/op	   27872 B/op	      13 allocs/op
+BenchmarkTop30/DataFrame/select/size_1M-12         	     801	   2505029 ns/op	26027240 B/op	      13 allocs/op
+BenchmarkTop30/DataFrame/with_columns/size_1K-12   	  244834	      9406 ns/op	   56400 B/op	      23 allocs/op
+BenchmarkTop30/DataFrame/with_columns/size_1M-12   	     567	   3710299 ns/op	53061713 B/op	      23 allocs/op
+BenchmarkTop30/DataFrame/sort/size_1K-12           	   35613	     68270 ns/op	   54912 B/op	      24 allocs/op
+BenchmarkTop30/DataFrame/sort/size_1M-12           	      10	 206322146 ns/op	52053632 B/op	      24 allocs/op
+BenchmarkTop30/DataFrame/group_by/size_1K-12       	   46047	     55174 ns/op	   37070 B/op	    1055 allocs/op
+BenchmarkTop30/DataFrame/group_by/size_1M-12       	      48	  47044751 ns/op	57850122 B/op	 1000171 allocs/op
+BenchmarkTop30/DataFrame/join/size_1K-12           	      37	  60587624 ns/op	83328163 B/op	 2283869 allocs/op
+BenchmarkTop30/DataFrame/head/size_1K-12           	  832753	      2711 ns/op	    7344 B/op	      19 allocs/op
+BenchmarkTop30/DataFrame/head/size_1M-12           	 1400094	      1680 ns/op	    7344 B/op	      19 allocs/op
+BenchmarkTop30/DataFrame/tail/size_1K-12           	  863995	      2891 ns/op	    7472 B/op	      21 allocs/op
+BenchmarkTop30/DataFrame/tail/size_1M-12           	 1405659	      1681 ns/op	    7472 B/op	      21 allocs/op
+BenchmarkTop30/DataFrame/unique/size_1K-12         	   35402	     66777 ns/op	   28001 B/op	    2020 allocs/op
+BenchmarkTop30/DataFrame/unique/size_1M-12         	      37	  62154277 ns/op	26006366 B/op	 2000022 allocs/op
+BenchmarkTop30/DataFrame/fill_null/size_1K-12      	   39001	     59966 ns/op	  149233 B/op	    3662 allocs/op
+BenchmarkTop30/DataFrame/fill_null/size_1M-12      	      52	  41780201 ns/op	145236814 B/op	 3644798 allocs/op
+BenchmarkTop30/DataFrame/drop_nulls/size_1K-12     	   46698	     51405 ns/op	   54784 B/op	      20 allocs/op
+BenchmarkTop30/DataFrame/drop_nulls/size_1M-12     	      49	  45839081 ns/op	52053510 B/op	      20 allocs/op
+BenchmarkTop30/Expr/cum_sum/size_1K-12             	  128101	     16998 ns/op	   43968 B/op	    1014 allocs/op
+BenchmarkTop30/Expr/cum_sum/size_1M-12             	     247	   9939785 ns/op	42030735 B/op	 1000014 allocs/op
+BenchmarkTop30/Expr/rank/size_1K-12                	   19827	    121717 ns/op	   50176 B/op	     762 allocs/op
+BenchmarkTop30/Expr/rank/size_1M-12                	       6	 393328583 ns/op	50032330 B/op	  999762 allocs/op
+BenchmarkTop30/Expr/over/size_1K-12                	   24013	    106594 ns/op	  124512 B/op	    5066 allocs/op
+BenchmarkTop30/Expr/over/size_1M-12                	      25	 217308988 ns/op	142900492 B/op	 5000183 allocs/op
+BenchmarkTop30/Expr/fill_null/size_1K-12           	    8382	    286674 ns/op	  115215 B/op	    1941 allocs/op
+BenchmarkTop30/Expr/fill_null/size_1M-12           	      52	  52312817 ns/op	112221482 B/op	 1900103 allocs/op
+BenchmarkTop30/Expr/fill_nan/size_1K-12            	   37036	     64051 ns/op	  115211 B/op	    1941 allocs/op
+BenchmarkTop30/Expr/fill_nan/size_1M-12            	     133	  16091665 ns/op	112221352 B/op	 1900102 allocs/op
+BenchmarkTop30/Expr/rolling_mean/size_1K-12        	    5516	    415261 ns/op	  939997 B/op	    2016 allocs/op
+BenchmarkTop30/Expr/rolling_mean/size_1M-12        	       7	 388874952 ns/op	938030921 B/op	 2000016 allocs/op
+BenchmarkTop30/Expr/rolling_sum/size_1K-12         	    4968	    436195 ns/op	  939998 B/op	    2016 allocs/op
+BenchmarkTop30/Expr/rolling_sum/size_1M-12         	       7	 309048429 ns/op	938030896 B/op	 2000016 allocs/op
+BenchmarkTop30/Expr/rolling_min/size_1K-12         	    5643	    415315 ns/op	  939999 B/op	    2016 allocs/op
+BenchmarkTop30/Expr/rolling_min/size_1M-12         	       6	 373355924 ns/op	938030922 B/op	 2000016 allocs/op
+BenchmarkTop30/Expr/rolling_max/size_1K-12         	    5658	    430242 ns/op	  939998 B/op	    2016 allocs/op
+BenchmarkTop30/Expr/rolling_max/size_1M-12         	       6	 366252472 ns/op	938030890 B/op	 2000016 allocs/op
+BenchmarkTop30/Series/null_count/size_1K-12        	 4504210	       525.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTop30/Series/null_count/size_1M-12        	    4177	    508567 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTop30/Series/drop_nans/size_1K-12         	  203787	     12297 ns/op	   33816 B/op	    1005 allocs/op
+BenchmarkTop30/Series/drop_nans/size_1M-12         	     285	   8736784 ns/op	33018617 B/op	 1000005 allocs/op
+BenchmarkTop30/Series/to_list/size_1K-12           	  249146	      9677 ns/op	   24384 B/op	    1001 allocs/op
+BenchmarkTop30/Series/to_list/size_1M-12           	     322	   7651344 ns/op	24007189 B/op	 1000001 allocs/op
+BenchmarkTop30/Series/is_null/size_1K-12           	  670580	      3469 ns/op	   18648 B/op	       5 allocs/op
+BenchmarkTop30/Series/is_null/size_1M-12           	    1311	   1700606 ns/op	18022620 B/op	       5 allocs/op
+BenchmarkTop30/Series/is_not_null/size_1K-12       	  663685	      3726 ns/op	   18648 B/op	       5 allocs/op
+BenchmarkTop30/Series/is_not_null/size_1M-12       	    1249	   1908972 ns/op	18022618 B/op	       5 allocs/op
+BenchmarkTop30/Series/fill_nan/size_1K-12          	  192697	     12165 ns/op	   33816 B/op	    1005 allocs/op
+BenchmarkTop30/Series/fill_nan/size_1M-12          	     290	   8499627 ns/op	33018623 B/op	 1000005 allocs/op
+BenchmarkTop30/LazyFrame/collect/size_1K-12        	19269052	       126.3 ns/op	     304 B/op	       4 allocs/op
+BenchmarkTop30/LazyFrame/collect/size_1M-12        	22228095	       100.6 ns/op	     304 B/op	       4 allocs/op
+BenchmarkTop30/LazyFrame/sql/size_1K-12            	   75349	     31238 ns/op	   51440 B/op	      82 allocs/op
+BenchmarkTop30/LazyFrame/sql/size_1M-12            	     308	   7934542 ns/op	39368292 B/op	     169 allocs/op
+BenchmarkTop30/LazyFrame/inspect/size_1K-12        	74803833	        28.05 ns/op	      96 B/op	       1 allocs/op
+BenchmarkTop30/LazyFrame/inspect/size_1M-12        	124881253	        19.59 ns/op	      96 B/op	       1 allocs/op
+BenchmarkTop30/SQLContext/execute/size_1K-12       	 1403836	      1713 ns/op	    3824 B/op	      31 allocs/op
+BenchmarkTop30/SQLContext/execute/size_1M-12       	 1627081	      1391 ns/op	    3824 B/op	      31 allocs/op
+BenchmarkTop30/SQLContext/register/size_1K-12      	13742090	       183.9 ns/op	     800 B/op	       3 allocs/op
+BenchmarkTop30/SQLContext/register/size_1M-12      	13682324	       160.2 ns/op	     800 B/op	       3 allocs/op
+BenchmarkTop30/SQLContext/tables/size_1K-12        	 9525655	       298.1 ns/op	     816 B/op	       4 allocs/op
+BenchmarkTop30/SQLContext/tables/size_1M-12        	 8122390	       273.5 ns/op	     816 B/op	       4 allocs/op
+PASS
+ok  	github.com/h0rn3t/gopolars/bench/top30	301.332s

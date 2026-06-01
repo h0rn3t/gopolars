@@ -1,0 +1,43 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/h0rn3t/gopolars/bench/top30
+cpu: Apple M4 Pro
+BenchmarkTop30/DataFrame/filter/size_1K-12         	  121791	      9611 ns/op	   28976 B/op	      25 allocs/op
+BenchmarkTop30/DataFrame/filter/size_1M-12         	     206	   5802893 ns/op	26334732 B/op	     112 allocs/op
+BenchmarkTop30/DataFrame/select/size_1K-12         	 4066723	       291.5 ns/op	     864 B/op	       7 allocs/op
+BenchmarkTop30/DataFrame/select/size_1M-12         	 5398335	       219.4 ns/op	     864 B/op	       7 allocs/op
+BenchmarkTop30/DataFrame/with_columns/size_1K-12   	 2958669	       408.6 ns/op	    1168 B/op	       8 allocs/op
+BenchmarkTop30/DataFrame/with_columns/size_1M-12   	 3809132	       308.6 ns/op	    1168 B/op	       8 allocs/op
+BenchmarkTop30/DataFrame/sort/size_1K-12           	   41520	     28442 ns/op	   71232 B/op	      22 allocs/op
+BenchmarkTop30/DataFrame/sort/size_1M-12           	      27	  39358563 ns/op	68060736 B/op	      22 allocs/op
+BenchmarkTop30/DataFrame/group_by/size_1K-12       	   95455	     12357 ns/op	   17513 B/op	      20 allocs/op
+BenchmarkTop30/DataFrame/group_by/size_1M-12       	      62	  18027745 ns/op	16025003 B/op	      21 allocs/op
+BenchmarkTop30/DataFrame/join/size_1K-12           	    7128	    150891 ns/op	  318540 B/op	    1385 allocs/op
+BenchmarkTop30/DataFrame/join/size_1M-12           	      25	  46996270 ns/op	128460275 B/op	    2120 allocs/op
+BenchmarkTop30/DataFrame/head/size_1K-12           	  490474	      2266 ns/op	    7408 B/op	      19 allocs/op
+BenchmarkTop30/DataFrame/head/size_1M-12           	  764088	      1564 ns/op	    7408 B/op	      19 allocs/op
+BenchmarkTop30/DataFrame/tail/size_1K-12           	  468825	      2278 ns/op	    7536 B/op	      21 allocs/op
+BenchmarkTop30/DataFrame/tail/size_1M-12           	  752022	      1591 ns/op	    7536 B/op	      21 allocs/op
+BenchmarkTop30/DataFrame/unique/size_1K-12         	  117511	     10213 ns/op	   10160 B/op	      24 allocs/op
+BenchmarkTop30/DataFrame/unique/size_1M-12         	      67	  16230675 ns/op	 8005553 B/op	      24 allocs/op
+BenchmarkTop30/DataFrame/fill_null/size_1K-12      	  564770	      1867 ns/op	   10176 B/op	       9 allocs/op
+BenchmarkTop30/DataFrame/fill_null/size_1M-12      	     968	   1145763 ns/op	 9012160 B/op	       9 allocs/op
+BenchmarkTop30/DataFrame/drop_nulls/size_1K-12     	   23546	     49601 ns/op	   54848 B/op	      20 allocs/op
+BenchmarkTop30/DataFrame/drop_nulls/size_1M-12     	      24	  44482498 ns/op	52053577 B/op	      20 allocs/op
+BenchmarkTop30/Expr/cum_sum/size_1K-12             	  585818	      1920 ns/op	   10192 B/op	      10 allocs/op
+BenchmarkTop30/Expr/cum_sum/size_1M-12             	    1440	    774561 ns/op	 9012176 B/op	      10 allocs/op
+BenchmarkTop30/Expr/rank/size_1K-12                	   17036	     70050 ns/op	   18440 B/op	      13 allocs/op
+BenchmarkTop30/Expr/rank/size_1M-12                	       3	 343457931 ns/op	17015816 B/op	      13 allocs/op
+BenchmarkTop30/Expr/over/size_1K-12                	   83827	     14450 ns/op	   28128 B/op	      22 allocs/op
+BenchmarkTop30/Expr/over/size_1M-12                	      57	  18370836 ns/op	26027490 B/op	      22 allocs/op
+BenchmarkTop30/Expr/fill_null/size_1K-12           	  519309	      2073 ns/op	   10320 B/op	      11 allocs/op
+BenchmarkTop30/Expr/fill_null/size_1M-12           	     978	   1198134 ns/op	 9012304 B/op	      11 allocs/op
+BenchmarkTop30/Expr/fill_nan/size_1K-12            	  531973	      2118 ns/op	   10320 B/op	      11 allocs/op
+BenchmarkTop30/Expr/fill_nan/size_1M-12            	     942	   1278330 ns/op	 9012304 B/op	      11 allocs/op
+BenchmarkTop30/Expr/rolling_mean/size_1K-12        	  203560	      5895 ns/op	   10211 B/op	      12 allocs/op
+BenchmarkTop30/Expr/rolling_mean/size_1M-12        	     238	   4841472 ns/op	 9012197 B/op	      12 allocs/op
+BenchmarkTop30/Expr/rolling_sum/size_1K-12         	  201547	      5914 ns/op	   10211 B/op	      12 allocs/op
+BenchmarkTop30/Expr/rolling_sum/size_1M-12         	     250	   4845132 ns/op	 9012197 B/op	      12 allocs/op
+BenchmarkTop30/Expr/rolling_min/size_1K-12         	  269475	      4303 ns/op	   11107 B/op	      13 allocs/op
+BenchmarkTop30/Expr/rolling_min/size_1M-12         	     144	   8072146 ns/op	 9368421 B/op	      24 allocs/op
+BenchmarkTop30/Expr/rolling_max/size_1K-12         	

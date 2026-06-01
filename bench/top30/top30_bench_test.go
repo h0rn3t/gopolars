@@ -387,7 +387,15 @@ func benchDataFrame(ctx context.Context, df polars.DataFrame, op string) error {
 		gb := df.GroupBy("g")
 		_, err = gb.Agg(polars.Col("v").Sum())
 	case "join":
-		_, err = df.Join(polars.JoinInput{Other: df, LeftOn: []string{"g"}, RightOn: []string{"g"}, How: polars.JoinTypeInner})
+		// Join against the deduplicated 1000-value "i" dimension rather than the
+		// 5-value "g" self-join, which cross-products to a non-completing size at
+		// 1M rows. Each left row matches at most one right row, so the output is
+		// O(rows) and completes at every size.
+		var dim polars.DataFrame
+		dim, err = df.Unique("i")
+		if err == nil {
+			_, err = df.Join(polars.JoinInput{Other: dim, LeftOn: []string{"i"}, RightOn: []string{"i"}, How: polars.JoinTypeInner})
+		}
 	case "head":
 		_ = df.Head(100)
 	case "tail":

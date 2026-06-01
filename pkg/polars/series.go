@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
@@ -71,34 +72,48 @@ func (s seriesFacade) ToList() []any {
 }
 
 func (s seriesFacade) NullCount() int {
-	count := 0
-	for i := 0; i < s.value.Len(); i++ {
-		if s.value.IsNull(i) {
-			count++
-		}
+	// O(1) after the first call via the chunk's cached null count.
+	if c := s.value.Column(); c != nil {
+		return c.NullCount()
 	}
-	return count
+	return 0
 }
 
 func (s seriesFacade) IsNull() Series {
-	values := make([]any, s.value.Len())
-	for i := 0; i < s.value.Len(); i++ {
-		values[i] = s.value.IsNull(i)
+	n := s.value.Len()
+	out := make([]bool, n)
+	if c := s.value.Column(); c != nil {
+		if nulls := c.Nulls(); nulls != nil {
+			copy(out, nulls)
+		}
 	}
-	out, _ := iseries.New(s.value.Name(), dtypes.Boolean, values)
-	return seriesFacade{value: out}
+	// The result mask itself is never null.
+	return seriesFacade{value: iseries.FromBool(s.value.Name(), out, nil)}
 }
 
 func (s seriesFacade) IsNotNull() Series {
-	values := make([]any, s.value.Len())
-	for i := 0; i < s.value.Len(); i++ {
-		values[i] = !s.value.IsNull(i)
+	n := s.value.Len()
+	out := make([]bool, n)
+	if c := s.value.Column(); c != nil {
+		nulls := c.Nulls()
+		for i := range n {
+			out[i] = nulls == nil || !nulls[i]
+		}
+	} else {
+		for i := range out {
+			out[i] = true
+		}
 	}
-	out, _ := iseries.New(s.value.Name(), dtypes.Boolean, values)
-	return seriesFacade{value: out}
+	return seriesFacade{value: iseries.FromBool(s.value.Name(), out, nil)}
 }
 
 func (s seriesFacade) FillNull(value any) (Series, error) {
+	// Typed fast path: float64 column filled with a float64 literal.
+	if fv, ok := value.(float64); ok {
+		if col, ok2 := s.value.Column().FillNullFloat64(fv); ok2 {
+			return seriesFacade{value: iseries.FromColumn(s.value.Name(), col)}, nil
+		}
+	}
 	values := make([]any, s.value.Len())
 	for i := 0; i < s.value.Len(); i++ {
 		if s.value.IsNull(i) {
@@ -115,6 +130,10 @@ func (s seriesFacade) FillNull(value any) (Series, error) {
 }
 
 func (s seriesFacade) FillNan(value float64) (Series, error) {
+	// Typed fast path for float64 columns (preserves nulls, fills NaN values).
+	if col, ok := s.value.Column().FillNaNFloat64(value); ok {
+		return seriesFacade{value: iseries.FromColumn(s.value.Name(), col)}, nil
+	}
 	values := make([]any, s.value.Len())
 	for i := 0; i < s.value.Len(); i++ {
 		v := s.value.Value(i)
@@ -132,6 +151,10 @@ func (s seriesFacade) FillNan(value float64) (Series, error) {
 }
 
 func (s seriesFacade) DropNans() Series {
+	// Typed fast path: filter out non-null NaN rows directly from the chunk.
+	if col, ok := s.value.Column().DropNaNFloat64(); ok {
+		return seriesFacade{value: iseries.FromColumn(s.value.Name(), col)}
+	}
 	values := make([]any, 0, s.value.Len())
 	for i := 0; i < s.value.Len(); i++ {
 		v := s.value.Value(i)
@@ -1863,9 +1886,50 @@ func (s seriesFacade) binaryCompare(other Series, op string) (Series, error) {
 	return seriesFacade{value: next}, nil
 }
 
+// rollingFloat64Col extracts a []float64 view and validity mask from a column
+// for the linear rolling kernels (Int64 columns are converted; other dtypes
+// return ok=false so the caller uses the row-wise path).
+func rollingFloat64Col(col *chunk.Column) (vals []float64, nulls []bool, ok bool) {
+	if col == nil {
+		return nil, nil, false
+	}
+	if f64s, ok2 := col.Float64s(); ok2 {
+		return f64s, col.Nulls(), true
+	}
+	if i64s, ok2 := col.Int64s(); ok2 {
+		out := make([]float64, len(i64s))
+		for i, v := range i64s {
+			out[i] = float64(v)
+		}
+		return out, col.Nulls(), true
+	}
+	return nil, nil, false
+}
+
 func (s seriesFacade) rolling(window int, mode string) Series {
 	if window <= 0 {
 		window = 1
+	}
+	// O(n) typed fast path for sum/mean/min/max via the shared linear kernels.
+	// skipNaN is true to match the Series facade's prior behavior, which
+	// excluded NaN observations from the window aggregate.
+	switch mode {
+	case "sum", "mean", "min", "max":
+		if vals, nulls, ok := rollingFloat64Col(s.value.Column()); ok {
+			var outVals []float64
+			var outNulls []bool
+			switch mode {
+			case "sum":
+				outVals, outNulls = chunk.RollingSum(vals, nulls, window, 1, true)
+			case "mean":
+				outVals, outNulls = chunk.RollingMean(vals, nulls, window, 1, true)
+			case "min":
+				outVals, outNulls = chunk.RollingMin(vals, nulls, window, 1)
+			case "max":
+				outVals, outNulls = chunk.RollingMax(vals, nulls, window, 1)
+			}
+			return seriesFacade{value: iseries.FromFloat64(s.value.Name(), outVals, outNulls)}
+		}
 	}
 	values := make([]any, s.value.Len())
 	for i := 0; i < s.value.Len(); i++ {

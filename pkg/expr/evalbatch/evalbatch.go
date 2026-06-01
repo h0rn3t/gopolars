@@ -54,6 +54,11 @@ func supported(e expr.Expr) bool {
 	case expr.KindUnary:
 		return e.Op() == "not" && e.Target() != nil && supported(*e.Target())
 	case expr.KindBin:
+		if e.Op() == "fill_null_expr" || e.Op() == "fill_nan_expr" {
+			// Coalesce a column against a float64 literal fill value.
+			return e.Left() != nil && e.Right() != nil &&
+				supported(*e.Left()) && e.Right().Kind() == expr.KindLit
+		}
 		if !batchBinOps[e.Op()] {
 			return false
 		}
@@ -259,6 +264,31 @@ func evalNode(e expr.Expr, cols map[string]*chunk.Column, height int) (vresult, 
 	}
 }
 
+// coalesceNode evaluates fill_null_expr / fill_nan_expr: the left operand is a
+// column and the right operand is a float64 literal fill value. It produces a
+// typed result column via the chunk coalesce kernels (reusing kernel 1.4),
+// never round-tripping through []any.
+func coalesceNode(op string, l, r vresult) (vresult, error) {
+	if l.isLit || l.col == nil {
+		return vresult{}, fmt.Errorf("%s target must be a column", op)
+	}
+	fill, ok := r.lit.(float64)
+	if !r.isLit || !ok {
+		return vresult{}, fmt.Errorf("%s value must be a float64 literal", op)
+	}
+	var out *chunk.Column
+	var supported bool
+	if op == "fill_null_expr" {
+		out, supported = l.col.FillNullFloat64(fill)
+	} else {
+		out, supported = l.col.FillNaNFloat64(fill)
+	}
+	if !supported {
+		return vresult{}, fmt.Errorf("%s requires a float64 column", op)
+	}
+	return vresult{col: out}, nil
+}
+
 func evalBinNode(e expr.Expr, cols map[string]*chunk.Column, height int) (vresult, error) {
 	l, err := evalNode(*e.Left(), cols, height)
 	if err != nil {
@@ -270,6 +300,8 @@ func evalBinNode(e expr.Expr, cols map[string]*chunk.Column, height int) (vresul
 	}
 	op := e.Op()
 	switch op {
+	case "fill_null_expr", "fill_nan_expr":
+		return coalesceNode(op, l, r)
 	case "add", "sub", "mul", "div":
 		return arithNode(op, l, r, height)
 	case "gt", "ge", "lt", "le":

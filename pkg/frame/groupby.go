@@ -3,8 +3,8 @@ package frame
 import (
 	"fmt"
 	"math"
-	"strings"
 
+	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 	"github.com/h0rn3t/gopolars/pkg/expr"
 	"github.com/h0rn3t/gopolars/pkg/series"
@@ -19,25 +19,35 @@ func (g GroupBy) Agg(exprs ...expr.Expr) (DataFrame, error) {
 	if len(g.keys) == 0 {
 		return DataFrame{}, fmt.Errorf("group keys are empty")
 	}
-	buckets := map[string][]int{}
-	for i := 0; i < g.df.height; i++ {
-		parts := make([]string, len(g.keys))
-		for j, key := range g.keys {
-			s, ok := g.df.cols[key]
-			if !ok {
-				return DataFrame{}, fmt.Errorf("group key %s not found", key)
-			}
-			parts[j] = fmt.Sprintf("%v", s.Value(i))
+	// Build group buckets from the typed backing slices of the key columns via
+	// chunk.GroupIDs — no per-row interface boxing or fmt.Sprintf. Allocation
+	// scales with the number of distinct groups, not the row count.
+	keyColumns := make([]*chunk.Column, len(g.keys))
+	for j, key := range g.keys {
+		s, ok := g.df.cols[key]
+		if !ok {
+			return DataFrame{}, fmt.Errorf("group key %s not found", key)
 		}
-		hash := strings.Join(parts, "|")
-		buckets[hash] = append(buckets[hash], i)
+		keyColumns[j] = s.Column()
 	}
-	keyCols := make([][]any, len(g.keys))
+	ids, firstRow := chunk.GroupIDs(keyColumns, g.df.height)
+	ngroups := len(firstRow)
+
+	counts := make([]int, ngroups)
+	for _, gid := range ids {
+		counts[gid]++
+	}
+	buckets := make([][]int, ngroups)
+	for gi := range buckets {
+		buckets[gi] = make([]int, 0, counts[gi])
+	}
+	for row, gid := range ids {
+		buckets[gid] = append(buckets[gid], row)
+	}
+
 	aggCols := make([][]any, len(exprs))
-	for _, idxs := range buckets {
-		for i, key := range g.keys {
-			keyCols[i] = append(keyCols[i], g.df.cols[key].Value(idxs[0]))
-		}
+	for gi := range ngroups {
+		idxs := buckets[gi]
 		for i, aggExpr := range exprs {
 			v, err := g.evalAgg(aggExpr, idxs)
 			if err != nil {
@@ -46,14 +56,12 @@ func (g GroupBy) Agg(exprs ...expr.Expr) (DataFrame, error) {
 			aggCols[i] = append(aggCols[i], v)
 		}
 	}
+
 	out := make([]series.Series, 0, len(g.keys)+len(exprs))
-	for i, key := range g.keys {
-		dt := g.df.cols[key].DataType()
-		s, err := series.New(key, dt, keyCols[i])
-		if err != nil {
-			return DataFrame{}, err
-		}
-		out = append(out, s)
+	// Key columns are materialized by a typed gather of the representative
+	// (first-seen) row per group — no boxing.
+	for j, key := range g.keys {
+		out = append(out, series.FromColumn(key, keyColumns[j].Gather(firstRow)))
 	}
 	for i, aggExpr := range exprs {
 		dt, err := g.aggType(aggExpr)

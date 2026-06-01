@@ -46,6 +46,11 @@ func FromString(name string, values []string, nulls []bool) Series {
 	return Series{name: name, col: chunk.NewString(values, nulls)}
 }
 
+// FromBool builds a Boolean series directly from a typed slice (zero-copy).
+func FromBool(name string, values []bool, nulls []bool) Series {
+	return Series{name: name, col: chunk.NewBool(values, nulls)}
+}
+
 func (s Series) Name() string {
 	return s.name
 }
@@ -82,10 +87,14 @@ func (s Series) Clone() Series {
 	return Series{name: s.name, col: s.col.Clone()}
 }
 
+// Rename returns a Series with a new name that SHARES the source's underlying
+// typed column (metadata-only, no buffer copy). The shared column is marked so
+// the copy-on-write contract protects it from any future in-place mutation.
 func (s Series) Rename(name string) Series {
-	c := s.Clone()
-	c.name = name
-	return c
+	if s.col != nil {
+		s.col.MarkShared()
+	}
+	return Series{name: name, col: s.col}
 }
 
 func (s Series) Slice(indexes []int) Series {
