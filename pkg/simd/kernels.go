@@ -1,5 +1,7 @@
 package simd
 
+import "math/bits"
+
 // This file holds column kernels used by the vectorized expression engine.
 // They are defined without a build tag so the same implementation compiles in
 // both the SIMD (amd64 && simd) and generic builds; correctness never depends on
@@ -33,29 +35,116 @@ func AndMask(a, b []bool) []bool {
 		n = len(b)
 	}
 	out := make([]bool, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out[i] = a[i] && b[i]
 	}
 	return out
 }
 
+// CompareGTFloat64Bitmap returns a Bitmap whose bit i is set iff vals[i] >
+// threshold. It is the bitmap counterpart of CompareGTFloat64: one bit per row
+// instead of one byte. Only matching bits are set, so the trailing bits of a
+// partial last word stay zero (BitmapNew zeroes the buffer).
+func CompareGTFloat64Bitmap(vals []float64, threshold float64) Bitmap {
+	b := BitmapNew(len(vals))
+	for i, v := range vals {
+		if v > threshold {
+			b[i>>6] |= 1 << (uint(i) & 63)
+		}
+	}
+	return b
+}
+
+// CompareEQInt64Bitmap returns a Bitmap whose bit i is set iff vals[i] ==
+// target. Bitmap counterpart of CompareEQInt64.
+func CompareEQInt64Bitmap(vals []int64, target int64) Bitmap {
+	b := BitmapNew(len(vals))
+	for i, v := range vals {
+		if v == target {
+			b[i>>6] |= 1 << (uint(i) & 63)
+		}
+	}
+	return b
+}
+
+// BitmapAnd returns the element-wise logical AND of bitmaps a and b over nRows
+// rows, in a freshly allocated Bitmap of (nRows+63)/64 words. It is the bitmap
+// replacement for AndMask: combining two predicate bitmaps is a word-at-a-time
+// AND rather than a per-element bool loop. Trailing bits of a partial last word
+// remain zero as long as both inputs keep them zero.
+func BitmapAnd(a, b Bitmap, nRows int) Bitmap {
+	words := (nRows + 63) / 64
+	out := make(Bitmap, words)
+	for i := range words {
+		out[i] = a[i] & b[i]
+	}
+	return out
+}
+
 // MaskedReduceFloat64 reduces vals over the rows that survive a filter — those
-// where keep[i] is true and the value is non-null (nulls == nil || !nulls[i]) —
-// in a single pass, returning the sum, min, max, and the count of contributing
-// rows. It is the kernel behind the fused filter+reduce path: it avoids
-// building a surviving-index slice or a materialized filtered column.
+// whose keep bit is set and whose value is non-null (nulls == nil || !nulls[i])
+// — in a single pass, returning the sum, min, max, and the count of contributing
+// rows. It is the kernel behind the fused filter+reduce path: it avoids building
+// a surviving-index slice or a materialized filtered column.
 //
-// min and max are seeded on the first contributing row in ascending index
-// order and updated with plain < / >, so NaN is sticky-from-seed and otherwise
-// ignored — identical to the engine's scalar aggregation. When count == 0 the
-// returned sum/min/max are 0 and callers should treat the reduction as empty
-// (null). keep must be at least len(vals); nulls is either nil or len(vals).
-func MaskedReduceFloat64(vals []float64, keep []bool, nulls []bool) (sum, min, max float64, count int) {
+// keep is a packed Bitmap. The reduction walks one word at a time, skipping
+// zero words entirely and visiting only set bits via math/bits.TrailingZeros64 +
+// x &= x-1 (Lemire 2018). Bits are visited in ascending index order (lowest set
+// bit of the lowest word first), so the floating-point reduction order is
+// identical to the previous row-major []bool loop. The partial last word is
+// masked to len(vals) so stray high bits never index out of range.
+//
+// min and max are seeded on the first contributing row in ascending index order
+// and updated with plain < / >, so NaN is sticky-from-seed and otherwise ignored
+// — identical to the engine's scalar aggregation. When count == 0 the returned
+// sum/min/max are 0 and callers should treat the reduction as empty (null).
+// keep must address at least len(vals) rows; nulls is either nil or len(vals).
+func MaskedReduceFloat64(vals []float64, keep Bitmap, nulls []bool) (sum, min, max float64, count int) {
+	n := len(vals)
+	nWords := (n + 63) / 64
+	lastMask := ^uint64(0)
+	if rem := n & 63; rem != 0 {
+		lastMask = uint64(1)<<uint(rem) - 1
+	}
 	if nulls == nil {
-		for i, v := range vals {
-			if !keep[i] {
+		for wi := range nWords {
+			w := keep[wi]
+			if wi == nWords-1 {
+				w &= lastMask
+			}
+			base := wi << 6
+			for w != 0 {
+				v := vals[base+bits.TrailingZeros64(w)]
+				w &= w - 1
+				if count == 0 {
+					min, max = v, v
+				} else {
+					if v < min {
+						min = v
+					}
+					if v > max {
+						max = v
+					}
+				}
+				sum += v
+				count++
+			}
+		}
+		return sum, min, max, count
+	}
+	for wi := range nWords {
+		w := keep[wi]
+		if wi == nWords-1 {
+			w &= lastMask
+		}
+		base := wi << 6
+		for w != 0 {
+			i := base + bits.TrailingZeros64(w)
+			w &= w - 1
+			if nulls[i] {
 				continue
 			}
+			v := vals[i]
 			if count == 0 {
 				min, max = v, v
 			} else {
@@ -69,51 +158,45 @@ func MaskedReduceFloat64(vals []float64, keep []bool, nulls []bool) (sum, min, m
 			sum += v
 			count++
 		}
-		return sum, min, max, count
-	}
-	for i, v := range vals {
-		if !keep[i] || nulls[i] {
-			continue
-		}
-		if count == 0 {
-			min, max = v, v
-		} else {
-			if v < min {
-				min = v
-			}
-			if v > max {
-				max = v
-			}
-		}
-		sum += v
-		count++
 	}
 	return sum, min, max, count
 }
 
-// CompressIndices converts a boolean mask into the indices of its true entries,
-// in order. Used to gather surviving rows after a Filter.
+// CompressIndices converts a predicate Bitmap into the ascending indices of its
+// set bits over nRows rows. Used to gather surviving rows after a Filter.
 //
-// It uses a count-then-allocate strategy: a first popcount pass sizes the
-// output to the exact number of survivors, then a second pass fills it. This
-// allocates 8*popcount bytes instead of the old 8*len(mask): a low-selectivity
-// filter (most rows dropped) no longer over-allocates an N-sized buffer
-// (e.g. a 1M-row mask with zero survivors allocated 8MB; now it allocates none),
-// and a dense result is sized exactly with no growth reallocations. Both passes
-// are linear, cache-friendly reads of a []bool, cheap relative to the old alloc.
-func CompressIndices(mask []bool) []int {
-	count := 0
-	for _, m := range mask {
-		if m {
-			count++
+// It pre-sizes the output to the exact survivor count via BitmapPopcount (free
+// from the bitmap), then fills it with a word-at-a-time walk: for each non-zero
+// word, math/bits.TrailingZeros64 yields the next set bit and x &= x-1 clears
+// it, so zero words are skipped entirely and only set bits are visited (≈2.6–3.4
+// cycles/bit, Lemire 2018). A low-selectivity filter no longer over-allocates an
+// N-sized buffer (a 1M-row bitmap with zero survivors allocates none) and a
+// dense result is sized exactly with no growth reallocations. The partial last
+// word is masked to nRows so stray high bits never produce out-of-range indices.
+func CompressIndices(mask Bitmap, nRows int) []int {
+	count := BitmapPopcount(mask, nRows)
+	out := make([]int, count)
+	if count == 0 {
+		return out
+	}
+	j := 0
+	fullWords := nRows >> 6
+	for wi := range fullWords {
+		w := mask[wi]
+		base := wi << 6
+		for w != 0 {
+			out[j] = base + bits.TrailingZeros64(w)
+			j++
+			w &= w - 1
 		}
 	}
-	out := make([]int, count)
-	j := 0
-	for i, m := range mask {
-		if m {
-			out[j] = i
+	if rem := nRows & 63; rem != 0 {
+		w := mask[fullWords] & (uint64(1)<<uint(rem) - 1)
+		base := fullWords << 6
+		for w != 0 {
+			out[j] = base + bits.TrailingZeros64(w)
 			j++
+			w &= w - 1
 		}
 	}
 	return out

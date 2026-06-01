@@ -7,6 +7,7 @@ import (
 	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 	"github.com/h0rn3t/gopolars/pkg/expr"
+	"github.com/h0rn3t/gopolars/pkg/simd"
 )
 
 // rowAcc is a minimal RowValueGetter over typed chunks for row-wise expr.Eval,
@@ -121,13 +122,14 @@ func valuesEqual(a, b any) bool {
 
 // Sinks keep EvalBool's results live so the compiler cannot drop the call.
 var (
-	benchMaskSink []bool
+	benchMaskSink simd.Bitmap
 	benchNullSink []bool
 )
 
-// BenchmarkEvalBool measures evaluating a float64 > literal predicate to a bool
-// result over 1M rows. -benchmem exposes the two redundant N-length []bool
-// allocations the old EvalBool made (the mask/valid copy loop).
+// BenchmarkEvalBool measures evaluating a float64 > literal predicate to a
+// Bitmap over 1M rows. -benchmem confirms the direct bitmap path allocates a
+// single packed mask (1 bit/row) rather than the old N-byte []bool mask plus a
+// validity copy.
 func BenchmarkEvalBool(b *testing.B) {
 	const n = 1_000_000
 	data := make([]float64, n)
@@ -147,6 +149,34 @@ func BenchmarkEvalBool(b *testing.B) {
 		}
 		benchMaskSink = mask
 		benchNullSink = nulls
+	}
+}
+
+// TestEvalBoolNoByteMaskAllocs pins the bitmap predicate path: a float64 > lit
+// predicate over N rows must produce its mask as a single packed Bitmap, with no
+// N-length []bool byte buffers. AllocsPerRun counts total heap allocations; the
+// direct path allocates exactly one object (the uint64 bitmap), so anything more
+// than that would mean a stray []bool mask/validity slice crept back in.
+func TestEvalBoolNoByteMaskAllocs(t *testing.T) {
+	const n = 100_000
+	data := make([]float64, n)
+	for i := range data {
+		data[i] = float64(i%100) - 50
+	}
+	cols := map[string]*chunk.Column{"a": chunk.NewFloat64(data, nil)}
+	plan, ok := Compile(expr.Col("a").Gt(expr.Lit(0.0)))
+	if !ok {
+		t.Fatal("compile failed")
+	}
+	allocs := testing.AllocsPerRun(50, func() {
+		mask, _, err := plan.EvalBool(cols, n)
+		if err != nil {
+			t.Fatalf("EvalBool: %v", err)
+		}
+		benchMaskSink = mask
+	})
+	if allocs > 1 {
+		t.Fatalf("EvalBool allocated %v objects/op, want <= 1 (single packed bitmap, no []bool byte-mask)", allocs)
 	}
 }
 
@@ -176,11 +206,15 @@ func TestEvalBoolMaskAndValidity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EvalBool: %v", err)
 	}
-	// a = {1,2,3,4,null} > 2 -> compare with null operand yields false (not null)
+	// a = {1,2,3,4,null} > 2 -> compare with null operand yields false (not null).
+	// The direct bitmap path folds the null row to a 0 bit and returns nil nulls.
 	want := []bool{false, false, true, true, false}
-	for i := 0; i < height; i++ {
-		if mask[i] != want[i] || nulls[i] {
-			t.Fatalf("row %d: mask=%v null=%v want mask=%v null=false", i, mask[i], nulls[i], want[i])
+	for i := range height {
+		if simd.BitmapGet(mask, i) != want[i] {
+			t.Fatalf("row %d: mask=%v want %v", i, simd.BitmapGet(mask, i), want[i])
+		}
+		if nulls != nil && nulls[i] {
+			t.Fatalf("row %d: unexpected null", i)
 		}
 	}
 }

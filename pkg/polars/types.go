@@ -38,6 +38,7 @@ type DataFrame interface {
 	Glimpse(maxRows int) string
 	Select(exprs ...Expr) (DataFrame, error)
 	Filter(predicate Expr) (DataFrame, error)
+	FilterAggregateDirect(pred Expr, op string, cols []string) (map[string]float64, error)
 	WithColumns(exprs ...Expr) (DataFrame, error)
 	WithRowCount(name string, offset int64) (DataFrame, error)
 	WithRowIndex(name string, offset int64) (DataFrame, error)

@@ -39,18 +39,35 @@ func humanize(n int) string {
 }
 
 type harnessResult struct {
-	Op         string  `json:"op"`
-	Iters      int     `json:"iters"`
-	ElapsedSec float64 `json:"elapsed_sec"`
-	Elements   int     `json:"elements"`
+	Op           string  `json:"op"`
+	Iters        int     `json:"iters"`
+	ElapsedSec   float64 `json:"elapsed_sec"`
+	Elements     int     `json:"elements"`
+	PeakRSSBytes int64   `json:"peak_rss_bytes"`
 }
 
 type summaryEntry struct {
-	Op             string  `json:"op"`
-	Size           string  `json:"size"`
-	Elements       int     `json:"elements"`
-	GoNsPerOp      int64   `json:"go_ns_per_op"`
-	PythonSecPerOp float64 `json:"python_sec_per_op"`
+	Op                   string  `json:"op"`
+	Size                 string  `json:"size"`
+	Elements             int     `json:"elements"`
+	GoNsPerOp            int64   `json:"go_ns_per_op"`
+	GoBytesPerOp         int64   `json:"go_bytes_per_op,omitempty"`
+	GoAllocsPerOp        int64   `json:"go_allocs_per_op,omitempty"`
+	PythonSecPerOp       float64 `json:"python_sec_per_op"`
+	PythonStreamSecPerOp float64 `json:"python_stream_sec_per_op,omitempty"`
+	// PythonPeakRSSBytes is the peak resident-set growth Polars drove for one
+	// op (high-water working set, from the harness's ru_maxrss delta), the
+	// memory counterpart to PythonSecPerOp. It is a process-level peak, not an
+	// allocation count, so it is coarser than Go's B/op and should be read as an
+	// order-of-magnitude footprint rather than an exact figure.
+	PythonPeakRSSBytes int64 `json:"python_peak_rss_bytes,omitempty"`
+	// Eager-direct fused path (DataFrame.FilterAggregateDirect). Populated only
+	// on the "eager_direct" engine rows; omitted elsewhere. Captured separately
+	// so the artifact exposes the eager fused path's time/allocation profile next
+	// to the eager-materialize and lazy-fused rows.
+	GoEagerDirectNsPerOp     int64 `json:"go_eager_direct_ns_per_op,omitempty"`
+	GoEagerDirectBytesPerOp  int64 `json:"go_eager_direct_bytes_per_op,omitempty"`
+	GoEagerDirectAllocsPerOp int64 `json:"go_eager_direct_allocs_per_op,omitempty"`
 }
 
 var benchRNG = rand.New(rand.NewSource(42))

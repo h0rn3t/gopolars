@@ -1,254 +1,342 @@
 [
   {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/eager",
     "size": "1K",
     "elements": 1000,
-    "go_ns_per_op": 75708,
-    "python_sec_per_op": 0.00008995839161798357
+    "go_ns_per_op": 86583,
+    "go_bytes_per_op": 1240,
+    "go_allocs_per_op": 11,
+    "python_sec_per_op": 0.00008754999144002795,
+    "python_peak_rss_bytes": 8650752
   },
   {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/lazy",
     "size": "1K",
     "elements": 1000,
-    "go_ns_per_op": 2837,
-    "python_sec_per_op": 0.0000797834014520049
+    "go_ns_per_op": 201209,
+    "go_bytes_per_op": 6936,
+    "go_allocs_per_op": 42,
+    "python_sec_per_op": 0.00009530840907245874,
+    "python_stream_sec_per_op": 0.00019310000352561473,
+    "python_peak_rss_bytes": 9273344
   },
   {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/eager_direct",
     "size": "1K",
     "elements": 1000,
-    "go_ns_per_op": 2175,
-    "python_sec_per_op": 0.00007805000059306622
+    "go_ns_per_op": 7208,
+    "go_bytes_per_op": 816,
+    "go_allocs_per_op": 8,
+    "python_sec_per_op": 0.00007686680182814599,
+    "python_peak_rss_bytes": 8798208,
+    "go_eager_direct_ns_per_op": 7208,
+    "go_eager_direct_bytes_per_op": 816,
+    "go_eager_direct_allocs_per_op": 8
   },
   {
-    "op": "filter_sum/empty",
-    "size": "1K",
-    "elements": 1000,
-    "go_ns_per_op": 2152,
-    "python_sec_per_op": 0.000059874996077269314
-  },
-  {
-    "op": "filter_sum/empty",
-    "size": "1K",
-    "elements": 1000,
-    "go_ns_per_op": 2168,
-    "python_sec_per_op": 0.0002238333923742175
-  },
-  {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/eager",
     "size": "10K",
     "elements": 10000,
-    "go_ns_per_op": 43834,
-    "python_sec_per_op": 0.00009834159864112735
+    "go_ns_per_op": 38000,
+    "go_bytes_per_op": 2392,
+    "go_allocs_per_op": 11,
+    "python_sec_per_op": 0.00007055000169202686,
+    "python_peak_rss_bytes": 8617984
   },
   {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/lazy",
     "size": "10K",
     "elements": 10000,
-    "go_ns_per_op": 19943,
-    "python_sec_per_op": 0.00007169159362092614
+    "go_ns_per_op": 42041,
+    "go_bytes_per_op": 7496,
+    "go_allocs_per_op": 40,
+    "python_sec_per_op": 0.00009343338897451758,
+    "python_stream_sec_per_op": 0.00016109999269247054,
+    "python_peak_rss_bytes": 9404416
   },
   {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/eager_direct",
     "size": "10K",
     "elements": 10000,
-    "go_ns_per_op": 15839,
-    "python_sec_per_op": 0.000070433400105685
+    "go_ns_per_op": 42000,
+    "go_bytes_per_op": 1968,
+    "go_allocs_per_op": 8,
+    "python_sec_per_op": 0.00006719999946653843,
+    "python_peak_rss_bytes": 8749056,
+    "go_eager_direct_ns_per_op": 42000,
+    "go_eager_direct_bytes_per_op": 1968,
+    "go_eager_direct_allocs_per_op": 8
   },
   {
-    "op": "filter_sum/empty",
-    "size": "10K",
-    "elements": 10000,
-    "go_ns_per_op": 15414,
-    "python_sec_per_op": 0.00006195839960128069
-  },
-  {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/eager",
     "size": "100K",
     "elements": 100000,
-    "go_ns_per_op": 159667,
-    "python_sec_per_op": 0.00008949999464675784
+    "go_ns_per_op": 263542,
+    "go_bytes_per_op": 38024,
+    "go_allocs_per_op": 73,
+    "python_sec_per_op": 0.00011934180511161686,
+    "python_peak_rss_bytes": 9371648
   },
   {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/lazy",
     "size": "100K",
     "elements": 100000,
-    "go_ns_per_op": 85030,
-    "python_sec_per_op": 0.00009599159238860011
+    "go_ns_per_op": 130542,
+    "go_bytes_per_op": 30616,
+    "go_allocs_per_op": 115,
+    "python_sec_per_op": 0.0001118415966629982,
+    "python_stream_sec_per_op": 0.00022098339395597576,
+    "python_peak_rss_bytes": 10059776
   },
   {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/eager_direct",
     "size": "100K",
     "elements": 100000,
-    "go_ns_per_op": 77058,
-    "python_sec_per_op": 0.00008893340127542615
+    "go_ns_per_op": 94416,
+    "go_bytes_per_op": 22944,
+    "go_allocs_per_op": 77,
+    "python_sec_per_op": 0.00010045840172097087,
+    "python_peak_rss_bytes": 9617408,
+    "go_eager_direct_ns_per_op": 94416,
+    "go_eager_direct_bytes_per_op": 22944,
+    "go_eager_direct_allocs_per_op": 77
   },
   {
-    "op": "filter_sum/empty",
-    "size": "100K",
-    "elements": 100000,
-    "go_ns_per_op": 75404,
-    "python_sec_per_op": 0.00008330839918926358
-  },
-  {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/eager",
     "size": "1M",
     "elements": 1000000,
-    "go_ns_per_op": 471917,
-    "python_sec_per_op": 0.00021902499720454215
+    "go_ns_per_op": 508834,
+    "go_bytes_per_op": 273032,
+    "go_allocs_per_op": 73,
+    "python_sec_per_op": 0.00021831680787727238,
+    "python_peak_rss_bytes": 16777216
   },
   {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/lazy",
     "size": "1M",
     "elements": 1000000,
-    "go_ns_per_op": 322320,
-    "python_sec_per_op": 0.00021469159983098507
+    "go_ns_per_op": 338875,
+    "go_bytes_per_op": 146392,
+    "go_allocs_per_op": 113,
+    "python_sec_per_op": 0.00021292499732226134,
+    "python_stream_sec_per_op": 0.00021310839802026748,
+    "python_peak_rss_bytes": 17432576
   },
   {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/eager_direct",
     "size": "1M",
     "elements": 1000000,
-    "go_ns_per_op": 326452,
-    "python_sec_per_op": 0.00019505840027704834
+    "go_ns_per_op": 244584,
+    "go_bytes_per_op": 137392,
+    "go_allocs_per_op": 73,
+    "python_sec_per_op": 0.00023645000765100123,
+    "python_peak_rss_bytes": 16793600,
+    "go_eager_direct_ns_per_op": 244584,
+    "go_eager_direct_bytes_per_op": 137392,
+    "go_eager_direct_allocs_per_op": 73
   },
   {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/eager",
     "size": "10M",
     "elements": 10000000,
-    "go_ns_per_op": 4375625,
-    "python_sec_per_op": 0.0012942416011355816
+    "go_ns_per_op": 3168333,
+    "go_bytes_per_op": 2541208,
+    "go_allocs_per_op": 72,
+    "python_sec_per_op": 0.0012926750001497566,
+    "python_peak_rss_bytes": 89948160
   },
   {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/lazy",
     "size": "10M",
     "elements": 10000000,
-    "go_ns_per_op": 2464451,
-    "python_sec_per_op": 0.0013072583940811455
+    "go_ns_per_op": 1867708,
+    "go_bytes_per_op": 1295704,
+    "go_allocs_per_op": 117,
+    "python_sec_per_op": 0.001312625000718981,
+    "python_stream_sec_per_op": 0.0006630665971897543,
+    "python_peak_rss_bytes": 90505216
   },
   {
-    "op": "filter_sum/empty",
+    "op": "filter_sum/empty/eager_direct",
     "size": "10M",
     "elements": 10000000,
-    "go_ns_per_op": 2280950,
-    "python_sec_per_op": 0.001324666803702712
+    "go_ns_per_op": 1606792,
+    "go_bytes_per_op": 1288144,
+    "go_allocs_per_op": 80,
+    "python_sec_per_op": 0.0013307917979545891,
+    "python_peak_rss_bytes": 89882624,
+    "go_eager_direct_ns_per_op": 1606792,
+    "go_eager_direct_bytes_per_op": 1288144,
+    "go_eager_direct_allocs_per_op": 80
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/eager",
     "size": "1K",
     "elements": 1000,
-    "go_ns_per_op": 41000,
-    "python_sec_per_op": 0.00008733338909223675
+    "go_ns_per_op": 26375,
+    "go_bytes_per_op": 16408,
+    "go_allocs_per_op": 15,
+    "python_sec_per_op": 0.00009294160408899189,
+    "python_peak_rss_bytes": 8749056
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/lazy",
     "size": "1K",
     "elements": 1000,
-    "go_ns_per_op": 8972,
-    "python_sec_per_op": 0.00008110840572044254
+    "go_ns_per_op": 39667,
+    "go_bytes_per_op": 6456,
+    "go_allocs_per_op": 42,
+    "python_sec_per_op": 0.00009438339620828628,
+    "python_stream_sec_per_op": 0.0002160749980248511,
+    "python_peak_rss_bytes": 9388032
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/eager_direct",
     "size": "1K",
     "elements": 1000,
-    "go_ns_per_op": 5835,
-    "python_sec_per_op": 0.00008222500327974558
+    "go_ns_per_op": 13417,
+    "go_bytes_per_op": 816,
+    "go_allocs_per_op": 8,
+    "python_sec_per_op": 0.00007116659544408322,
+    "python_peak_rss_bytes": 8732672,
+    "go_eager_direct_ns_per_op": 13417,
+    "go_eager_direct_bytes_per_op": 816,
+    "go_eager_direct_allocs_per_op": 8
   },
   {
-    "op": "filter_sum/half",
-    "size": "1K",
-    "elements": 1000,
-    "go_ns_per_op": 5348,
-    "python_sec_per_op": 0.00008106660097837449
-  },
-  {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/eager",
     "size": "10K",
     "elements": 10000,
-    "go_ns_per_op": 107166,
-    "python_sec_per_op": 0.000080783199518919
+    "go_ns_per_op": 88375,
+    "go_bytes_per_op": 130648,
+    "go_allocs_per_op": 15,
+    "python_sec_per_op": 0.00007141679525375366,
+    "python_peak_rss_bytes": 8798208
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/lazy",
     "size": "10K",
     "elements": 10000,
-    "go_ns_per_op": 60067,
-    "python_sec_per_op": 0.00010017500026151537
+    "go_ns_per_op": 85958,
+    "go_bytes_per_op": 7496,
+    "go_allocs_per_op": 41,
+    "python_sec_per_op": 0.00010194999631494284,
+    "python_stream_sec_per_op": 0.00016617500223219394,
+    "python_peak_rss_bytes": 9420800
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/eager_direct",
     "size": "10K",
     "elements": 10000,
-    "go_ns_per_op": 45834,
-    "python_sec_per_op": 0.00007055839523673058
+    "go_ns_per_op": 72334,
+    "go_bytes_per_op": 1968,
+    "go_allocs_per_op": 8,
+    "python_sec_per_op": 0.00007511680014431477,
+    "python_peak_rss_bytes": 8945664,
+    "go_eager_direct_ns_per_op": 72334,
+    "go_eager_direct_bytes_per_op": 1968,
+    "go_eager_direct_allocs_per_op": 8
   },
   {
-    "op": "filter_sum/half",
-    "size": "10K",
-    "elements": 10000,
-    "go_ns_per_op": 45243,
-    "python_sec_per_op": 0.00007618339732289315
-  },
-  {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/eager",
     "size": "100K",
     "elements": 100000,
-    "go_ns_per_op": 828166,
-    "python_sec_per_op": 0.00008226680802181363
+    "go_ns_per_op": 470958,
+    "go_bytes_per_op": 1298120,
+    "go_allocs_per_op": 74,
+    "python_sec_per_op": 0.00010129999136552215,
+    "python_peak_rss_bytes": 9928704
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/lazy",
     "size": "100K",
     "elements": 100000,
-    "go_ns_per_op": 419770,
-    "python_sec_per_op": 0.00009151659905910492
+    "go_ns_per_op": 192541,
+    "go_bytes_per_op": 25112,
+    "go_allocs_per_op": 103,
+    "python_sec_per_op": 0.00008405839325860142,
+    "python_stream_sec_per_op": 0.0001968418015167117,
+    "python_peak_rss_bytes": 10584064
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/eager_direct",
     "size": "100K",
     "elements": 100000,
-    "go_ns_per_op": 398789,
-    "python_sec_per_op": 0.00008198339492082596
+    "go_ns_per_op": 179375,
+    "go_bytes_per_op": 23424,
+    "go_allocs_per_op": 78,
+    "python_sec_per_op": 0.00008900819811969995,
+    "python_peak_rss_bytes": 9945088,
+    "go_eager_direct_ns_per_op": 179375,
+    "go_eager_direct_bytes_per_op": 23424,
+    "go_eager_direct_allocs_per_op": 78
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/eager",
     "size": "1M",
     "elements": 1000000,
-    "go_ns_per_op": 3040042,
-    "python_sec_per_op": 0.0004354499978944659
+    "go_ns_per_op": 3747167,
+    "go_bytes_per_op": 12765160,
+    "go_allocs_per_op": 77,
+    "python_sec_per_op": 0.00039109999779611825,
+    "python_peak_rss_bytes": 20856832
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/lazy",
     "size": "1M",
     "elements": 1000000,
-    "go_ns_per_op": 2487697,
-    "python_sec_per_op": 0.0004296415951102972
+    "go_ns_per_op": 913000,
+    "go_bytes_per_op": 144840,
+    "go_allocs_per_op": 110,
+    "python_sec_per_op": 0.0006023667985573411,
+    "python_stream_sec_per_op": 0.0002953918068669736,
+    "python_peak_rss_bytes": 26624000
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/eager_direct",
     "size": "1M",
     "elements": 1000000,
-    "go_ns_per_op": 2368535,
-    "python_sec_per_op": 0.00040037500439211727
+    "go_ns_per_op": 661500,
+    "go_bytes_per_op": 136320,
+    "go_allocs_per_op": 70,
+    "python_sec_per_op": 0.00041011659195646646,
+    "python_peak_rss_bytes": 20840448,
+    "go_eager_direct_ns_per_op": 661500,
+    "go_eager_direct_bytes_per_op": 136320,
+    "go_eager_direct_allocs_per_op": 70
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/eager",
     "size": "10M",
     "elements": 10000000,
-    "go_ns_per_op": 28986417,
-    "python_sec_per_op": 0.007447900006081909
+    "go_ns_per_op": 32297625,
+    "go_bytes_per_op": 127553432,
+    "go_allocs_per_op": 77,
+    "python_sec_per_op": 0.008184033399447798,
+    "python_peak_rss_bytes": 130088960
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/lazy",
     "size": "10M",
     "elements": 10000000,
-    "go_ns_per_op": 21917109,
-    "python_sec_per_op": 0.00681802500039339
+    "go_ns_per_op": 6094542,
+    "go_bytes_per_op": 1293784,
+    "go_allocs_per_op": 114,
+    "python_sec_per_op": 0.0067845750018022954,
+    "python_stream_sec_per_op": 0.0008495084010064601,
+    "python_peak_rss_bytes": 131809280
   },
   {
-    "op": "filter_sum/half",
+    "op": "filter_sum/half/eager_direct",
     "size": "10M",
     "elements": 10000000,
-    "go_ns_per_op": 21492667,
-    "python_sec_per_op": 0.007714516599662602
+    "go_ns_per_op": 7941500,
+    "go_bytes_per_op": 1284304,
+    "go_allocs_per_op": 72,
+    "python_sec_per_op": 0.009080574999097734,
+    "python_peak_rss_bytes": 130121728,
+    "go_eager_direct_ns_per_op": 7941500,
+    "go_eager_direct_bytes_per_op": 1284304,
+    "go_eager_direct_allocs_per_op": 72
   }
 ]

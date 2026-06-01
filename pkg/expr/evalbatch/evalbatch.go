@@ -83,18 +83,28 @@ func (p *Plan) Eval(cols map[string]*chunk.Column, height int) (*chunk.Column, e
 	return r.col, nil
 }
 
-// EvalBool evaluates a predicate plan and returns the boolean mask and the
-// null mask, both BORROWED from the evaluated result chunk. nulls[i] == true
-// means the predicate was null/undefined at row i and the caller should treat
-// the result as not-true (mask[i] is only meaningful where nulls[i] is false).
+// EvalBool evaluates a predicate plan into a packed simd.Bitmap: bit i is set
+// iff the predicate is true and non-null at row i. One bit per row replaces the
+// old one-byte-per-row []bool mask, cutting the mask 8x and letting the
+// fused-reduce / compress kernels walk it a word at a time.
 //
-// Both returned slices alias the chunk's internal buffers and MUST be treated
-// as read-only by the caller; the chunk's backing arrays stay alive for as long
-// as the caller holds the slices. This deliberately avoids the old contract's
-// two fresh N-length []bool allocations and the element-by-element copy loop —
-// for a supported predicate over N rows the result chunk already holds exactly
-// these buffers.
-func (p *Plan) EvalBool(cols map[string]*chunk.Column, height int) (mask []bool, nulls []bool, err error) {
+// For the common predicate shapes — a numeric column compared to a literal,
+// the AND of such predicates, or a bare boolean column — the Bitmap is produced
+// directly by the simd compare kernels (CompareGTFloat64Bitmap /
+// CompareEQInt64Bitmap / BitmapAnd) with a null operand folded to a 0 bit, so no
+// intermediate []bool byte-mask is allocated. Any other shape falls back to the
+// general column evaluator and packs the resulting boolean chunk into a Bitmap.
+//
+// The returned nulls slice is non-nil only on the fallback path, where it
+// aliases the result chunk's validity buffer (read-only) so callers can detect a
+// null-valued predicate result. Supported predicates never actually produce one
+// (a comparison folds a null operand to false rather than null), so in practice
+// it is all-false; the direct path returns nil. Either way the Bitmap already
+// excludes null rows.
+func (p *Plan) EvalBool(cols map[string]*chunk.Column, height int) (mask simd.Bitmap, nulls []bool, err error) {
+	if bm, ok := evalBitmap(p.root, cols, height); ok {
+		return bm, nil, nil
+	}
 	c, err := p.Eval(cols, height)
 	if err != nil {
 		return nil, nil, err
@@ -102,8 +112,130 @@ func (p *Plan) EvalBool(cols map[string]*chunk.Column, height int) (mask []bool,
 	if c.DataType() != dtypes.Boolean {
 		return nil, nil, fmt.Errorf("predicate did not evaluate to bool")
 	}
+	return packBoolColumn(c, height), c.Nulls(), nil
+}
+
+// evalBitmap tries to evaluate predicate e directly to a Bitmap without going
+// through the []bool column engine. ok is false when e is not one of the
+// directly-supported predicate shapes and the caller must use the general
+// evaluator (p.Eval) and pack its result.
+func evalBitmap(e expr.Expr, cols map[string]*chunk.Column, height int) (simd.Bitmap, bool) {
+	switch e.Kind() {
+	case expr.KindCol:
+		c, found := cols[e.ColName()]
+		if !found || c.DataType() != dtypes.Boolean {
+			return nil, false
+		}
+		// A nullable boolean used directly as a predicate has error semantics in
+		// the row-wise evaluator (a null is not a bool); defer to the fallback so
+		// that behavior is preserved exactly.
+		if hasNulls(c) {
+			return nil, false
+		}
+		return packBoolColumn(c, height), true
+	case expr.KindBin:
+		switch op := e.Op(); op {
+		case "gt", "ge", "lt", "le", "eq":
+			return cmpBitmap(op, e, cols, height)
+		case "and":
+			la, lok := evalBitmap(*e.Left(), cols, height)
+			if !lok {
+				return nil, false
+			}
+			rb, rok := evalBitmap(*e.Right(), cols, height)
+			if !rok {
+				return nil, false
+			}
+			return simd.BitmapAnd(la, rb, height), true
+		}
+	}
+	return nil, false
+}
+
+// cmpBitmap evaluates a numeric "column op literal" comparison directly into a
+// Bitmap, mirroring numericCompare's semantics (a null or NaN operand yields a
+// 0 bit). It handles only column-on-left / literal-on-right; any other operand
+// shape returns ok=false so the caller falls back. The gt-float and eq-int
+// cases route through the dedicated simd kernels.
+func cmpBitmap(op string, e expr.Expr, cols map[string]*chunk.Column, height int) (simd.Bitmap, bool) {
+	l, err := evalNode(*e.Left(), cols, height)
+	if err != nil {
+		return nil, false
+	}
+	r, err := evalNode(*e.Right(), cols, height)
+	if err != nil {
+		return nil, false
+	}
+	lr, lt := numericReader(l)
+	rr, rt := numericReader(r)
+	if lt == "other" || rt == "other" {
+		return nil, false
+	}
+	if lr.isLit || !rr.isLit {
+		return nil, false
+	}
+	switch {
+	case op == "gt" && lt == "float64" && rt == "float64":
+		b := simd.CompareGTFloat64Bitmap(lr.f, rr.litF)
+		clearNullBits(b, lr.nulls, height)
+		return b, true
+	case op == "eq" && lt == "int64" && rt == "int64":
+		b := simd.CompareEQInt64Bitmap(lr.i, rr.litI)
+		clearNullBits(b, lr.nulls, height)
+		return b, true
+	case op == "eq":
+		// float equality carries NaN subtleties handled by the row-wise path.
+		return nil, false
+	}
+	// General gt/ge/lt/le over numeric column vs literal.
+	b := simd.BitmapNew(height)
+	useFloat := lt == "float64" || rt == "float64"
+	for i := range height {
+		if lr.nullAt(i) || rr.nullAt(i) {
+			continue
+		}
+		if useFloat {
+			a, c := lr.floatAt(i), rr.floatAt(i)
+			if math.IsNaN(a) || math.IsNaN(c) {
+				continue
+			}
+			if cmpFloat(op, a, c) {
+				simd.BitmapSet(b, i)
+			}
+		} else if cmpInt(op, lr.intAt(i), rr.intAt(i)) {
+			simd.BitmapSet(b, i)
+		}
+	}
+	return b, true
+}
+
+// clearNullBits clears the bitmap bit for every null row, so a kernel that set a
+// bit from a null operand's zero value (e.g. 0 > -1, 0 == 0) is corrected to the
+// row-wise "null operand yields false" semantics.
+func clearNullBits(b simd.Bitmap, nulls []bool, height int) {
+	if nulls == nil {
+		return
+	}
+	for i := range height {
+		if nulls[i] {
+			b[i>>6] &^= 1 << (uint(i) & 63)
+		}
+	}
+}
+
+// packBoolColumn packs a boolean result chunk into a Bitmap, setting bit i iff
+// the value is true and non-null. It is the fallback bridge from the column
+// engine to the Bitmap predicate representation.
+func packBoolColumn(c *chunk.Column, height int) simd.Bitmap {
 	bln, _ := c.Bools()
-	return bln, c.Nulls(), nil
+	nulls := c.Nulls()
+	b := simd.BitmapNew(height)
+	for i := range height {
+		if bln[i] && (nulls == nil || !nulls[i]) {
+			b[i>>6] |= 1 << (uint(i) & 63)
+		}
+	}
+	return b
 }
 
 func evalNode(e expr.Expr, cols map[string]*chunk.Column, height int) (vresult, error) {

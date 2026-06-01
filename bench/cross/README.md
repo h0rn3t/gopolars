@@ -76,8 +76,27 @@ PATH="$(pwd)/.venv_polars_313/bin:$PATH" \
   go test ./bench/cross -bench=BenchmarkCrossFilterSum -benchmem -count=1 -benchtime=3s
 ```
 
-Results are printed inline (ns/op, python_sec/op, go_vs_python_speedup) and
-written to `filter_sum_summary.json`.
+The repo-root `run-bench.sh` wraps all of this (auto-detects `.venv_polars_313`):
+
+```bash
+./run-bench.sh             # Go-only
+./run-bench.sh --python    # also run the Polars baseline
+```
+
+Results are printed inline (ns/op, python_sec/op, python_peak_rss_B,
+go_vs_python_speedup) and written to `filter_sum_summary.json`.
+
+The summary table shows **time and memory for both languages side by side**:
+`Go time` / `Py time` (+ winner), then `Go B/op` / `Py peak RSS`, then
+`allocs/op`. The two memory columns measure different things and are not
+directly comparable unit-for-unit:
+
+- **Go B/op** — bytes allocated on the Go heap per op (`-benchmem`).
+- **Py peak RSS** — peak resident-set *growth* Polars drove for one op, from the
+  harness's `ru_maxrss` delta (`peak_rss_bytes` in the JSON). Polars allocates in
+  native Rust, so a Python-level `tracemalloc` would miss it; RSS captures the
+  real footprint but is a process working-set high-water mark, so read it as an
+  order-of-magnitude figure, not an exact per-op allocation count.
 
 The harness threshold is parameterized (`harness.py --threshold`) so the Python
 side matches each Go profile.

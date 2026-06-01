@@ -215,6 +215,18 @@ func (d *df) Filter(predicate Expr) (DataFrame, error) {
 	return fromFrame(next, err)
 }
 
+// FilterAggregateDirect evaluates pred and computes op over cols in a single
+// masked pass, returning a column→value map. It is the eager fused fast path:
+// it builds no lazy plan and materializes no filtered DataFrame, surviving-index
+// slice, or sliced column — only the predicate bitmap and the result map. op is
+// one of "sum", "min", "max", "mean", "count"; an empty cols aggregates every
+// column. A zero-survivor predicate is gated to skip the reduction kernel and
+// reports 0 for each requested column. Results match
+// df.Lazy().Filter(pred).<reduce>().Collect(ctx) for supported float64 columns.
+func (d *df) FilterAggregateDirect(pred Expr, op string, cols []string) (map[string]float64, error) {
+	return d.value.FilterAggregateDirect(pred, op, cols)
+}
+
 func (d *df) WithColumns(exprs ...Expr) (DataFrame, error) {
 	next, err := d.value.WithColumns(exprs...)
 	return fromFrame(next, err)

@@ -3,10 +3,26 @@
 
 import argparse
 import json
+import resource
 import sys
 import time
 
 import polars as pl
+
+
+def _max_rss_bytes():
+    """Peak resident set size of this process so far, in bytes.
+
+    ru_maxrss is bytes on macOS/Darwin but kilobytes on Linux — normalize to
+    bytes. This is process-wide and monotonic (it only ever grows), so we read
+    it before and after the timed loop and report the delta as an approximate
+    working-set cost. Polars allocates in native Rust, so a Python-level
+    tracemalloc would miss almost everything; RSS captures the real footprint.
+    """
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if sys.platform == "darwin":
+        return rss
+    return rss * 1024
 
 _OPS = {
     "sum": lambda a, b: a.sum(),
@@ -23,15 +39,45 @@ _OPS = {
 
 
 def _filter_sum_op(series_a, threshold):
-    """Reconstruct a one-column DataFrame from the Series, filter, then sum."""
+    """Eager: reconstruct a one-column DataFrame, filter, then sum.
+
+    Mirrors gopolars' eager df.Filter(pred).Series("a").Sum() — both materialize
+    the filtered rows before reducing.
+    """
     import polars as pl
     df = pl.DataFrame({"a": series_a})
     return df.filter(pl.col("a") > threshold)["a"].sum()
 
 
+def _filter_sum_lazy_op(series_a, threshold):
+    """Lazy: let Polars' optimizer push the predicate down and fuse where it can.
+
+    Apples-to-apples with gopolars' lazy/fused path
+    (df.Lazy().Filter(pred).Sum().Collect()).
+    """
+    import polars as pl
+    lf = pl.DataFrame({"a": series_a}).lazy()
+    return lf.filter(pl.col("a") > threshold).select(pl.col("a").sum()).collect()
+
+
+def _filter_sum_stream_op(series_a, threshold):
+    """Lazy filter+sum on Polars' streaming engine — the closest analogue to a
+    fused, non-materializing filter->reduce. Falls back across API spellings so
+    it works on both newer (engine=) and older (streaming=) Polars."""
+    import polars as pl
+    lf = pl.DataFrame({"a": series_a}).lazy()
+    q = lf.filter(pl.col("a") > threshold).select(pl.col("a").sum())
+    for kwargs in ({"engine": "streaming"}, {"streaming": True}):
+        try:
+            return q.collect(**kwargs)
+        except TypeError:
+            continue
+    return q.collect()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run a Polars operation benchmark and emit JSON results.")
-    parser.add_argument("--op", required=True, choices=list(_OPS.keys()) + ["filter_sum"], help="Operation to benchmark")
+    parser.add_argument("--op", required=True, choices=list(_OPS.keys()) + ["filter_sum", "filter_sum_lazy", "filter_sum_stream"], help="Operation to benchmark")
     parser.add_argument("--input", required=True, help="Path to Arrow IPC input file")
     parser.add_argument("--iters", type=int, required=True, help="Number of timed iterations")
     parser.add_argument("--threshold", type=float, default=50.0, help="filter_sum predicate threshold (col('a') > threshold)")
@@ -58,8 +104,16 @@ def main():
 
     if args.op == "filter_sum":
         op_fn = lambda a, b: _filter_sum_op(a, args.threshold)
+    elif args.op == "filter_sum_lazy":
+        op_fn = lambda a, b: _filter_sum_lazy_op(a, args.threshold)
+    elif args.op == "filter_sum_stream":
+        op_fn = lambda a, b: _filter_sum_stream_op(a, args.threshold)
     else:
         op_fn = _OPS[args.op]
+
+    # Baseline RSS with the input loaded but the op never run yet. Taken before
+    # warm-up so the high-water mark hasn't been bumped by the op itself.
+    rss_before = _max_rss_bytes()
 
     # Warm-up to avoid amortizing Python import / JIT overhead
     try:
@@ -72,12 +126,20 @@ def main():
     for _ in range(args.iters):
         op_fn(series_a, series_b)
     elapsed = time.perf_counter() - start
+    # Peak RSS growth the op drove over the loaded-but-idle baseline. ru_maxrss
+    # is a high-water mark, so this is the op's peak *working set* (one op's
+    # footprint — for filter_sum each iteration frees its own intermediates),
+    # NOT a cumulative per-iteration allocation count. It is reported as-is and
+    # must not be divided by iters. Different in kind from Go's B/op (allocation
+    # throughput), but both answer "how much memory did this cost?".
+    peak_rss_bytes = max(0, _max_rss_bytes() - rss_before)
 
     result = {
         "op": args.op,
         "iters": args.iters,
         "elapsed_sec": elapsed,
         "elements": len(series_a),
+        "peak_rss_bytes": peak_rss_bytes,
     }
     print(json.dumps(result))
 
