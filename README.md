@@ -241,8 +241,8 @@ Correctness never depends on SIMD being enabled — the CI pipeline runs without
 | Workload | Expected speedup vs old `[]any` path |
 | -------- | ------------------------------------ |
 | `filter+sum` on 1M Float64 rows | ~3–8× (vectorized mask + typed sum) |
-| `group_by` sum/mean on 1M rows (100 groups) | ~4–6× (direct slice read, no per-row eval) |
-| `sort` on 1M Int64/Float64 rows | ~1.5–2× (typed comparator, no boxing) |
+| `group_by` sum/mean on 1M rows (100 groups) | ~6–9× (parallel shard tables + typed running reduce, scales with cores) |
+| `sort` on 1M Int64/Float64 rows | ~2× argsort (parallel-merge radix; multi-key via radix leading key + comparator tie-break) |
 | Arrow IPC round-trip (1M rows) | ~2–3× (no intermediate `[]any`) |
 
 Run the built-in benchmarks to measure on your hardware:
@@ -291,10 +291,10 @@ python3 bench/gen_comparison_table.py --benchmem bench/top30/benchmem.txt \
 | `select` | 1 M | 221 ns | 864 B | 7 | 35.9 µs | **Go ×163** |
 | `with_columns` | 1 K | 403 ns | 1.1 KB | 8 | 8.5 µs | **Go ×21** |
 | `with_columns` | 1 M | 416 ns | 1.1 KB | 8 | 8.0 µs | **Go ×25.5** |
-| `sort` | 1 K | 28.4 µs | 69.6 KB | 22 | 174 µs | **Go ×6.1** |
-| `sort` | 1 M | 38.9 ms | 64.9 MB | 22 | 11.5 ms | Py ×3.4 |
-| `group_by` | 1 K | 12.0 µs | 17.1 KB | 20 | 626 µs | **Go ×52** |
-| `group_by` | 1 M | 18.1 ms | 15.3 MB | 21 | 1.57 ms | Py ×11.5 |
+| `sort` | 1 K | 29.2 µs | 71.2 KB | 22 | 170 µs | **Go ×5.8** |
+| `sort` | 1 M | 35.9 ms | 68.1 MB | 78 | 12.7 ms | Py ×2.8 |
+| `group_by` | 1 K | 14.6 µs | 18.9 KB | 42 | 691 µs | **Go ×47** |
+| `group_by` | 1 M | 2.08 ms | 92.8 KB | 187 | 1.50 ms | Py ×1.4 |
 | `join` | 1 K | 148 µs | 311 KB | 1 385 | 349 µs | **Go ×2.4** |
 | `join` | 1 M | 47.4 ms | 122 MB | 2 120 | 6.40 ms | Py ×7.4 |
 | `head` | 1 K | 2.1 µs | 7.2 KB | 19 | 620 ns | Py ×3.4 |
@@ -314,8 +314,8 @@ python3 bench/gen_comparison_table.py --benchmem bench/top30/benchmem.txt \
 |-----------|------|---------|---------|-----------|---------|---------|
 | `cum_sum` | 1 K | 1.9 µs | 10.0 KB | 10 | 13.1 µs | **Go ×6.8** |
 | `cum_sum` | 1 M | 768 µs | 8.6 MB | 10 | 2.87 ms | **Go ×3.7** |
-| `rank` | 1 K | 69.8 µs | 18.0 KB | 13 | 61.0 µs | Py ×1.1 |
-| `rank` | 1 M | 337 ms | 16.2 MB | 13 | 13.3 ms | Py ×25.3 |
+| `rank` | 1 K | 17.3 µs | 34.8 KB | 13 | 56.4 µs | **Go ×3.3** |
+| `rank` | 1 M | 22.7 ms | 33.0 MB | 13 | 16.2 ms | Py ×1.4 |
 | `over` (window) | 1 K | 13.4 µs | 27.5 KB | 22 | 224 µs | **Go ×16.7** |
 | `over` (window) | 1 M | 18.1 ms | 24.8 MB | 22 | 9.10 ms | Py ×2.0 |
 | `fill_null` | 1 K | 2.1 µs | 10.1 KB | 11 | 53.3 µs | **Go ×25** |

@@ -166,7 +166,9 @@ func BenchmarkTop30(b *testing.B) {
 				b.ResetTimer()
 				start := time.Now()
 				for i := 0; i < b.N; i++ {
-					_ = benchDataFrame(ctx, df, op)
+					if err := benchDataFrame(ctx, df, op); err != nil {
+						b.Fatalf("DataFrame/%s: %v", op, err)
+					}
 				}
 				b.StopTimer()
 				goNsPerOp := time.Since(start).Nanoseconds() / int64(b.N)
@@ -212,7 +214,9 @@ func BenchmarkTop30(b *testing.B) {
 				b.ResetTimer()
 				start := time.Now()
 				for i := 0; i < b.N; i++ {
-					_ = benchExpr(ctx, df, op)
+					if err := benchExpr(ctx, df, op); err != nil {
+						b.Fatalf("Expr/%s: %v", op, err)
+					}
 				}
 				b.StopTimer()
 				goNsPerOp := time.Since(start).Nanoseconds() / int64(b.N)
@@ -261,7 +265,9 @@ func BenchmarkTop30(b *testing.B) {
 				b.ResetTimer()
 				start := time.Now()
 				for i := 0; i < b.N; i++ {
-					_ = benchSeries(s, op)
+					if err := benchSeries(s, op); err != nil {
+						b.Fatalf("Series/%s: %v", op, err)
+					}
 				}
 				b.StopTimer()
 				goNsPerOp := time.Since(start).Nanoseconds() / int64(b.N)
@@ -304,7 +310,9 @@ func BenchmarkTop30(b *testing.B) {
 				b.ResetTimer()
 				start := time.Now()
 				for i := 0; i < b.N; i++ {
-					_ = benchLazyFrame(ctx, df, op)
+					if err := benchLazyFrame(ctx, df, op); err != nil {
+						b.Fatalf("LazyFrame/%s: %v", op, err)
+					}
 				}
 				b.StopTimer()
 				goNsPerOp := time.Since(start).Nanoseconds() / int64(b.N)
@@ -347,7 +355,9 @@ func BenchmarkTop30(b *testing.B) {
 				b.ResetTimer()
 				start := time.Now()
 				for i := 0; i < b.N; i++ {
-					_ = benchSQLContext(ctx, df, op)
+					if err := benchSQLContext(ctx, df, op); err != nil {
+						b.Fatalf("SQLContext/%s: %v", op, err)
+					}
 				}
 				b.StopTimer()
 				goNsPerOp := time.Since(start).Nanoseconds() / int64(b.N)
@@ -385,7 +395,7 @@ func benchDataFrame(ctx context.Context, df polars.DataFrame, op string) error {
 		_, err = df.Sort(polars.SortInput{By: []string{"v"}})
 	case "group_by":
 		gb := df.GroupBy("g")
-		_, err = gb.Agg(polars.Col("v").Sum())
+		_, err = gb.Agg(polars.Sum(polars.Col("v")))
 	case "join":
 		// Join against the deduplicated 1000-value "i" dimension rather than the
 		// 5-value "g" self-join, which cross-products to a non-completing size at

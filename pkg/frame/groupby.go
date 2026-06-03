@@ -30,6 +30,14 @@ func (g GroupBy) Agg(exprs ...expr.Expr) (DataFrame, error) {
 		}
 		keyColumns[j] = s.Column()
 	}
+	// Parallel typed fast path for large frames with associative aggregates;
+	// declines (ok=false) to the sequential path below for small frames,
+	// non-associative aggregates (n_unique), or disabled typed storage.
+	if df, ok, err := g.aggParallel(keyColumns, exprs); err != nil {
+		return DataFrame{}, err
+	} else if ok {
+		return df, nil
+	}
 	ids, firstRow := chunk.GroupIDs(keyColumns, g.df.height)
 	ngroups := len(firstRow)
 

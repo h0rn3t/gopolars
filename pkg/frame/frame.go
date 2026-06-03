@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -376,12 +377,15 @@ func (d DataFrame) Sort(input SortInput) (DataFrame, error) {
 	return New(NewInput{Series: out})
 }
 
-// radixArgsort returns an index permutation for a single-numeric-key sort with
-// no nulls/NaN, or ok=false to fall back to the comparator sort. It preserves
-// the existing sorted order for the supported case (NaN-last and null handling
-// are only relevant on the fallback path, which this excludes).
+// radixArgsort returns an index permutation for a sort whose leading key is a
+// null-free, NaN-free numeric column, or ok=false to fall back to the comparator
+// sort. The leading key is ordered by the O(n) radix (parallel-merged above its
+// threshold); for a multi-key sort, ties on the leading key are then resolved by
+// the existing stable comparators over the remaining keys. NaN-last and null
+// handling are only relevant on the fallback path, which this excludes for the
+// leading key.
 func (d DataFrame) radixArgsort(input SortInput) ([]int, bool) {
-	if len(input.By) != 1 || d.height < radixSortThreshold {
+	if len(input.By) == 0 || d.height < radixSortThreshold {
 		return nil, false
 	}
 	s, ok := d.cols[input.By[0]]
@@ -392,34 +396,100 @@ func (d DataFrame) radixArgsort(input SortInput) ([]int, bool) {
 	if col == nil || col.NullCount() != 0 {
 		return nil, false
 	}
-	desc := len(input.Descending) > 0 && input.Descending[0]
+	// equalLead reports whether two rows share the leading-key value, used to
+	// delimit the equal-key runs that multi-key sorts tie-break.
 	var idx []int
-	switch {
-	case col.DataType() == dtypes.Float64:
+	var equalLead func(a, b int) bool
+	switch col.DataType() {
+	case dtypes.Float64:
 		f64s, _ := col.Float64s()
-		for _, v := range f64s {
-			if math.IsNaN(v) {
-				return nil, false // NaN ordering differs; use the comparator path
-			}
+		if anyNaN(f64s) {
+			return nil, false // NaN ordering differs; use the comparator path
 		}
-		idx = chunk.ArgsortFloat64(f64s)
-	case col.DataType() == dtypes.Int64:
+		idx = chunk.ArgsortFloat64Parallel(f64s)
+		equalLead = func(a, b int) bool { return f64s[a] == f64s[b] }
+	case dtypes.Int64:
 		i64s, _ := col.Int64s()
-		idx = chunk.ArgsortInt64(i64s)
+		idx = chunk.ArgsortInt64Parallel(i64s)
+		equalLead = func(a, b int) bool { return i64s[a] == i64s[b] }
 	default:
 		return nil, false
 	}
-	if desc {
+	if len(input.Descending) > 0 && input.Descending[0] {
 		for i, j := 0, len(idx)-1; i < j; i, j = i+1, j-1 {
 			idx[i], idx[j] = idx[j], idx[i]
 		}
 	}
+	if len(input.By) == 1 {
+		return idx, true
+	}
+	if !d.resolveSecondaryTies(idx, input, equalLead) {
+		return nil, false // a secondary key is missing; fall back to report it
+	}
 	return idx, true
+}
+
+// resolveSecondaryTies stable-sorts each maximal run of equal-leading-key rows in
+// idx by the remaining sort keys, using the same typed comparators and
+// per-key descending flags as the comparison-sort fallback. It returns false if a
+// secondary key column is missing (so the caller falls back and surfaces the
+// error). idx is already ordered by the leading key, so equal-leading rows are
+// contiguous.
+func (d DataFrame) resolveSecondaryTies(idx []int, input SortInput, equalLead func(a, b int) bool) bool {
+	secSeries := make([]series.Series, 0, len(input.By)-1)
+	for _, by := range input.By[1:] {
+		s, ok := d.cols[by]
+		if !ok {
+			return false
+		}
+		secSeries = append(secSeries, s)
+	}
+	comps := buildColumnComparators(secSeries)
+	// cmp compares two rows by the remaining keys (respecting each key's
+	// descending flag); hoisted out of the run loop so per-run stable sorts add no
+	// closure/boxing allocations. slices.SortStableFunc sorts the []int run in
+	// place without boxing it to any.
+	cmp := func(p, q int) int {
+		for ci, c := range comps {
+			r := c(p, q, input.NullsLast)
+			if r == 0 {
+				continue
+			}
+			if ci+1 < len(input.Descending) && input.Descending[ci+1] {
+				return -r
+			}
+			return r
+		}
+		return 0
+	}
+	n := len(idx)
+	start := 0
+	for end := 1; end <= n; end++ {
+		if end == n || !equalLead(idx[start], idx[end]) {
+			if end-start > 1 {
+				slices.SortStableFunc(idx[start:end], cmp)
+			}
+			start = end
+		}
+	}
+	return true
 }
 
 // radixSortThreshold mirrors chunk.radixThreshold: below it a comparison sort
 // wins on constant factors.
 const radixSortThreshold = 256
+
+// anyNaN reports whether f64s contains a NaN. It gates the radix fast paths
+// (rank and sort): the LSD radix key transform is undefined for NaN, so a NaN
+// forces the fallback to the comparison path, which sorts NaN last.
+func anyNaN(f64s []float64) bool {
+	for _, v := range f64s {
+		if math.IsNaN(v) {
+			return true
+		}
+	}
+	return false
+}
 
 // columnComparatorFn compares rows i and j, returning -1, 0, or 1.
 type columnComparatorFn func(i, j int, nullsLast bool) int
@@ -1850,12 +1920,27 @@ func (d DataFrame) evalRank(target expr.Expr, name string) (series.Series, error
 		return series.Series{}, err
 	}
 	n := base.Len()
+	col := base.Column()
+	// Radix argsort fast path: an ordinal rank is the inverse of a stable sort
+	// permutation, and chunk.ArgsortFloat64/Int64 is a stable O(n) LSD radix, so
+	// for a null-free, NaN-free numeric column above the radix threshold it yields
+	// the same permutation (hence the same ranks) as the stable comparison sort
+	// below — turning rank from O(n log n) into O(n). Anything outside the gate
+	// falls through to the comparison path so the order matches the row-wise
+	// compareAny path exactly.
+	if col != nil && col.NullCount() == 0 && n >= radixSortThreshold {
+		if f64s, ok := col.Float64s(); ok && !anyNaN(f64s) {
+			return rankSeries(name, chunk.ArgsortFloat64(f64s), n), nil
+		}
+		if i64s, ok := col.Int64s(); ok {
+			return rankSeries(name, chunk.ArgsortInt64(i64s), n), nil
+		}
+	}
 	indexes := make([]int, n)
 	for i := range indexes {
 		indexes[i] = i
 	}
-	col := base.Column()
-	// Typed argsort fast path: read the backing slice directly (no per-comparison
+	// Typed comparison fast path: read the backing slice directly (no per-comparison
 	// interface boxing) and write a typed []int64 ordinal rank. Restricted to
 	// null-free columns so the ordering matches the row-wise compareAny path
 	// exactly (compareAny treats <,> normally and everything else as equal).
@@ -2111,16 +2196,44 @@ func (d DataFrame) evalOver(target expr.Expr, partitionSpec string, name string)
 		}
 		out := make([]int64, n)
 		i64s, isInt := baseCol.Int64s()
+		f64s, isFloat := baseCol.Float64s()
+		// A partition's ordinal rank is the inverse of a stable sort over its
+		// values. For null-free numeric partitions above the radix threshold the
+		// O(n) stable radix (chunk.ArgsortInt64/Float64) over a gathered value
+		// slice produces the same tie order as the comparison sort below; smaller
+		// partitions and other dtypes keep the stable comparison path. buckets are
+		// built in row order, so a gathered slice is in encounter order and the
+		// radix stays stable across ties exactly like sort.SliceStable.
+		floatRadixOK := isFloat && !anyNaN(f64s)
 		for _, idxs := range buckets {
-			if isInt {
-				sort.SliceStable(idxs, func(a, b int) bool { return i64s[idxs[a]] < i64s[idxs[b]] })
-			} else {
-				sort.SliceStable(idxs, func(a, b int) bool {
-					return compareAny(base.Value(idxs[a]), base.Value(idxs[b])) < 0
-				})
-			}
-			for rank, idx := range idxs {
-				out[idx] = int64(rank + 1)
+			switch {
+			case isInt && len(idxs) >= radixSortThreshold:
+				vals := make([]int64, len(idxs))
+				for k, gi := range idxs {
+					vals[k] = i64s[gi]
+				}
+				for r, p := range chunk.ArgsortInt64(vals) {
+					out[idxs[p]] = int64(r + 1)
+				}
+			case floatRadixOK && len(idxs) >= radixSortThreshold:
+				vals := make([]float64, len(idxs))
+				for k, gi := range idxs {
+					vals[k] = f64s[gi]
+				}
+				for r, p := range chunk.ArgsortFloat64(vals) {
+					out[idxs[p]] = int64(r + 1)
+				}
+			default:
+				if isInt {
+					sort.SliceStable(idxs, func(a, b int) bool { return i64s[idxs[a]] < i64s[idxs[b]] })
+				} else {
+					sort.SliceStable(idxs, func(a, b int) bool {
+						return compareAny(base.Value(idxs[a]), base.Value(idxs[b])) < 0
+					})
+				}
+				for rank, idx := range idxs {
+					out[idx] = int64(rank + 1)
+				}
 			}
 		}
 		return series.FromInt64(name, out, nil), nil
