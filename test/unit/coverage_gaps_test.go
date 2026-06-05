@@ -37,11 +37,11 @@ func TestCoverageGapsPublicAPI(t *testing.T) {
 
 	ctx := context.Background()
 	io := polars.NewIO()
-	lf, err := io.ScanJSON(polars.ScanJSONInput{Path: "missing.json"})
+	_, err = io.ScanJSON(polars.ScanJSONInput{Path: "missing.json"})
 	if err != nil {
 		t.Fatalf("scan json: %v", err)
 	}
-	lf = df.Lazy().
+	lf := df.Lazy().
 		Head(2).
 		Tail(1).
 		First().

@@ -1,6 +1,7 @@
 package polars
 
 import (
+	"context"
 	"testing"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
@@ -186,7 +187,7 @@ func TestDataFrameDescribe(t *testing.T) {
 // TestDataFrameLazyDescribe exercises the lazy describe path.
 func TestDataFrameLazyDescribe(t *testing.T) {
 	df := newDFTestFrame(t)
-	df2, _, err := df.Lazy().Profile(nil)
+	df2, _, err := df.Lazy().Profile(context.TODO())
 	if err != nil {
 		// Profile requires a context; nil is acceptable for the dispatch test.
 		if df2 != nil {
