@@ -2,7 +2,6 @@ package simd
 
 import (
 	"math/bits"
-	"sync"
 )
 
 // Bitmap is a packed predicate mask: bit i%64 of word i/64 (LSB = bit 0)
@@ -48,65 +47,4 @@ func BitmapPopcount(b Bitmap, nRows int) int {
 		count += bits.OnesCount64(b[fullWords] & mask)
 	}
 	return count
-}
-
-// bitmapMaxPoolWords caps the size of buffers retained by the pool at 1<<20
-// rows (16384 words = 128 KiB) — the fused-filter working set the proposal
-// targets for 0 allocs/op on the hot path. Releasing a larger buffer drops it
-// (GC-eligible) rather than pinning hundreds of KiB of RSS per buffer for the
-// process lifetime (design D4). (The change tasks' "2048 words" figure was an
-// arithmetic slip — 1M rows is 15625 words, not 2048 — so the binding
-// BitmapAcquire(1_000_000) 0-alloc scenario fixes the real cap here.)
-const bitmapMaxPoolWords = (1 << 20) / 64 // 16384 words, up to 1,048,576 rows
-
-// bitmapPool vends reusable backing arrays for the fused filter hot path. It
-// stores *Bitmap wrappers, never a bare slice: a *Bitmap fits directly in the
-// sync.Pool interface word, so Get/Put move only a pointer and never box a slice
-// header. Both BitmapAcquire and BitmapRelease do exactly one Get + one Put of a
-// wrapper, so the wrapper count is conserved and steady-state reuse allocates
-// nothing — the detach-on-acquire / attach-on-release pattern. (A naive
-// Put(&local) instead escapes a fresh slice header to the heap every call, which
-// is the 1-alloc/op trap this avoids.)
-var bitmapPool = sync.Pool{
-	New: func() any { return new(Bitmap) },
-}
-
-// BitmapAcquire returns a zeroed Bitmap of (n+63)/64 words. For n up to ~1M rows
-// the backing array is drawn from a sync.Pool and reused across calls, so a
-// warm pool produces 0 allocs/op; larger requests allocate fresh. The result
-// MUST be returned with BitmapRelease once the caller is done with it.
-//
-// It detaches the buffer from its wrapper (setting the wrapper's slice to nil)
-// before returning the wrapper to the pool, so the buffer it hands out is never
-// simultaneously reachable through a pooled wrapper — no two callers can be
-// handed the same backing array.
-func BitmapAcquire(n int) Bitmap {
-	words := (n + 63) / 64
-	if words > bitmapMaxPoolWords {
-		return make(Bitmap, words)
-	}
-	bp := bitmapPool.Get().(*Bitmap)
-	b := *bp
-	*bp = nil
-	bitmapPool.Put(bp)
-	if cap(b) < words {
-		b = make(Bitmap, words, bitmapMaxPoolWords)
-	} else {
-		b = b[:words]
-		clear(b)
-	}
-	return b
-}
-
-// BitmapRelease returns a Bitmap previously obtained from BitmapAcquire to the
-// pool by attaching it to a recycled wrapper. Buffers whose capacity exceeds the
-// pool cap (or are empty) are dropped so oversized allocations are not retained.
-// The caller must not use b after releasing it.
-func BitmapRelease(b Bitmap) {
-	if cap(b) == 0 || cap(b) > bitmapMaxPoolWords {
-		return
-	}
-	bp := bitmapPool.Get().(*Bitmap)
-	*bp = b[:cap(b)]
-	bitmapPool.Put(bp)
 }

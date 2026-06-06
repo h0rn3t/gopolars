@@ -208,8 +208,6 @@ arm64.
 
 - `Bitmap` data structure with `BitmapNew`, `BitmapSet`, `BitmapGet`,
   `BitmapPopcount`
-- `BitmapAcquire` / `BitmapRelease` — pooled buffers for the fused-filter hot
-  path (0 allocs/op for masks up to ~1M rows on a warm pool)
 - `CompareGTFloat64Bitmap`, `CompareEQInt64Bitmap` — bitmap counterparts of the
   comparison kernels
 - `BitmapAnd` — word-at-a-time logical AND of two predicate bitmaps

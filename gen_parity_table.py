@@ -127,64 +127,62 @@ python_methods = {
 }
 
 # 2. Зчитуємо методи gopolars
-def get_go_methods(file_path):
-    text = Path(file_path).read_text()
+#
+# Скануємо всі .go-файли пакета: і реалізації (func (recv) Name(...)),
+# і декларації методів в інтерфейсах (рядок виду "    Name(...)" у types.go).
+def get_go_methods(*globs):
     methods = set()
-    for m in re.finditer(r'func \([^)]*\) ([A-Z][A-Za-z0-9_]*)\(', text):
-        methods.add(m.group(1))
-    for m in re.finditer(r'^func ([A-Z][A-Za-z0-9_]*)\(', text, re.MULTILINE):
-        if m.group(1) not in {'Expr', 'DataFrame', 'LazyFrame', 'Series'}:
-            methods.add(m.group(1))
+    for pattern in globs:
+        for path in sorted(root.glob(pattern)):
+            if path.name.endswith("_test.go"):
+                continue
+            text = path.read_text()
+            # методи з ресивером: func (d DataFrame) Select(...)
+            for m in re.finditer(r'func \([^)]*\) ([A-Z][A-Za-z0-9_]*)\(', text):
+                methods.add(m.group(1))
+            # вільні функції верхнього рівня: func Col(...)
+            for m in re.finditer(r'^func ([A-Z][A-Za-z0-9_]*)\(', text, re.MULTILINE):
+                methods.add(m.group(1))
+            # декларації методів в інтерфейсах: рядок з відступом "Name("
+            for m in re.finditer(r'^\s+([A-Z][A-Za-z0-9_]*)\(', text, re.MULTILINE):
+                methods.add(m.group(1))
     return methods
 
-root = Path("/Volumes/External HD/GolandProjects/gopolars")
+# root відносно розташування цього скрипта — не залежить від машини.
+root = Path(__file__).resolve().parent
 
-df_methods = get_go_methods(root / "pkg/polars/dataframe.go")
-lf_methods = get_go_methods(root / "pkg/polars/lazyframe.go")
-s_methods = get_go_methods(root / "pkg/polars/series.go") | \
-           get_go_methods(root / "pkg/polars/series_low_priority.go") | \
-           get_go_methods(root / "pkg/polars/series_namespace.go")
-expr_methods = get_go_methods(root / "pkg/expr/expr.go")
+# DataFrame / LazyFrame / Series інтерфейси та реалізації лежать у pkg/polars/*.go;
+# Expr — у pkg/expr/*.go. Скануємо весь пакет, бо методи рознесені по файлах.
+polars_methods = get_go_methods("pkg/polars/*.go")
+expr_methods = get_go_methods("pkg/expr/*.go") | polars_methods
+df_methods = polars_methods
+lf_methods = polars_methods
+s_methods = polars_methods | get_go_methods("pkg/expr/*.go")
 
 # 3. Функція перевірки відповідності
 def snake_to_camel(snake):
     """Конвертує snake_case в CamelCase (спрощено)."""
-    parts = snake.split('_')
+    parts = snake.strip('_').split('_')
     return ''.join(p.capitalize() for p in parts)
 
+# Нормалізація для регістронезалежного співставлення без підкреслень:
+# знімає різницю SinkCsv↔SinkCSV, Sql↔SQL, not_↔Not тощо.
+def _norm(name):
+    return name.replace('_', '').lower()
+
+# Семантичні псевдоніми, де імена справді відрізняються (не лише регістр).
+ALIASES = {
+    'dtype': {'datatype', 'dtype'},
+    'list': {'list', 'arr'},
+    'arr': {'arr', 'list'},
+}
+
 def check_match(py_methods, go_methods):
+    go_norm = {_norm(g) for g in go_methods}
     result = {}
     for py in py_methods:
-        camel = snake_to_camel(py)
-        # Деякі спеціальні випадки
-        if py == 'sql':
-            result[py] = 'SQL' in go_methods or 'Sql' in go_methods
-        elif py == 'dt':
-            result[py] = 'Dt' in go_methods
-        elif py == 'not_':
-            result[py] = 'Not_' in go_methods or 'Not' in go_methods
-        elif py == 'and_':
-            result[py] = 'And_' in go_methods or 'And' in go_methods
-        elif py == 'or_':
-            result[py] = 'Or_' in go_methods or 'Or' in go_methods
-        elif py == 'str':
-            result[py] = 'Str' in go_methods
-        elif py == 'cat':
-            result[py] = 'Cat' in go_methods
-        elif py == 'bin':
-            result[py] = 'Bin' in go_methods
-        elif py == 'list':
-            result[py] = 'List' in go_methods or 'Arr' in go_methods
-        elif py == 'struct':
-            result[py] = 'Struct' in go_methods
-        elif py == 'len':
-            result[py] = 'Len' in go_methods
-        elif py == 'name':
-            result[py] = 'Name' in go_methods
-        elif py == 'dtype':
-            result[py] = 'DataType' in go_methods or 'Dtype' in go_methods
-        else:
-            result[py] = camel in go_methods
+        candidates = ALIASES.get(py, {_norm(py)})
+        result[py] = any(c in go_norm for c in candidates)
     return result
 
 df_match = check_match(python_methods['DataFrame'], df_methods)
@@ -192,62 +190,60 @@ lf_match = check_match(python_methods['LazyFrame'], lf_methods)
 s_match = check_match(python_methods['Series'], s_methods)
 expr_match = check_match(python_methods['Expr'], expr_methods)
 
+OUT = []
+def emit(line=""):
+    OUT.append(line)
+
 def print_table(name, match):
-    print(f"\n## {name}\n")
-    print("| Python (snake_case) | Go (CamelCase) | Статус |")
-    print("|---|---|---|")
+    emit(f"\n## {name}\n")
+    emit("| Python (snake_case) | Go (CamelCase) | Статус |")
+    emit("|---|---|---|")
     implemented = 0
+    missing = []
     for py in sorted(match.keys()):
         status = "✅" if match[py] else "❌"
         if match[py]:
             implemented += 1
-        camel = snake_to_camel(py)
-        # Спеціальні випадки для відображення
-        if py == 'sql':
-            camel = 'SQL / Sql'
-        elif py == 'not_':
-            camel = 'Not_'
-        elif py == 'and_':
-            camel = 'And_'
-        elif py == 'or_':
-            camel = 'Or_'
-        elif py == 'dt':
-            camel = 'Dt'
-        elif py == 'str':
-            camel = 'Str'
-        elif py == 'cat':
-            camel = 'Cat'
-        elif py == 'bin':
-            camel = 'Bin'
-        elif py == 'list':
-            camel = 'List / Arr'
-        elif py == 'struct':
-            camel = 'Struct'
-        elif py == 'len':
-            camel = 'Len'
-        elif py == 'name':
-            camel = 'Name'
-        elif py == 'dtype':
-            camel = 'DataType'
-        print(f"| `{py}` | `{camel}` | {status} |")
-    print(f"\n**Підсумок {name}:** {implemented}/{len(match)} реалізовано (~{int(100*implemented/len(match))}%).\n")
-    return implemented, len(match)
+        else:
+            missing.append(py)
+        emit(f"| `{py}` | `{snake_to_camel(py)}` | {status} |")
+    pct = int(round(100 * implemented / len(match))) if match else 100
+    emit(f"\n**Підсумок {name}:** {implemented}/{len(match)} реалізовано (~{pct}%).")
+    if missing:
+        emit(f"\n**Не реалізовано ({len(missing)}):** " + ", ".join(f"`{m}`" for m in missing))
+    emit()
+    return implemented, len(match), missing
 
-print("# Таблиця відповідності gopolars ↔ Polars Python 1.41.0\n")
-print("**Легенда:**")
-print("- ✅ Реалізовано — метод присутній у gopolars")
-print("- ❌ Не реалізовано — метод відсутній у gopolars")
-print("---")
+emit("# Таблиця відповідності gopolars ↔ Polars Python")
+emit()
+emit("> Згенеровано `gen_parity_table.py`. Не редагувати вручну.")
+emit()
+emit("**Легенда:**")
+emit("- ✅ Реалізовано — метод присутній у gopolars")
+emit("- ❌ Не реалізовано — метод відсутній у gopolars")
+emit("\n---")
 
-df_impl, df_total = print_table("DataFrame", df_match)
-lf_impl, lf_total = print_table("LazyFrame", lf_match)
-s_impl, s_total = print_table("Series", s_match)
-expr_impl, expr_total = print_table("Expr", expr_match)
+df_impl, df_total, df_miss = print_table("DataFrame", df_match)
+lf_impl, lf_total, lf_miss = print_table("LazyFrame", lf_match)
+s_impl, s_total, s_miss = print_table("Series", s_match)
+expr_impl, expr_total, expr_miss = print_table("Expr", expr_match)
 
-print("## Загальний підсумок\n")
-print("| Клас | Реалізовано | Загалом | Відсоток |")
-print("|---|---|---|---|")
-print(f"| DataFrame | {df_impl} | {df_total} | ~{int(100*df_impl/df_total)}% |")
-print(f"| LazyFrame | {lf_impl} | {lf_total} | ~{int(100*lf_impl/lf_total)}% |")
-print(f"| Series | {s_impl} | {s_total} | ~{int(100*s_impl/s_total)}% |")
-print(f"| Expr | {expr_impl} | {expr_total} | ~{int(100*expr_impl/expr_total)}% |")
+tot_impl = df_impl + lf_impl + s_impl + expr_impl
+tot_all = df_total + lf_total + s_total + expr_total
+
+emit("## Загальний підсумок\n")
+emit("| Клас | Реалізовано | Загалом | Відсоток |")
+emit("|---|---|---|---|")
+emit(f"| DataFrame | {df_impl} | {df_total} | ~{int(round(100*df_impl/df_total))}% |")
+emit(f"| LazyFrame | {lf_impl} | {lf_total} | ~{int(round(100*lf_impl/lf_total))}% |")
+emit(f"| Series | {s_impl} | {s_total} | ~{int(round(100*s_impl/s_total))}% |")
+emit(f"| Expr | {expr_impl} | {expr_total} | ~{int(round(100*expr_impl/expr_total))}% |")
+emit(f"| **Разом** | **{tot_impl}** | **{tot_all}** | **~{round(100*tot_impl/tot_all, 1)}%** |")
+emit()
+
+report = "\n".join(OUT)
+print(report)
+
+out_path = root / "docs/parity/python_polars_full_matrix.md"
+out_path.write_text(report)
+print(f"\n[written] {out_path}")

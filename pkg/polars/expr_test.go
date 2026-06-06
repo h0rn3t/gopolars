@@ -144,9 +144,9 @@ func TestExprAggAfterGroupBy(t *testing.T) {
 		idxByKey[k] = i
 	}
 	checks := []struct {
-		col   string
-		key   string
-		val   float64
+		col string
+		key string
+		val float64
 	}{
 		{"sum_a", "x", 3}, {"sum_a", "y", 7},
 		{"min_a", "x", 1}, {"min_a", "y", 3},

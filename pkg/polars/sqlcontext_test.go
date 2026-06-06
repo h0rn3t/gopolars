@@ -191,4 +191,3 @@ func TestSQLContextExecuteUnparseable(t *testing.T) {
 		t.Fatalf("Execute(bad) returned nil error, want non-nil")
 	}
 }
-

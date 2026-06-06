@@ -45,7 +45,7 @@ func TestNewIOIndependentInstances(t *testing.T) {
 	if _, err := b.ScanCSV(ScanCSVInput{Path: "/tmp/none.csv"}); err != nil {
 		t.Fatalf("b.ScanCSV: %v", err)
 	}
-}// TestIORoundTripCSV writes a frame, then reads it back via IO.ReadCSV.
+} // TestIORoundTripCSV writes a frame, then reads it back via IO.ReadCSV.
 func TestIORoundTripCSV(t *testing.T) {
 	io := NewIO()
 	tmp := t.TempDir()
