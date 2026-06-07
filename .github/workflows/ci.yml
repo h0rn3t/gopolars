@@ -24,6 +24,17 @@ jobs:
         with:
           go-version: '1.26.x'
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install ADBC SQLite driver (database IO integration tests)
+        # The Go ecosystem has no native SQLite ADBC driver; the pip wheel bundles
+        # the C driver, which the integration tests auto-discover via python3. If
+        # this is absent the tests skip rather than fail.
+        run: python -m pip install adbc-driver-sqlite
+
       - name: Cache Go modules
         uses: actions/cache@v4
         with:

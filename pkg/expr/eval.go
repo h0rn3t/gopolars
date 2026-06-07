@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -107,6 +108,18 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				return nil, fmt.Errorf("dt_weekday expects datetime")
 			}
 			return int64(t.Weekday()), nil
+		case "dt_minute":
+			t, ok := v.(time.Time)
+			if !ok {
+				return nil, fmt.Errorf("dt_minute expects datetime")
+			}
+			return int64(t.Minute()), nil
+		case "dt_second":
+			t, ok := v.(time.Time)
+			if !ok {
+				return nil, fmt.Errorf("dt_second expects datetime")
+			}
+			return int64(t.Second()), nil
 		case "list_len":
 			list, ok := v.([]any)
 			if !ok {
@@ -430,6 +443,58 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				}
 				return strings.ReplaceAll(s, parts[0], parts[1]), nil
 			}
+			if strings.HasPrefix(e.Op(), "str_like:") {
+				if v == nil {
+					return nil, nil
+				}
+				s, ok := v.(string)
+				if !ok {
+					return nil, fmt.Errorf("str_like expects string")
+				}
+				re, err := compileLikePattern(strings.TrimPrefix(e.Op(), "str_like:"))
+				if err != nil {
+					return nil, err
+				}
+				return re.MatchString(s), nil
+			}
+			if strings.HasPrefix(e.Op(), "str_substr:") {
+				if v == nil {
+					return nil, nil
+				}
+				s, ok := v.(string)
+				if !ok {
+					return nil, fmt.Errorf("str_substr expects string")
+				}
+				spec := strings.TrimPrefix(e.Op(), "str_substr:")
+				parts := strings.SplitN(spec, ":", 2)
+				if len(parts) != 2 {
+					return nil, fmt.Errorf("invalid str_substr configuration")
+				}
+				start, err1 := strconv.Atoi(parts[0])
+				length, err2 := strconv.Atoi(parts[1])
+				if err1 != nil || err2 != nil {
+					return nil, fmt.Errorf("invalid str_substr configuration")
+				}
+				return sqlSubstr(s, start, length), nil
+			}
+			if strings.HasPrefix(e.Op(), "round_dp:") {
+				if v == nil {
+					return nil, nil
+				}
+				decimals, err := strconv.Atoi(strings.TrimPrefix(e.Op(), "round_dp:"))
+				if err != nil {
+					return nil, fmt.Errorf("invalid round_dp configuration")
+				}
+				switch t := v.(type) {
+				case float64:
+					scale := math.Pow(10, float64(decimals))
+					return math.Round(t*scale) / scale, nil
+				case int64:
+					return t, nil
+				default:
+					return nil, fmt.Errorf("round_dp expects numeric")
+				}
+			}
 			if strings.HasPrefix(e.Op(), "struct_field:") {
 				key := strings.TrimPrefix(e.Op(), "struct_field:")
 				m, ok := v.(map[string]any)
@@ -634,6 +699,16 @@ func evalBin(op string, left any, right any) (any, error) {
 			return nil, fmt.Errorf("starts_with expects strings")
 		}
 		return strings.HasPrefix(l, r), nil
+	case "str_concat":
+		if left == nil || right == nil {
+			return nil, nil
+		}
+		l, lok := left.(string)
+		r, rok := right.(string)
+		if !lok || !rok {
+			return nil, fmt.Errorf("str_concat expects strings")
+		}
+		return l + r, nil
 	case "list_contains":
 		l, ok := left.([]any)
 		if !ok {
@@ -905,6 +980,18 @@ func cast(v any, dt dtypes.DataType) (any, error) {
 			return t, nil
 		case float64:
 			return int64(t), nil
+		case bool:
+			if t {
+				return int64(1), nil
+			}
+			return int64(0), nil
+		case string:
+			if i, err := strconv.ParseInt(strings.TrimSpace(t), 10, 64); err == nil {
+				return i, nil
+			}
+			if f, err := strconv.ParseFloat(strings.TrimSpace(t), 64); err == nil {
+				return int64(f), nil
+			}
 		}
 	case dtypes.Float64:
 		switch t := v.(type) {
@@ -912,13 +999,21 @@ func cast(v any, dt dtypes.DataType) (any, error) {
 			return t, nil
 		case int64:
 			return float64(t), nil
+		case string:
+			if f, err := strconv.ParseFloat(strings.TrimSpace(t), 64); err == nil {
+				return f, nil
+			}
 		}
 	case dtypes.String:
 		return fmt.Sprintf("%v", v), nil
 	case dtypes.Boolean:
-		b, ok := v.(bool)
-		if ok {
-			return b, nil
+		switch t := v.(type) {
+		case bool:
+			return t, nil
+		case string:
+			if b, err := strconv.ParseBool(strings.TrimSpace(t)); err == nil {
+				return b, nil
+			}
 		}
 	case dtypes.Datetime:
 		t, ok := v.(time.Time)
@@ -991,4 +1086,42 @@ func cmpStrings(op string, l string, r string) bool {
 		return l <= r
 	}
 	return false
+}
+
+// compileLikePattern converts a SQL LIKE pattern into an anchored regular
+// expression. '%' matches any run of characters, '_' matches exactly one, and
+// every other character (including regex metacharacters) is matched literally.
+func compileLikePattern(pattern string) (*regexp.Regexp, error) {
+	var b strings.Builder
+	b.WriteString("^")
+	for _, ch := range pattern {
+		switch ch {
+		case '%':
+			b.WriteString(".*")
+		case '_':
+			b.WriteString(".")
+		default:
+			b.WriteString(regexp.QuoteMeta(string(ch)))
+		}
+	}
+	b.WriteString("$")
+	return regexp.Compile(b.String())
+}
+
+// sqlSubstr implements SQL SUBSTRING semantics: start is 1-based and length is
+// the number of characters to take. Out-of-range requests clamp to the string.
+func sqlSubstr(s string, start int, length int) string {
+	runes := []rune(s)
+	if start < 1 {
+		start = 1
+	}
+	from := start - 1
+	if from >= len(runes) || length <= 0 {
+		return ""
+	}
+	to := from + length
+	if to > len(runes) {
+		to = len(runes)
+	}
+	return string(runes[from:to])
 }

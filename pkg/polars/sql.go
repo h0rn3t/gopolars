@@ -15,6 +15,9 @@ type ParseSQLInput struct {
 	Source  frame.DataFrame
 	Engine  exec.Engine
 	Table   string
+	// Tables holds every table available to the query (for multi-table joins).
+	// Source is always added under Table if not already present.
+	Tables map[string]frame.DataFrame
 }
 
 func ParseSQL(input ParseSQLInput) (LazyFrame, error) {
@@ -28,11 +31,24 @@ func ParseSQL(input ParseSQLInput) (LazyFrame, error) {
 	if parsed.Table == "" {
 		return nil, fmt.Errorf("table is required")
 	}
-	bound, err := gsql.Bind(parsed)
+	tables := make(map[string]frame.DataFrame, len(input.Tables)+1)
+	for k, v := range input.Tables {
+		tables[k] = v
+	}
+	if input.Table != "" {
+		if _, ok := tables[input.Table]; !ok {
+			tables[input.Table] = input.Source
+		}
+	}
+	catalog := gsql.NewCatalog(tables)
+	bound, err := gsql.Bind(parsed, catalog)
 	if err != nil {
 		return nil, err
 	}
-	nodes := gsql.Plan(bound)
+	nodes, err := gsql.Plan(bound, catalog)
+	if err != nil {
+		return nil, err
+	}
 	return &lf{
 		source: input.Source,
 		engine: input.Engine,

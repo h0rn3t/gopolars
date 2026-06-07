@@ -69,12 +69,17 @@ func (s *sqlContext) Execute(ctx context.Context, query string) (LazyFrame, erro
 	if !ok {
 		return nil, fmt.Errorf("table %s is not registered", targetTable)
 	}
+	tables := make(map[string]frame.DataFrame, len(s.tables))
+	for name, df := range s.tables {
+		tables[name] = df
+	}
 	return ParseSQL(ParseSQLInput{
 		Context: ctx,
 		Query:   query,
 		Source:  source,
 		Engine:  s.engine,
 		Table:   targetTable,
+		Tables:  tables,
 	})
 }
 

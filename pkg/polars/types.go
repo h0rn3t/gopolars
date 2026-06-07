@@ -149,7 +149,7 @@ type DataFrame interface {
 	WriteNdjson(input WriteJSONInput) error
 	WriteAvro(path string) error
 	WriteClipboard() error
-	WriteDatabase(target string) error
+	WriteDatabase(input WriteDatabaseInput) (int64, error)
 	WriteDelta(path string) error
 	WriteExcel(path string) error
 	WriteIceberg(path string) error
