@@ -11,12 +11,15 @@ import (
 type ParsedQuery struct {
 	Raw      string
 	Table    string
+	From     FromClause
 	Select   []SelectItem
+	Distinct bool
 	Where    *expr.Expr
 	GroupBy  []string
 	OrderBy  []OrderItem
 	Having   *expr.Expr
 	Limit    *int
+	Offset   *int
 	HasWhere bool
 	CTEName  string
 	CTE      *ParsedQuery
@@ -43,12 +46,46 @@ type WindowSpec struct {
 	OrderBy     []OrderItem
 }
 
+// unsupportedStatements maps a leading keyword of an out-of-scope statement to a
+// descriptive error message.
+var unsupportedStatements = map[string]string{
+	"create":   "CREATE statements are not supported",
+	"drop":     "DROP statements are not supported",
+	"alter":    "ALTER statements are not supported",
+	"insert":   "INSERT statements are not supported",
+	"update":   "UPDATE statements are not supported",
+	"delete":   "DELETE statements are not supported",
+	"truncate": "TRUNCATE statements are not supported",
+	"explain":  "EXPLAIN statements are not supported",
+	"show":     "SHOW statements are not supported",
+	"describe": "DESCRIBE statements are not supported",
+	"use":      "USE statements are not supported",
+}
+
+// firstKeyword returns the leading identifier word of a (lowercased) query.
+func firstKeyword(lower string) string {
+	i := 0
+	for i < len(lower) && (lower[i] == ' ' || lower[i] == '\t' || lower[i] == '\n' || lower[i] == '\r' || lower[i] == '(') {
+		i++
+	}
+	start := i
+	for i < len(lower) && lower[i] >= 'a' && lower[i] <= 'z' {
+		i++
+	}
+	return lower[start:i]
+}
+
 func Parse(query string) (ParsedQuery, error) {
 	raw := strings.TrimSpace(query)
 	if raw == "" {
 		return ParsedQuery{}, fmt.Errorf("query is empty")
 	}
 	lower := strings.ToLower(raw)
+	if first := firstKeyword(lower); first != "" {
+		if msg, ok := unsupportedStatements[first]; ok {
+			return ParsedQuery{}, fmt.Errorf("unsupported SQL: %s", msg)
+		}
+	}
 	if strings.HasPrefix(lower, "with ") {
 		return parseWithQuery(raw)
 	}
@@ -124,37 +161,24 @@ func parseSelectQuery(raw string) (ParsedQuery, error) {
 	selectPart := strings.TrimSpace(normalized[len("select "):fromIdx])
 	rest := strings.TrimSpace(normalized[fromIdx+len(" from "):])
 
-	table := ""
-	afterTable := ""
-	var sub *ParsedQuery
-	if strings.HasPrefix(rest, "(") {
-		end, ok := findMatchingParen(rest)
-		if !ok {
-			return ParsedQuery{}, fmt.Errorf("invalid subquery in FROM clause")
-		}
-		inner := strings.TrimSpace(rest[1:end])
-		parsedInner, err := parseSelectQuery(inner)
-		if err != nil {
-			return ParsedQuery{}, err
-		}
-		sub = &parsedInner
-		remaining := strings.TrimSpace(rest[end+1:])
-		table, afterTable = readFirstToken(remaining)
-		if table == "" {
-			table = "_subquery"
-			afterTable = remaining
-		}
-	} else {
-		table, afterTable = readFirstToken(rest)
-		if table == "" {
-			return ParsedQuery{}, fmt.Errorf("missing table in FROM clause")
-		}
+	distinct := false
+	if strings.HasPrefix(strings.ToLower(selectPart), "distinct ") {
+		distinct = true
+		selectPart = strings.TrimSpace(selectPart[len("distinct "):])
+	}
+
+	fromSeg, afterFrom := splitFromAndClauses(rest)
+	from, err := parseFromClause(fromSeg)
+	if err != nil {
+		return ParsedQuery{}, err
 	}
 	q := ParsedQuery{
 		Raw:      strings.TrimSpace(raw),
-		Table:    table,
+		Table:    from.Primary.Name,
+		From:     from,
 		Select:   make([]SelectItem, 0),
-		Subquery: sub,
+		Distinct: distinct,
+		Subquery: from.Primary.Subquery,
 	}
 	items, err := parseSelectList(selectPart)
 	if err != nil {
@@ -162,7 +186,7 @@ func parseSelectQuery(raw string) (ParsedQuery, error) {
 	}
 	q.Select = items
 
-	remaining := strings.TrimSpace(afterTable)
+	remaining := strings.TrimSpace(afterFrom)
 	for remaining != "" {
 		l := strings.ToLower(remaining)
 		switch {
@@ -216,6 +240,14 @@ func parseSelectQuery(raw string) (ParsedQuery, error) {
 			}
 			q.Limit = &n
 			remaining = strings.TrimSpace(next)
+		case strings.HasPrefix(l, "offset "):
+			token, next := readFirstToken(remaining[len("offset "):])
+			m, err := strconv.Atoi(strings.TrimSpace(token))
+			if err != nil {
+				return ParsedQuery{}, fmt.Errorf("invalid OFFSET value")
+			}
+			q.Offset = &m
+			remaining = strings.TrimSpace(next)
 		default:
 			return ParsedQuery{}, fmt.Errorf("cannot parse SQL near: %s", remaining)
 		}
@@ -244,23 +276,31 @@ func parseSelectList(input string) ([]SelectItem, error) {
 }
 
 func parseSelectExpr(item string) (SelectItem, error) {
-	asParts := strings.Split(strings.ToLower(item), " as ")
-	var alias string
-	rawExpr := item
-	if len(asParts) == 2 {
-		idx := strings.Index(strings.ToLower(item), " as ")
-		rawExpr = strings.TrimSpace(item[:idx])
-		alias = strings.TrimSpace(item[idx+len(" as "):])
-	}
-	trimmed := strings.TrimSpace(rawExpr)
-	if strings.Contains(strings.ToLower(trimmed), " over ") {
-		w, err := parseWindowExpr(trimmed, alias)
+	trimmed := strings.TrimSpace(item)
+	// Window functions are handled by the dedicated window parser. The alias (if
+	// any) is the top-level " AS " after the OVER(...) clause.
+	if topLevelIndexFold(trimmed, " over ") >= 0 {
+		rawExpr := trimmed
+		alias := ""
+		if idx := topLevelIndexFold(trimmed, " as "); idx >= 0 {
+			rawExpr = strings.TrimSpace(trimmed[:idx])
+			alias = strings.TrimSpace(trimmed[idx+len(" as "):])
+		}
+		w, err := parseWindowExpr(rawExpr, alias)
 		if err != nil {
 			return SelectItem{}, err
 		}
 		return SelectItem{Window: &w, Expr: expr.Col(w.Alias)}, nil
 	}
-	e, err := parseExpr(trimmed)
+	// Detect a top-level alias (" AS name"); an AS inside parentheses (e.g.
+	// CAST(x AS INT)) is at depth > 0 and is left for the expression parser.
+	rawExpr := trimmed
+	alias := ""
+	if idx := topLevelIndexFold(trimmed, " as "); idx >= 0 {
+		rawExpr = strings.TrimSpace(trimmed[:idx])
+		alias = strings.TrimSpace(trimmed[idx+len(" as "):])
+	}
+	e, err := parseExpression(rawExpr)
 	if err != nil {
 		return SelectItem{}, err
 	}
@@ -415,109 +455,37 @@ func splitTopLevelSetOp(raw string) (string, string, string, bool) {
 	return "", "", "", false
 }
 
-func findMatchingParen(v string) (int, bool) {
-	depth := 0
-	for i, ch := range v {
-		if ch == '(' {
-			depth++
-		}
-		if ch == ')' {
-			depth--
-			if depth == 0 {
-				return i, true
-			}
-		}
-	}
-	return -1, false
-}
-
-func parseExpr(v string) (expr.Expr, error) {
-	lv := strings.ToLower(v)
-	switch {
-	case lv == "*":
-		return expr.Col("*"), nil
-	case strings.HasPrefix(lv, "sum("):
-		col, ok := readFnArg(v)
-		if !ok {
-			return expr.Expr{}, fmt.Errorf("invalid sum expression")
-		}
-		return expr.Sum(expr.Col(col)), nil
-	case strings.HasPrefix(lv, "min("):
-		col, ok := readFnArg(v)
-		if !ok {
-			return expr.Expr{}, fmt.Errorf("invalid min expression")
-		}
-		return expr.Min(expr.Col(col)), nil
-	case strings.HasPrefix(lv, "max("):
-		col, ok := readFnArg(v)
-		if !ok {
-			return expr.Expr{}, fmt.Errorf("invalid max expression")
-		}
-		return expr.Max(expr.Col(col)), nil
-	case strings.HasPrefix(lv, "mean(") || strings.HasPrefix(lv, "rolling_mean("):
-		col, ok := readFnArg(v)
-		if !ok {
-			return expr.Expr{}, fmt.Errorf("invalid mean expression")
-		}
-		return expr.Mean(expr.Col(col)), nil
-	case strings.HasPrefix(lv, "n_unique("):
-		col, ok := readFnArg(v)
-		if !ok {
-			return expr.Expr{}, fmt.Errorf("invalid n_unique expression")
-		}
-		return expr.NUnique(expr.Col(col)), nil
-	case lv == "count(*)" || lv == "count()":
-		return expr.Count(), nil
-	default:
-		return expr.Col(strings.TrimSpace(v)), nil
-	}
-}
-
+// parseCondition parses a SQL predicate (WHERE/HAVING/ON) into an expression.
 func parseCondition(input string) (expr.Expr, error) {
-	ops := []string{">=", "<=", "!=", "=", ">", "<"}
-	s := strings.TrimSpace(input)
-	for _, op := range ops {
-		if idx := strings.Index(s, op); idx >= 0 {
-			left := strings.TrimSpace(s[:idx])
-			right := strings.TrimSpace(s[idx+len(op):])
-			l := expr.Col(left)
-			r := parseLiteral(right)
-			switch op {
-			case "=":
-				return l.Eq(r), nil
-			case "!=":
-				return l.Ne(r), nil
-			case ">":
-				return l.Gt(r), nil
-			case ">=":
-				return l.Ge(r), nil
-			case "<":
-				return l.Lt(r), nil
-			case "<=":
-				return l.Le(r), nil
-			}
-		}
-	}
-	return expr.Expr{}, fmt.Errorf("unsupported condition: %s", input)
+	return parseExpression(input)
 }
 
-func parseLiteral(s string) expr.Expr {
-	s = strings.TrimSpace(s)
-	if len(s) >= 2 && ((s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '"' && s[len(s)-1] == '"')) {
-		return expr.Lit(s[1 : len(s)-1])
-	}
-	if strings.EqualFold(s, "true") || strings.EqualFold(s, "false") {
-		return expr.Lit(strings.EqualFold(s, "true"))
-	}
-	if strings.Contains(s, ".") {
-		if f, err := strconv.ParseFloat(s, 64); err == nil {
-			return expr.Lit(f)
+// topLevelIndexFold returns the byte index of sub (already lowercase) within s,
+// matched case-insensitively, ignoring matches inside single-quoted string
+// literals or inside parentheses. Returns -1 if not found at the top level.
+func topLevelIndexFold(s string, sub string) int {
+	lower := strings.ToLower(s)
+	depth := 0
+	inSingle := false
+	for i := 0; i+len(sub) <= len(lower); i++ {
+		c := lower[i]
+		switch c {
+		case '\'':
+			inSingle = !inSingle
+		case '(':
+			if !inSingle {
+				depth++
+			}
+		case ')':
+			if !inSingle {
+				depth--
+			}
+		}
+		if !inSingle && depth == 0 && lower[i:i+len(sub)] == sub {
+			return i
 		}
 	}
-	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return expr.Lit(i)
-	}
-	return expr.Lit(s)
+	return -1
 }
 
 func readFnArg(raw string) (string, bool) {
@@ -545,7 +513,7 @@ func readFirstToken(s string) (string, string) {
 
 func splitClause(s string) (string, string) {
 	l := strings.ToLower(s)
-	markers := []string{" where ", " group by ", " having ", " order by ", " limit "}
+	markers := []string{" where ", " group by ", " having ", " order by ", " limit ", " offset "}
 	pos := -1
 	for _, marker := range markers {
 		if idx := strings.Index(l, marker); idx >= 0 {
@@ -558,4 +526,23 @@ func splitClause(s string) (string, string) {
 		return strings.TrimSpace(s), ""
 	}
 	return strings.TrimSpace(s[:pos]), strings.TrimSpace(s[pos+1:])
+}
+
+// splitFromAndClauses splits the text following FROM into the FROM segment (the
+// table list with joins) and the remaining trailing clauses, splitting at the
+// first top-level clause keyword.
+func splitFromAndClauses(rest string) (string, string) {
+	markers := []string{" where ", " group by ", " having ", " order by ", " limit ", " offset "}
+	best := -1
+	for _, m := range markers {
+		if idx := topLevelIndexFold(rest, m); idx >= 0 {
+			if best == -1 || idx < best {
+				best = idx
+			}
+		}
+	}
+	if best == -1 {
+		return strings.TrimSpace(rest), ""
+	}
+	return strings.TrimSpace(rest[:best]), strings.TrimSpace(rest[best:])
 }

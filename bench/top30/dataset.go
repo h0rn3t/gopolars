@@ -5,10 +5,10 @@ import (
 	"math/rand"
 	"os"
 
-	"github.com/apache/arrow/go/v18/arrow"
-	"github.com/apache/arrow/go/v18/arrow/array"
-	"github.com/apache/arrow/go/v18/arrow/ipc"
-	"github.com/apache/arrow/go/v18/arrow/memory"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 type dataset struct {
@@ -86,7 +86,7 @@ func WriteArrowIPC(path string, ds dataset) error {
 	schema := arrow.NewSchema(fields, nil)
 
 	arrays := []arrow.Array{gArr, vArr, nArr, iArr}
-	rec := array.NewRecord(schema, arrays, int64(len(ds.G)))
+	rec := array.NewRecordBatch(schema, arrays, int64(len(ds.G)))
 	defer rec.Release()
 
 	f, err := os.Create(path)

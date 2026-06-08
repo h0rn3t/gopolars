@@ -4,16 +4,16 @@ import (
 	"testing"
 	"time"
 
-	goarrow "github.com/apache/arrow/go/v18/arrow"
-	"github.com/apache/arrow/go/v18/arrow/array"
-	"github.com/apache/arrow/go/v18/arrow/memory"
+	goarrow "github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
 	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
 // buildRecord creates an Arrow record with one column of the given type.
-func buildFloat64Record(vals []float64, nullAt int) goarrow.Record {
+func buildFloat64Record(vals []float64, nullAt int) goarrow.RecordBatch {
 	alloc := memory.NewGoAllocator()
 	b := array.NewFloat64Builder(alloc)
 	for i, v := range vals {
@@ -28,10 +28,10 @@ func buildFloat64Record(vals []float64, nullAt int) goarrow.Record {
 	schema := goarrow.NewSchema([]goarrow.Field{
 		{Name: "v", Type: goarrow.PrimitiveTypes.Float64, Nullable: true},
 	}, nil)
-	return array.NewRecord(schema, []goarrow.Array{arr}, int64(len(vals)))
+	return array.NewRecordBatch(schema, []goarrow.Array{arr}, int64(len(vals)))
 }
 
-func buildInt64Record(vals []int64, nullAt int) goarrow.Record {
+func buildInt64Record(vals []int64, nullAt int) goarrow.RecordBatch {
 	alloc := memory.NewGoAllocator()
 	b := array.NewInt64Builder(alloc)
 	for i, v := range vals {
@@ -46,10 +46,10 @@ func buildInt64Record(vals []int64, nullAt int) goarrow.Record {
 	schema := goarrow.NewSchema([]goarrow.Field{
 		{Name: "v", Type: goarrow.PrimitiveTypes.Int64, Nullable: true},
 	}, nil)
-	return array.NewRecord(schema, []goarrow.Array{arr}, int64(len(vals)))
+	return array.NewRecordBatch(schema, []goarrow.Array{arr}, int64(len(vals)))
 }
 
-func buildBoolRecord(vals []bool) goarrow.Record {
+func buildBoolRecord(vals []bool) goarrow.RecordBatch {
 	alloc := memory.NewGoAllocator()
 	b := array.NewBooleanBuilder(alloc)
 	b.AppendValues(vals, nil)
@@ -58,10 +58,10 @@ func buildBoolRecord(vals []bool) goarrow.Record {
 	schema := goarrow.NewSchema([]goarrow.Field{
 		{Name: "v", Type: goarrow.FixedWidthTypes.Boolean, Nullable: false},
 	}, nil)
-	return array.NewRecord(schema, []goarrow.Array{arr}, int64(len(vals)))
+	return array.NewRecordBatch(schema, []goarrow.Array{arr}, int64(len(vals)))
 }
 
-func buildStringRecord(vals []string, nullAt int) goarrow.Record {
+func buildStringRecord(vals []string, nullAt int) goarrow.RecordBatch {
 	alloc := memory.NewGoAllocator()
 	b := array.NewStringBuilder(alloc)
 	for i, v := range vals {
@@ -76,7 +76,7 @@ func buildStringRecord(vals []string, nullAt int) goarrow.Record {
 	schema := goarrow.NewSchema([]goarrow.Field{
 		{Name: "v", Type: goarrow.BinaryTypes.String, Nullable: true},
 	}, nil)
-	return array.NewRecord(schema, []goarrow.Array{arr}, int64(len(vals)))
+	return array.NewRecordBatch(schema, []goarrow.Array{arr}, int64(len(vals)))
 }
 
 // TestRoundtripFloat64 verifies Float64 Arrow ↔ DataFrame ↔ Arrow values and nulls.
@@ -245,7 +245,7 @@ func TestRoundtripMultiColumn(t *testing.T) {
 		{Name: "f", Type: goarrow.PrimitiveTypes.Float64},
 		{Name: "i", Type: goarrow.PrimitiveTypes.Int64},
 	}, nil)
-	rec := array.NewRecord(schema, []goarrow.Array{farr, iarr}, 3)
+	rec := array.NewRecordBatch(schema, []goarrow.Array{farr, iarr}, 3)
 	defer rec.Release()
 
 	df, err := iarrow.FromArrowRecord(rec)
@@ -282,7 +282,7 @@ func TestToTableNoBoxing(t *testing.T) {
 	schema := goarrow.NewSchema([]goarrow.Field{
 		{Name: "f", Type: goarrow.PrimitiveTypes.Float64},
 	}, nil)
-	rec := array.NewRecord(schema, []goarrow.Array{farr}, 3)
+	rec := array.NewRecordBatch(schema, []goarrow.Array{farr}, 3)
 	defer rec.Release()
 
 	df, err := iarrow.FromArrowRecord(rec)
@@ -315,7 +315,7 @@ func TestRoundtripTimestamp(t *testing.T) {
 	schema := goarrow.NewSchema([]goarrow.Field{
 		{Name: "t", Type: dt, Nullable: true},
 	}, nil)
-	rec := array.NewRecord(schema, []goarrow.Array{arr}, 2)
+	rec := array.NewRecordBatch(schema, []goarrow.Array{arr}, 2)
 	defer rec.Release()
 
 	df, err := iarrow.FromArrowRecord(rec)

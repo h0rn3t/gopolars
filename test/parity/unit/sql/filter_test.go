@@ -26,12 +26,18 @@ func TestSQLWhereString(t *testing.T) {
 	}
 }
 
-// DISCREPANCY: gopolars SQL rejects compound boolean predicates such as
-// `a >= 2 AND a <= 3` with a "compare type mismatch" error. Single comparisons
-// work (above); compound AND/OR predicates are a gap.
-func TestSQLWhereCompoundGap(t *testing.T) {
+// Compound boolean predicates (`a >= 2 AND a <= 3`) are supported (added in the
+// sql-funcs work): the BETWEEN-style range keeps only a in {2,3}.
+func TestSQLWhereCompound(t *testing.T) {
 	t.Parallel()
-	if err := execSQLErr(t, baseDF(t), "SELECT a FROM t WHERE a >= 2 AND a <= 3"); err == nil {
-		t.Fatal("expected error for compound AND predicate, got nil")
+	out := runSQL(t, baseDF(t), "SELECT a FROM t WHERE a >= 2 AND a <= 3")
+	if out.Height() != 2 {
+		t.Fatalf("height: got %d, want 2 (a=2,3)", out.Height())
+	}
+	a, _ := out.GetColumn("a")
+	for i, w := range []int64{2, 3} {
+		if v, _ := a.Value(i).(int64); v != w {
+			t.Fatalf("a[%d]: got %v, want %d", i, a.Value(i), w)
+		}
 	}
 }

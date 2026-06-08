@@ -226,8 +226,8 @@ Discrepancies found during porting are documented here with references to test f
 | 51 | operations | merge_sorted_test.go | `merge_sorted` global ordering | Globally sorted merge | May not preserve global sort order (membership asserted, not order) | DISCREPANCY |
 | 52 | lazyframe | collect_schema_test.go | `collect_schema` after lazy `select` | Schema narrows to selected columns | Reports source schema (Select not folded into preview); collected data is still narrowed | DISCREPANCY |
 | 53 | lazyframe | optimizations_test.go | CSE / sort-collapse / pushdown-ordering / engine-selection / cache-warming introspection | Observable via plan rewrites | No optimizer-introspection API; results-only verified | GAP (no test) |
-| 54 | sql | filter_test.go | Compound boolean WHERE (`a >= 2 AND a <= 3`) | Supported | Errors "compare type mismatch"; only single comparisons work | DISCREPANCY |
-| 55 | sql | unsupported_test.go | DISTINCT, JOIN, CAST, CASE WHEN, scalar string fns, arithmetic projections, IN, bare aggregates, set ops, subqueries, window fns, regex, struct/array/temporal/trig/bitwise fns, string_agg, rank, UNNEST, QUALIFY, FETCH, DISTINCT ON | Supported | Not implemented in gopolars SQL engine | GAP (no test) |
+| 54 | sql | filter_test.go | Compound boolean WHERE (`a >= 2 AND a <= 3`) | Supported | Supported (sql-funcs merge, PR #6); compound AND/OR + BETWEEN-style ranges work | FIXED (sql-funcs) |
+| 55 | sql | unsupported_test.go | DISTINCT, CAST, CASE WHEN, scalar string fns (UPPER/...), arithmetic projections, IN predicates, bare aggregates | Supported | Supported (sql-funcs merge, PR #6); tests now assert the working behavior. Also: `ORDER BY` may reference a source column the projection drops (planner carry-through fix). **Still GAP:** JOIN (the self-join form), set ops via SQL, subqueries, SQL-level window fns, regex/temporal/trig/bitwise fns, string_agg, rank, UNNEST, QUALIFY, FETCH, DISTINCT ON | PARTIAL |
 | 56 | dataframe | upsample_test.go | `DataFrame.upsample` | Builds regular time grid, null-fills gaps | Builds grid + null-fills (matches) | FIXED (F13) |
 | 57 | dataframe | (ToFrame) | `Series.to_frame` on all-null typed series | Preserves dtype | Preserves dtype (matches) | FIXED (F14) |
 | 58 | operations | arithmetic_test.go | String `+` concatenation | Concatenates element-wise | Concatenates (matches) | FIXED (F17) |
@@ -264,12 +264,17 @@ Discrepancies found during porting are documented here with references to test f
 > (now removed as tests) datetime_range/date_range generators, dt.convert_time_zone,
 > and Series.Round(decimals, mode).
 
-> SQL coverage note: gopolars' SQL engine supports a basic subset — SELECT
-> (star + projection), single-comparison WHERE, GROUP BY with aggregates
-> (SUM/COUNT/MAX/MIN/AVG), ORDER BY, and LIMIT. 6 of 32 source files are ported;
-> the rest are recorded as gaps in unsupported_test.go. LazyFrame: 8 of 24 source
-> files ported (core eval/collect/schema/explain/predicate/projection/rename/
-> async); optimizer-introspection tests are gaps.
+> SQL coverage note: after the sql-funcs merge (PR #6) the engine supports a much
+> larger surface — SELECT (star + projection + arithmetic/scalar-fn/CAST/CASE
+> expressions), compound boolean WHERE (AND/OR, BETWEEN-style ranges, IN),
+> DISTINCT, GROUP BY with aggregates + HAVING, window functions, set ops, CTEs,
+> subqueries, ORDER BY (incl. source columns dropped by the projection — planner
+> carry-through), LIMIT/OFFSET, and table JOINs across distinct tables. The
+> previously-"gap" tests in unsupported_test.go / filter_test.go now assert the
+> working behavior. Remaining SQL gaps: the self-join form, regex/temporal/trig/
+> bitwise scalar fns, string_agg, QUALIFY/FETCH/DISTINCT ON. LazyFrame: 8 of 24
+> source files ported (core eval/collect/schema/explain/predicate/projection/
+> rename/async); optimizer-introspection tests are gaps.
 
 ## Legend
 

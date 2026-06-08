@@ -14,6 +14,7 @@ import (
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
 	icsv "github.com/h0rn3t/gopolars/pkg/io/csv"
+	idatabase "github.com/h0rn3t/gopolars/pkg/io/database"
 	iipc "github.com/h0rn3t/gopolars/pkg/io/ipc"
 	ijson "github.com/h0rn3t/gopolars/pkg/io/json"
 	iparquet "github.com/h0rn3t/gopolars/pkg/io/parquet"
@@ -1252,8 +1253,15 @@ func (d *df) WriteClipboard() error {
 	return fmt.Errorf("write_clipboard not supported")
 }
 
-func (d *df) WriteDatabase(target string) error {
-	return fmt.Errorf("write_database not supported: %s", target)
+func (d *df) WriteDatabase(input WriteDatabaseInput) (int64, error) {
+	return idatabase.Write(context.Background(), d.value, idatabase.WriteInput{
+		TableName:     input.TableName,
+		IfTableExists: idatabase.IfTableExists(input.IfTableExists),
+		Conn:          input.Conn,
+		DriverName:    input.DriverName,
+		DriverOptions: input.DriverOptions,
+		BatchSize:     input.BatchSize,
+	})
 }
 
 func (d *df) WriteDelta(path string) error {

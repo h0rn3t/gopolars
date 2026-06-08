@@ -24,7 +24,10 @@ func TestSeriesInitString(t *testing.T) {
 // Utf8 alias object), so the alias-equality tests collapse to "String is String".
 func TestUtf8IsString(t *testing.T) {
 	t.Parallel()
-	if polars.String != polars.String {
-		t.Fatal("String must equal itself")
+	// gopolars exposes no separate Utf8 alias object, so the "Utf8" dtype is
+	// simply polars.String; the alias-equality test collapses to that identity.
+	utf8 := polars.String
+	if utf8 != polars.String {
+		t.Fatal("Utf8 must collapse to String")
 	}
 }

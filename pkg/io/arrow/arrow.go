@@ -2,8 +2,8 @@
 //
 // Native path (zero []any allocation for primitive dtypes):
 //
-//	FromArrowRecord(rec arrow.Record) → frame.DataFrame
-//	ToArrowRecord(df frame.DataFrame) → arrow.Record
+//	FromArrowRecord(rec arrow.RecordBatch) → frame.DataFrame
+//	ToArrowRecord(df frame.DataFrame) → arrow.RecordBatch
 //
 // Legacy path (kept for gob-encoded IPC compatibility):
 //
@@ -12,11 +12,12 @@ package arrow
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
-	goarrow "github.com/apache/arrow/go/v18/arrow"
-	"github.com/apache/arrow/go/v18/arrow/array"
-	"github.com/apache/arrow/go/v18/arrow/memory"
+	goarrow "github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
@@ -33,7 +34,7 @@ type Table struct {
 // allocating an intermediate []any for primitive dtypes (Float64, Int64,
 // Boolean, String, Timestamp). Unsupported Arrow types fall back to a boxed
 // slow path and return a non-nil warning via the second return value.
-func FromArrowRecord(rec goarrow.Record) (frame.DataFrame, error) {
+func FromArrowRecord(rec goarrow.RecordBatch) (frame.DataFrame, error) {
 	schema := rec.Schema()
 	n := int(rec.NumRows())
 	cols := make([]series.Series, 0, rec.NumCols())
@@ -52,7 +53,7 @@ func FromArrowRecord(rec goarrow.Record) (frame.DataFrame, error) {
 
 // ToArrowRecord exports a DataFrame to an Arrow record batch without
 // round-tripping through []any for primitive dtypes.
-func ToArrowRecord(df frame.DataFrame) (goarrow.Record, error) {
+func ToArrowRecord(df frame.DataFrame) (goarrow.RecordBatch, error) {
 	alloc := memory.NewGoAllocator()
 	fields := make([]goarrow.Field, 0, df.Width())
 	arrays := make([]goarrow.Array, 0, df.Width())
@@ -68,7 +69,7 @@ func ToArrowRecord(df frame.DataFrame) (goarrow.Record, error) {
 	}
 
 	schema := goarrow.NewSchema(fields, nil)
-	rec := array.NewRecord(schema, arrays, int64(df.Height()))
+	rec := array.NewRecordBatch(schema, arrays, int64(df.Height()))
 	for _, a := range arrays {
 		a.Release()
 	}
@@ -110,7 +111,12 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 		vals := make([]string, n)
 		for i := 0; i < n; i++ {
 			if !nulls[i] {
-				vals[i] = a.Value(i)
+				// strings.Clone forces a Go-owned heap copy. a.Value(i) is an
+				// unsafe view into the Arrow value buffer; for records imported
+				// over the C Data Interface (e.g. ADBC read_database) that buffer
+				// is C-owned and freed on the record's Release, so without a copy
+				// the column would dangle into freed memory.
+				vals[i] = strings.Clone(a.Value(i))
 			}
 		}
 		return chunk.NewString(vals, nulls), nil
@@ -119,7 +125,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 		vals := make([]string, n)
 		for i := 0; i < n; i++ {
 			if !nulls[i] {
-				vals[i] = a.Value(i)
+				vals[i] = strings.Clone(a.Value(i))
 			}
 		}
 		return chunk.NewString(vals, nulls), nil
@@ -135,11 +141,21 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 		return chunk.NewTime(vals, nulls), nil
 
 	default:
-		// Unsupported Arrow type: box into []any.
+		// Unsupported Arrow type: box into []any. Clone string/[]byte values so
+		// the boxed column does not alias a C-owned Arrow buffer that is freed on
+		// the record's Release (see the *array.String case).
 		boxed := make([]any, n)
 		for i := 0; i < n; i++ {
-			if !nulls[i] {
-				boxed[i] = arr.GetOneForMarshal(i)
+			if nulls[i] {
+				continue
+			}
+			switch v := arr.GetOneForMarshal(i).(type) {
+			case string:
+				boxed[i] = strings.Clone(v)
+			case []byte:
+				boxed[i] = append([]byte(nil), v...)
+			default:
+				boxed[i] = v
 			}
 		}
 		return chunk.NewBoxed(dtypes.String, boxed, nulls), nil

@@ -23,7 +23,6 @@ func TestDataFrameWriteStubsReturnError(t *testing.T) {
 	}{
 		{"WriteAvro", func() error { return df.WriteAvro("/tmp/x.avro") }},
 		{"WriteClipboard", func() error { return df.WriteClipboard() }},
-		{"WriteDatabase", func() error { return df.WriteDatabase("postgres://x") }},
 		{"WriteDelta", func() error { return df.WriteDelta("/tmp/delta") }},
 		{"WriteExcel", func() error { return df.WriteExcel("/tmp/x.xlsx") }},
 		{"WriteIceberg", func() error { return df.WriteIceberg("/tmp/iceberg") }},

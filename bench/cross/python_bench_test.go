@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apache/arrow/go/v18/arrow"
-	"github.com/apache/arrow/go/v18/arrow/array"
-	"github.com/apache/arrow/go/v18/arrow/ipc"
-	"github.com/apache/arrow/go/v18/arrow/memory"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/h0rn3t/gopolars/pkg/simd"
 )
 
@@ -118,7 +118,7 @@ func writeArrowIPC(path string, cols map[string][]float64) error {
 	}
 	defer func() { _ = writer.Close() }()
 
-	rec := array.NewRecord(schema, arrays, int64(rowCount))
+	rec := array.NewRecordBatch(schema, arrays, int64(rowCount))
 	defer rec.Release()
 
 	return writer.Write(rec)

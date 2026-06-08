@@ -50,21 +50,63 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 ### SQL and Query Planning
 
 - SQL parsing and planning for `SELECT` pipelines
+- Joins: `INNER`, `LEFT`, `RIGHT`, `FULL [OUTER]`, `CROSS` (and comma cross joins), with table aliases and qualified columns
+- Boolean predicate logic (`AND`/`OR`/`NOT`) with correct precedence in `WHERE`/`HAVING`/`ON`
+- `CASE WHEN … THEN … ELSE … END`, `IS [NOT] NULL`, `IN`/`BETWEEN`/`LIKE`, `CAST(x AS t)` / `x::t`
+- Scalar functions: string (`UPPER`, `LOWER`, `LENGTH`, `SUBSTR`, `TRIM`, `CONCAT`, `REPLACE`), math (`ABS`, `ROUND`, `CEIL`, `FLOOR`, `POWER`, `SQRT`, `MOD`), date (`YEAR`/`MONTH`/`DAY`/`HOUR`/`MINUTE`/`SECOND`), and `COALESCE`/`NULLIF`
+- Aggregates (`SUM`/`MIN`/`MAX`/`AVG`/`COUNT`/`N_UNIQUE`), `GROUP BY`/`HAVING`, `ORDER BY`, `SELECT DISTINCT`, `LIMIT`/`OFFSET`
 - CTE support (`WITH ... AS (...)`)
 - Subqueries in `FROM`
 - Set operations: `UNION`, `INTERSECT`, `EXCEPT`
 - Window expression support with `PARTITION BY` and `ORDER BY`
 - Logical optimization passes including pushdown and adaptive planning rules
+- Out of scope (clear error): DDL (`CREATE`/`DROP`/`ALTER`), SQL table functions (`read_csv`), `EXPLAIN`, `SHOW`, correlated subqueries
 
 ### IO and Interoperability
 
 - CSV, JSON/NDJSON, Parquet, IPC read/write support
+- `write_database` / `read_database` over external SQL databases via an ADBC (Arrow Database Connectivity) engine
 - Source-level lazy scan for CSV/JSON/Parquet/IPC
 - Projection and predicate pushdown on scan pipelines
 - Partition-aware Parquet dataset scan (multi-file layout)
 - Partition pruning by predicate for dataset scans
-- Arrow import/export bridge
+- Arrow import/export bridge (Apache `arrow-go/v18`)
 - Object store URI mapping profile (`s3://`, `gcs://`, `az://`) via environment-configured roots
+
+#### Database IO (ADBC)
+
+`DataFrame.WriteDatabase` and `polars.ReadDatabase` move data to/from external SQL databases as Arrow
+record batches via [ADBC](https://arrow.apache.org/adbc/) — the driver creates the table from the
+Arrow schema and bulk-loads it, so gopolars writes no SQL DDL, dialect, or placeholder code.
+
+```go
+// Bring your own open *adbc.Connection (e.g. SQLite, PostgreSQL, FlightSQL, Snowflake).
+n, err := df.WriteDatabase(polars.WriteDatabaseInput{
+    TableName:     "analytics.public.events", // catalog.schema.table (quoting honored)
+    IfTableExists: polars.IfTableExistsReplace, // fail (default) | append | replace
+    Conn:          conn,                         // an adbc.Connection
+    BatchSize:     10000,                        // streamed in batches
+}) // n = rows affected (-1 if the driver doesn't report it)
+
+out, err := polars.ReadDatabase(ctx, polars.ReadDatabaseInput{
+    Query: "SELECT id, name FROM events ORDER BY id",
+    Conn:  conn,
+})
+```
+
+- **Connection model**: pass an already-open `adbc.Connection` via `Conn`, or a `DriverName` +
+  `DriverOptions` to open one through the ADBC driver manager.
+- **Trade-off**: the ADBC + `arrow-go/v18` graph is a direct dependency, and the SQLite/PostgreSQL
+  drivers require **CGO** (FlightSQL/Snowflake are pure Go). A `CGO_ENABLED=0` build still compiles;
+  driver-name connections then return a clear "CGO required" error, while a caller-provided
+  `adbc.Connection` keeps working.
+- **Type fidelity**: Int64/Float64/Boolean/String/Datetime map natively; Decimal/Categorical degrade
+  to text and List/Struct are rejected on write (documented gaps). Round-trip fidelity also depends on
+  the backend's type system — e.g. SQLite's weak typing returns Boolean as integer 1/0 and Datetime as
+  ISO text, while a strongly-typed engine preserves them.
+- **Running the integration tests**: `pip install adbc-driver-sqlite`, then `go test ./pkg/io/database/`
+  — the suite auto-discovers the bundled SQLite driver (CGO) and runs a real write→read round-trip;
+  without it those tests skip.
 
 ### Streaming, Diagnostics and Quality
 
@@ -87,6 +129,7 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 | Series public API                                                 | ✅ ready        |
 | Nested transforms (explode/flatten + list/struct expr)            | ✅ ready        |
 | SQL base + CTE + window expressions                               | ✅ ready        |
+| SQL joins, boolean/CASE/IN/BETWEEN/LIKE, scalar fns, DISTINCT/OFFSET, CAST | ✅ ready |
 | GroupBy, temporal windows and joins                               | ✅ ready        |
 | Streaming collect                                                 | ✅ ready        |
 | CSV/JSON/Parquet/IPC IO                                           | ✅ ready        |
@@ -94,7 +137,7 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 | Cloud-style partitioned dataset scans                             | ✅ ready        |
 | Explain/telemetry schema v2 and perf markers                      | ✅ ready        |
 | Full Python Polars API parity (680-method tracked matrix)         | ✅ ~99.3% (675/680) |
-| Full SQL parity with Python Polars SQLContext                     | 🚧 in progress |
+| Full SQL surface: DDL, SQL table functions, complete fn catalog   | 🚧 in progress |
 | Performance parity on all workloads                               | 🚧 in progress |
 | Ecosystem parity (all namespaces, plugins, advanced UDF patterns) | 🚧 in progress |
 
