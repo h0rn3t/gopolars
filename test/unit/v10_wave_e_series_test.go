@@ -390,10 +390,12 @@ func TestV10WaveESeriesRollingMethods(t *testing.T) {
 	assertV10SeriesValues(t, mustCallSeries(t, base, "CumProd"), []any{float64(1), float64(2), float64(6)})
 	assertV10SeriesValues(t, mustCallSeries(t, base, "CumCount"), []any{float64(1), float64(2), float64(3)})
 
-	assertV10SeriesValues(t, mustCallSeries(t, base, "RollingStd", 2), []any{float64(0), math.Sqrt(0.5), math.Sqrt(0.5)})
-	assertV10SeriesValues(t, mustCallSeries(t, base, "RollingVar", 2), []any{float64(0), float64(0.5), float64(0.5)})
-	assertV10SeriesValues(t, mustCallSeries(t, base, "RollingMedian", 2), []any{float64(1), float64(1.5), float64(2.5)})
-	assertV10SeriesValues(t, mustCallSeries(t, base, "RollingQuantile", 2, float64(0.5)), []any{float64(1), float64(1.5), float64(2.5)})
+	// Rolling aggregates default min_periods to the window size (Polars default),
+	// so the leading window-1 outputs are null.
+	assertV10SeriesValues(t, mustCallSeries(t, base, "RollingStd", 2), []any{nil, math.Sqrt(0.5), math.Sqrt(0.5)})
+	assertV10SeriesValues(t, mustCallSeries(t, base, "RollingVar", 2), []any{nil, float64(0.5), float64(0.5)})
+	assertV10SeriesValues(t, mustCallSeries(t, base, "RollingMedian", 2), []any{nil, float64(1.5), float64(2.5)})
+	assertV10SeriesValues(t, mustCallSeries(t, base, "RollingQuantile", 2, float64(0.5)), []any{nil, float64(1.5), float64(2.5)})
 	assertV10SeriesValues(t, mustCallSeries(t, base, "EwmMean", float64(0.5)), []any{float64(1), float64(1.5), float64(2.25)})
 
 	ewmStd := mustCallSeries(t, base, "EwmStd", float64(0.5))
@@ -516,7 +518,15 @@ func TestV10WaveESeriesAdvancedMethods(t *testing.T) {
 	reshaped := mustCallSeriesResult(t, counts, "Reshape", 5, 1)
 	assertV10SeriesValues(t, reshaped, []any{float64(1), float64(1), float64(2), float64(3), float64(2)})
 
-	assertV10SeriesValues(t, mustCallSeries(t, counts, "RepeatBy", 2), []any{float64(1), float64(1), float64(1), float64(1), float64(2), float64(2), float64(3), float64(3), float64(2), float64(2)})
+	// RepeatBy returns a List Series: each element becomes a list of n copies
+	// (matching Polars Expr.repeat_by).
+	assertV10SeriesValues(t, mustCallSeries(t, counts, "RepeatBy", 2), []any{
+		[]any{float64(1), float64(1)},
+		[]any{float64(1), float64(1)},
+		[]any{float64(2), float64(2)},
+		[]any{float64(3), float64(3)},
+		[]any{float64(2), float64(2)},
+	})
 	assertV10SeriesValues(t, mustCallSeries(t, counts, "SetSorted", true), []any{float64(1), float64(1), float64(2), float64(3), float64(2)})
 }
 

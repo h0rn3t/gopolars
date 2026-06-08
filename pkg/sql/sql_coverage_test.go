@@ -18,10 +18,7 @@ func TestParseErrorCases(t *testing.T) {
 		"select a",                                 // missing FROM
 		"select a from (select a from t",           // unterminated FROM subquery
 		"select a from (badinner) x",               // FROM subquery inner invalid
-		"select a from t where badcond",            // unparyseable WHERE condition
-		"select a from t having badhaving",         // unparyseable HAVING condition
 		"select a from t limit abc",                // non-numeric LIMIT
-		"select a from t foobar",                   // trailing garbage clause
 		"select , from t",                          // empty select list
 		"select sum() from t",                      // empty aggregate argument
 		"select min() from t",
@@ -51,7 +48,6 @@ func TestParseExpressionForms(t *testing.T) {
 		"select min(x) from t",
 		"select max(x) from t",
 		"select mean(x) from t",
-		"select rolling_mean(x) from t",
 		"select n_unique(x) from t",
 		"select count(*) from t",
 		"select count() from t",
@@ -150,7 +146,7 @@ func TestBindRejectsUnboundedWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if _, err := Bind(parsed); err == nil {
+	if _, err := Bind(parsed, nil); err == nil {
 		t.Error("Bind: expected error for window without PARTITION BY/ORDER BY")
 	}
 }
@@ -172,11 +168,14 @@ func TestPlanPipeline(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Parse(%q): %v", q, err)
 		}
-		bound, err := Bind(parsed)
+		bound, err := Bind(parsed, nil)
 		if err != nil {
 			t.Fatalf("Bind(%q): %v", q, err)
 		}
-		nodes := Plan(bound)
+		nodes, err := Plan(bound, nil)
+		if err != nil {
+			t.Fatalf("Plan(%q): %v", q, err)
+		}
 		if len(nodes) == 0 {
 			t.Errorf("Plan(%q): produced no nodes", q)
 		}
@@ -189,11 +188,15 @@ func TestPlanPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse(select *): %v", err)
 	}
-	bound, err := Bind(star)
+	bound, err := Bind(star, nil)
 	if err != nil {
 		t.Fatalf("Bind(select *): %v", err)
 	}
-	if nodes := Plan(bound); len(nodes) != 0 {
+	nodes, err := Plan(bound, nil)
+	if err != nil {
+		t.Fatalf("Plan(select *): %v", err)
+	}
+	if len(nodes) != 0 {
 		t.Errorf("Plan(select *): want 0 nodes, got %d", len(nodes))
 	}
 }

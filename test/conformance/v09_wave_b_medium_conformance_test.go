@@ -22,7 +22,11 @@ func TestV09WaveBMediumConformance(t *testing.T) {
 	if _, err := df.PartitionBy("g"); err != nil {
 		t.Fatalf("partition_by conformance failed: %v", err)
 	}
-	df, _ = df.Upsample("v", time.Second)
+	// Upsample requires a Datetime key; "v" is numeric, so this errors and df is
+	// left unchanged (Upsample is exercised by the datetime case in the unit tests).
+	if up, err := df.Upsample("v", time.Second); err == nil {
+		df = up
+	}
 	ctx := context.Background()
 	lf := df.Lazy().Cache()
 	if _, err := lf.Serialize(); err != nil {

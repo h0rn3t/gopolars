@@ -367,12 +367,28 @@ func (s seriesFacade) Std() float64 {
 }
 
 func (s seriesFacade) Max() float64 {
+	// Ignore NaN, but a series whose only non-null values are NaN reduces to NaN
+	// (matching Polars). Empty input keeps the historical 0 default.
+	all := s.numericValues(false)
 	vals := s.numericValues(true)
+	if len(vals) == 0 {
+		if len(all) > 0 {
+			return math.NaN()
+		}
+		return simd.MaxFloat64(vals)
+	}
 	return simd.MaxFloat64(vals)
 }
 
 func (s seriesFacade) Min() float64 {
+	all := s.numericValues(false)
 	vals := s.numericValues(true)
+	if len(vals) == 0 {
+		if len(all) > 0 {
+			return math.NaN()
+		}
+		return simd.MinFloat64(vals)
+	}
 	return simd.MinFloat64(vals)
 }
 
@@ -532,12 +548,26 @@ func (s seriesFacade) Product() float64 {
 	return product
 }
 
+// NanMax propagates NaN: any NaN among the non-null values yields NaN.
 func (s seriesFacade) NanMax() float64 {
-	return s.Max()
+	vals := s.numericValues(false)
+	for _, v := range vals {
+		if math.IsNaN(v) {
+			return math.NaN()
+		}
+	}
+	return simd.MaxFloat64(vals)
 }
 
+// NanMin propagates NaN: any NaN among the non-null values yields NaN.
 func (s seriesFacade) NanMin() float64 {
-	return s.Min()
+	vals := s.numericValues(false)
+	for _, v := range vals {
+		if math.IsNaN(v) {
+			return math.NaN()
+		}
+	}
+	return simd.MinFloat64(vals)
 }
 
 func (s seriesFacade) Alias(name string) Series {
@@ -575,18 +605,20 @@ func (s seriesFacade) Slice(offset int, length int) Series {
 	if length <= 0 || s.Len() == 0 {
 		return s.Clear()
 	}
+	// A negative offset counts from the end; the window [offset, offset+length)
+	// is clamped to [0, len) so it keeps only its overlap (matching Polars).
 	if offset < 0 {
 		offset = s.Len() + offset
 	}
+	end := offset + length
 	if offset < 0 {
 		offset = 0
 	}
-	if offset >= s.Len() {
-		return s.Clear()
-	}
-	end := offset + length
 	if end > s.Len() {
 		end = s.Len()
+	}
+	if offset >= s.Len() || end <= offset {
+		return s.Clear()
 	}
 	values := make([]any, 0, end-offset)
 	for i := offset; i < end; i++ {
@@ -604,6 +636,15 @@ func (s seriesFacade) Sort(descending bool) Series {
 	sort.SliceStable(indexes, func(i int, j int) bool {
 		left := s.Value(indexes[i])
 		right := s.Value(indexes[j])
+		// Nulls sort first regardless of direction (Polars default nulls_last=False).
+		lnull := left == nil
+		rnull := right == nil
+		if lnull || rnull {
+			if lnull && rnull {
+				return false
+			}
+			return lnull
+		}
 		cmp := compareForSeriesOrder(left, right)
 		if descending {
 			return cmp > 0
@@ -808,6 +849,20 @@ func (s seriesFacade) Any() bool {
 
 func (s seriesFacade) Not_() Series {
 	values := make([]any, s.Len())
+	// On Int64, not_ is the bitwise complement (^v == -v-1), matching Polars; on
+	// Boolean it is the logical negation. Nulls are preserved.
+	if s.DataType() == dtypes.Int64 {
+		for i := 0; i < s.Len(); i++ {
+			if s.value.IsNull(i) {
+				continue
+			}
+			if v, ok := s.Value(i).(int64); ok {
+				values[i] = ^v
+			}
+		}
+		out, _ := iseries.New(s.value.Name(), dtypes.Int64, values)
+		return seriesFacade{value: out}
+	}
 	for i := 0; i < s.Len(); i++ {
 		if flag, ok := s.Value(i).(bool); ok {
 			values[i] = !flag
@@ -1390,17 +1445,22 @@ func (s seriesFacade) Reshape(dims ...int) (Series, error) {
 	return s.Clone(), nil
 }
 
+// RepeatBy returns a List Series where element i is a list containing its value
+// repeated n times (matching Polars Expr.repeat_by). n <= 0 yields empty lists.
 func (s seriesFacade) RepeatBy(n int) Series {
-	if n <= 0 || s.Len() == 0 {
-		return s.Clear()
+	if n < 0 {
+		n = 0
 	}
-	values := make([]any, 0, s.Len()*n)
+	values := make([]any, s.Len())
 	for i := 0; i < s.Len(); i++ {
+		v := s.Value(i)
+		inner := make([]any, n)
 		for j := 0; j < n; j++ {
-			values = append(values, s.Value(i))
+			inner[j] = v
 		}
+		values[i] = inner
 	}
-	out, _ := iseries.New(s.value.Name(), s.value.DataType(), values)
+	out, _ := iseries.New(s.value.Name(), dtypes.List, values)
 	return seriesFacade{value: out}
 }
 
@@ -1410,11 +1470,13 @@ func (s seriesFacade) SetSorted(descending bool) Series {
 }
 
 func (s seriesFacade) ToFrame() (DataFrame, error) {
-	return NewDataFrame(NewDataFrameInput{
-		Columns: []frame.SeriesInput{
-			{Name: s.value.Name(), Values: s.ToList()},
-		},
-	})
+	// Build directly from the backing series so the dtype is preserved (e.g. an
+	// all-null typed column survives instead of failing dtype inference).
+	f, err := frame.New(frame.NewInput{Series: []iseries.Series{s.value}})
+	if err != nil {
+		return nil, err
+	}
+	return &df{value: f}, nil
 }
 
 func (s seriesFacade) ToDummies() (DataFrame, error) {
@@ -1918,15 +1980,18 @@ func (s seriesFacade) rolling(window int, mode string) Series {
 		if vals, nulls, ok := rollingFloat64Col(s.value.Column()); ok {
 			var outVals []float64
 			var outNulls []bool
+			// min_periods defaults to the window size (Polars default), so the
+			// leading window-1 positions (and any window with too few valid
+			// observations) are null.
 			switch mode {
 			case "sum":
-				outVals, outNulls = chunk.RollingSum(vals, nulls, window, 1, true)
+				outVals, outNulls = chunk.RollingSum(vals, nulls, window, window, true)
 			case "mean":
-				outVals, outNulls = chunk.RollingMean(vals, nulls, window, 1, true)
+				outVals, outNulls = chunk.RollingMean(vals, nulls, window, window, true)
 			case "min":
-				outVals, outNulls = chunk.RollingMin(vals, nulls, window, 1)
+				outVals, outNulls = chunk.RollingMin(vals, nulls, window, window)
 			case "max":
-				outVals, outNulls = chunk.RollingMax(vals, nulls, window, 1)
+				outVals, outNulls = chunk.RollingMax(vals, nulls, window, window)
 			}
 			return seriesFacade{value: iseries.FromFloat64(s.value.Name(), outVals, outNulls)}
 		}
@@ -1948,7 +2013,9 @@ func (s seriesFacade) rolling(window int, mode string) Series {
 				}
 			}
 		}
-		if len(nums) == 0 {
+		// min_periods defaults to the window size: a window with fewer valid
+		// observations than `window` yields null (matches Polars default).
+		if len(nums) < window {
 			values[i] = nil
 			continue
 		}
@@ -2072,6 +2139,11 @@ func (s seriesFacade) rollingQuantile(window int, q float64) Series {
 				nums = append(nums, f)
 			}
 		}
+		// min_periods defaults to the window size (Polars default).
+		if len(nums) < window {
+			values[i] = nil
+			continue
+		}
 		values[i] = quantileFloatSlice(nums, q)
 	}
 	out, _ := iseries.New(s.value.Name(), dtypes.Float64, values)
@@ -2189,11 +2261,36 @@ func (s seriesFacade) numericValues(skipNaN bool) []float64 {
 		}
 		return out
 	}
+	// Boolean fast path: reductions treat true as 1.0 and false as 0.0
+	// (sum = count of true, min/max follow truthiness), matching Polars.
+	if bs, ok := col.Bools(); ok {
+		nulls := col.Nulls()
+		out := make([]float64, 0, len(bs))
+		for i, b := range bs {
+			if nulls != nil && nulls[i] {
+				continue
+			}
+			if b {
+				out = append(out, 1.0)
+			} else {
+				out = append(out, 0.0)
+			}
+		}
+		return out
+	}
 	// Slow path for other dtypes.
 	values := make([]float64, 0, s.Len())
 	for i := 0; i < s.Len(); i++ {
 		v := s.Value(i)
 		if v == nil {
+			continue
+		}
+		if b, ok := v.(bool); ok {
+			if b {
+				values = append(values, 1.0)
+			} else {
+				values = append(values, 0.0)
+			}
 			continue
 		}
 		f, ok := toFloat64(v)
@@ -2633,6 +2730,11 @@ func castAny(v any, dt dtypes.DataType) (any, error) {
 			return t, nil
 		case float64:
 			return int64(t), nil
+		case bool:
+			if t {
+				return int64(1), nil
+			}
+			return int64(0), nil
 		case string:
 			var x int64
 			_, err := fmt.Sscan(t, &x)
@@ -2644,6 +2746,11 @@ func castAny(v any, dt dtypes.DataType) (any, error) {
 			return float64(t), nil
 		case float64:
 			return t, nil
+		case bool:
+			if t {
+				return float64(1), nil
+			}
+			return float64(0), nil
 		case string:
 			var x float64
 			_, err := fmt.Sscan(t, &x)

@@ -440,24 +440,28 @@ func arithNode(op string, l, r vresult, height int) (vresult, error) {
 }
 
 // numericCompare evaluates gt/ge/lt/le on numeric operands. A null operand
-// yields false (matching expr.compare), and the result never carries nulls.
+// yields null (matching expr.compare/evalBin), carried in the result's null mask.
 func numericCompare(op string, lr numericReaderT, lt string, rr numericReaderT, rt string, height int) vresult {
 	// SIMD fast path: float64 column compared to a float64 literal threshold.
 	if op == "gt" && lt == "float64" && rt == "float64" && !lr.isLit && rr.isLit {
 		mask := simd.CompareGTFloat64(lr.f, rr.litF)
+		nulls := make([]bool, height)
 		if lr.nulls != nil {
 			for i := range mask {
 				if lr.nulls[i] {
 					mask[i] = false
+					nulls[i] = true
 				}
 			}
 		}
-		return vresult{col: chunk.NewBool(mask, make([]bool, height))}
+		return vresult{col: chunk.NewBool(mask, nulls)}
 	}
 	out := make([]bool, height)
+	nulls := make([]bool, height)
 	useFloat := lt == "float64" || rt == "float64"
 	for i := 0; i < height; i++ {
 		if lr.nullAt(i) || rr.nullAt(i) {
+			nulls[i] = true
 			continue
 		}
 		if useFloat {
@@ -470,26 +474,28 @@ func numericCompare(op string, lr numericReaderT, lt string, rr numericReaderT, 
 			out[i] = cmpInt(op, lr.intAt(i), rr.intAt(i))
 		}
 	}
-	return vresult{col: chunk.NewBool(out, make([]bool, height))}
+	return vresult{col: chunk.NewBool(out, nulls)}
 }
 
 // boolBinNode handles eq/ne/and/or and non-numeric gt/ge/lt/le by replicating
-// expr.evalBin per row. The result is always boolean with no nulls (these ops
-// never return nil in the row-wise evaluator).
+// expr.evalBin per row. Comparisons propagate nulls (a null operand yields null)
+// and and/or use three-valued Kleene logic, matching the row-wise evaluator.
 func boolBinNode(op string, l, r vresult, height int) (vresult, error) {
-	// SIMD fast path: int64 column == int64 literal.
+	// SIMD fast path: int64 column == int64 literal (null operand -> null).
 	if op == "eq" && !l.isLit && r.isLit && l.col.DataType() == dtypes.Int64 {
 		if lit, ok := r.lit.(int64); ok {
 			vals, _ := l.col.Int64s()
 			mask := simd.CompareEQInt64(vals, lit)
-			if nulls := l.col.Nulls(); nulls != nil {
+			nulls := make([]bool, height)
+			if cn := l.col.Nulls(); cn != nil {
 				for i := range mask {
-					if nulls[i] {
+					if cn[i] {
 						mask[i] = false
+						nulls[i] = true
 					}
 				}
 			}
-			return vresult{col: chunk.NewBool(mask, make([]bool, height))}, nil
+			return vresult{col: chunk.NewBool(mask, nulls)}, nil
 		}
 	}
 	// SIMD fast path: AND of two boolean columns with no nulls.
@@ -501,6 +507,7 @@ func boolBinNode(op string, l, r vresult, height int) (vresult, error) {
 		return vresult{col: chunk.NewBool(simd.AndMask(la, rb), make([]bool, height))}, nil
 	}
 	out := make([]bool, height)
+	nulls := make([]bool, height)
 	for i := 0; i < height; i++ {
 		lv := readScalar(l, i)
 		rv := readScalar(r, i)
@@ -508,13 +515,17 @@ func boolBinNode(op string, l, r vresult, height int) (vresult, error) {
 		if err != nil {
 			return vresult{}, err
 		}
+		if res == nil {
+			nulls[i] = true
+			continue
+		}
 		b, ok := res.(bool)
 		if !ok {
 			return vresult{}, fmt.Errorf("%s did not produce bool", op)
 		}
 		out[i] = b
 	}
-	return vresult{col: chunk.NewBool(out, make([]bool, height))}, nil
+	return vresult{col: chunk.NewBool(out, nulls)}, nil
 }
 
 // floatBinNode handles mod/floordiv/pow which coerce to float64 and error on
@@ -543,14 +554,20 @@ func evalNot(e expr.Expr, cols map[string]*chunk.Column, height int) (vresult, e
 		return vresult{}, err
 	}
 	out := make([]bool, height)
+	nulls := make([]bool, height)
 	for i := 0; i < height; i++ {
-		b, ok := readScalar(child, i).(bool)
+		sv := readScalar(child, i)
+		if sv == nil {
+			nulls[i] = true
+			continue
+		}
+		b, ok := sv.(bool)
 		if !ok {
 			return vresult{}, fmt.Errorf("not expects bool")
 		}
 		out[i] = !b
 	}
-	return vresult{col: chunk.NewBool(out, make([]bool, height))}, nil
+	return vresult{col: chunk.NewBool(out, nulls)}, nil
 }
 
 func evalCast(e expr.Expr, cols map[string]*chunk.Column, height int) (vresult, error) {
@@ -705,11 +722,24 @@ func broadcast(lit any, height int) *chunk.Column {
 
 // --- replicas of pkg/expr eval helpers (keep in sync with eval.go) ---
 
+// kleeneBool interprets a value as a three-valued boolean (mirrors expr.kleeneBool):
+// ok=false when neither bool nor null; isNull=true for a null (nil) operand.
+func kleeneBool(v any) (b bool, isNull bool, ok bool) {
+	if v == nil {
+		return false, true, true
+	}
+	if bb, isb := v.(bool); isb {
+		return bb, false, true
+	}
+	return false, false, false
+}
+
 func batchBin(op string, left, right any) (any, error) {
 	switch op {
 	case "eq":
+		// Comparison with null yields null (Polars), mirroring expr.evalBin.
 		if left == nil || right == nil {
-			return left == nil && right == nil, nil
+			return nil, nil
 		}
 		if lf, ok := left.(float64); ok && math.IsNaN(lf) {
 			return false, nil
@@ -720,7 +750,7 @@ func batchBin(op string, left, right any) (any, error) {
 		return left == right, nil
 	case "ne":
 		if left == nil || right == nil {
-			return left != nil || right != nil, nil
+			return nil, nil
 		}
 		if lf, ok := left.(float64); ok && math.IsNaN(lf) {
 			return true, nil
@@ -730,21 +760,37 @@ func batchBin(op string, left, right any) (any, error) {
 		}
 		return left != right, nil
 	case "gt", "ge", "lt", "le":
+		if left == nil || right == nil {
+			return nil, nil
+		}
 		return compareAny(op, left, right)
-	case "and":
-		l, lok := left.(bool)
-		r, rok := right.(bool)
+	case "and", "and_":
+		// Three-valued (Kleene) AND, mirroring expr.evalBin.
+		lb, ln, lok := kleeneBool(left)
+		rb, rn, rok := kleeneBool(right)
 		if !lok || !rok {
 			return nil, fmt.Errorf("and expects bool")
 		}
-		return l && r, nil
-	case "or":
-		l, lok := left.(bool)
-		r, rok := right.(bool)
+		if (!ln && !lb) || (!rn && !rb) {
+			return false, nil
+		}
+		if ln || rn {
+			return nil, nil
+		}
+		return true, nil
+	case "or", "or_":
+		lb, ln, lok := kleeneBool(left)
+		rb, rn, rok := kleeneBool(right)
 		if !lok || !rok {
 			return nil, fmt.Errorf("or expects bool")
 		}
-		return l || r, nil
+		if (!ln && lb) || (!rn && rb) {
+			return true, nil
+		}
+		if ln || rn {
+			return nil, nil
+		}
+		return false, nil
 	case "floordiv":
 		lf, lok := toFloat(left)
 		rf, rok := toFloat(right)

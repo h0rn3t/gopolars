@@ -417,9 +417,35 @@ func (l *lf) WithColumnsSeq(exprs ...Expr) LazyFrame {
 	return l.WithColumns(exprs...)
 }
 
+// WithContext makes the columns of other referenceable by expressions in
+// subsequent operations (pl.LazyFrame.with_context). The context columns are not
+// added to this frame's own columns and may have a different length; they are
+// resolved as a fallback, typically as scalars via an aggregation like .first().
 func (l *lf) WithContext(other LazyFrame) LazyFrame {
-	_ = other
-	return l
+	if other == nil {
+		return l
+	}
+	collected, err := other.Collect(context.Background())
+	if err != nil {
+		return l
+	}
+	od, ok := collected.(*df)
+	if !ok {
+		return l
+	}
+	ctxCols := map[string]series.Series{}
+	for _, name := range od.value.Columns() {
+		if s, ok := od.value.Series(name); ok {
+			ctxCols[name] = s
+		}
+	}
+	next := &lf{
+		source: l.source.WithContextColumns(ctxCols),
+		engine: l.engine,
+		nodes:  append([]logical.Node(nil), l.nodes...),
+		scan:   l.scan,
+	}
+	return next
 }
 
 func (l *lf) Remove(column string) LazyFrame {

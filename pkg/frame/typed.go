@@ -84,8 +84,8 @@ func (d DataFrame) filterBatch(predicate expr.Expr) (DataFrame, bool, error) {
 
 // filterKeep evaluates plan over cols and returns the surviving row indices in
 // ascending order. ok is false when the caller must fall back to the row-wise
-// evaluator: an evaluation error, or a null predicate result (which the
-// row-wise Filter treats as a hard error). At or above parallelFilterThreshold
+// evaluator: an evaluation error, or a null predicate result (the row-wise
+// Filter drops null-predicate rows, matching Polars). At or above parallelFilterThreshold
 // the predicate is evaluated across GOMAXPROCS workers over disjoint contiguous
 // row ranges; the surviving indices are stitched back in ascending range order
 // so the result is identical to a single-threaded evaluation.

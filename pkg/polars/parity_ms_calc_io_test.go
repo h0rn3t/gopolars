@@ -45,20 +45,17 @@ func TestParityParquetRoundTrip(t *testing.T) {
 	}
 }
 
-// TestParityParquetLZ4 pins the lz4 compression used by ms-calculations (compression="lz4"). If the
-// codec is unsupported on write or read, the gap is recorded rather than failing.
+// TestParityParquetLZ4 pins the lz4 compression used by ms-calculations (compression="lz4").
 func TestParityParquetLZ4(t *testing.T) {
 	df := mscParquetFrame(t)
 	path := filepath.Join(t.TempDir(), "balance_lz4.parquet")
 
 	if err := df.WriteParquet(WriteParquetInput{Path: path, Compression: "lz4"}); err != nil {
-		skipGap(t, "WriteParquet(compression=lz4)", "ms-calculations writes parquet with lz4; gopolars rejected the codec: "+err.Error())
-		return
+		t.Fatalf("WriteParquet(compression=lz4): %v", err)
 	}
 	back, err := NewIO().ReadParquet(ReadParquetInput{Path: path})
 	if err != nil {
-		skipGap(t, "ReadParquet(lz4)", "gopolars could not read the lz4-compressed parquet: "+err.Error())
-		return
+		t.Fatalf("ReadParquet(lz4): %v", err)
 	}
 	eq, err := back.Equals(df)
 	if err != nil {

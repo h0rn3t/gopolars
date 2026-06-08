@@ -95,7 +95,18 @@ func TestV09WaveDComputeAndDataFrameLowMethods(t *testing.T) {
 	if _, err := df.Unstack("g"); err != nil {
 		t.Fatalf("unstack failed: %v", err)
 	}
-	if _, err := df.Unnest("g"); err != nil {
+	// Unnest expands a struct column into its fields; build a small struct frame
+	// for this (the main df's "g" column is not a struct).
+	structDF, err := polars.NewDataFrame(polars.NewDataFrameInput{Columns: []frame.SeriesInput{
+		{Name: "s", Values: []any{
+			map[string]any{"a": int64(1), "b": int64(2)},
+			map[string]any{"a": int64(3), "b": int64(4)},
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("struct df failed: %v", err)
+	}
+	if unn, err := structDF.Unnest("s"); err != nil || unn.Width() != 2 {
 		t.Fatalf("unnest failed: %v", err)
 	}
 	if _, err := df.VStack(df); err != nil {

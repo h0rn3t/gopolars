@@ -5,3 +5,12 @@ AGENTS.md
 coverage.out
 *.coverprofile
 research/
+.claude/
+.opencode/
+
+# Build/test artifacts
+*.test
+*.out
+*.prof
+__pycache__/
+.playwright-mcp/

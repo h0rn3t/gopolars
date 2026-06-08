@@ -90,10 +90,14 @@ jobs:
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
+        # Coverage upload is best-effort: a Codecov uploader/infra failure (e.g.
+        # the GPG signature-verification step failing to import the public key)
+        # must not gate the build, since tests and lint already gate it.
+        continue-on-error: true
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
           flags: unit
           name: gopolars-unit
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           verbose: true

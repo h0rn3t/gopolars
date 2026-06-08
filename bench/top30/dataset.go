@@ -86,7 +86,7 @@ func WriteArrowIPC(path string, ds dataset) error {
 	schema := arrow.NewSchema(fields, nil)
 
 	arrays := []arrow.Array{gArr, vArr, nArr, iArr}
-	rec := array.NewRecord(schema, arrays, int64(len(ds.G)))
+	rec := array.NewRecordBatch(schema, arrays, int64(len(ds.G)))
 	defer rec.Release()
 
 	f, err := os.Create(path)

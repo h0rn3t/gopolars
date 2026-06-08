@@ -23,8 +23,7 @@ func TestParityStructKeyIsDuplicated(t *testing.T) {
 
 	subset, err := df.SubSelectColumns("z_id", "z_time")
 	if err != nil {
-		skipGap(t, "struct-key is_duplicated", "polars supports pl.struct([...]).is_duplicated(); gopolars has no subset duplicate detection")
-		return
+		t.Fatalf("struct-key is_duplicated (SubSelectColumns): %v", err)
 	}
 	mask := subset.IsDuplicated().Rename("__dup")
 	withMask, err := df.Hstack(mask)

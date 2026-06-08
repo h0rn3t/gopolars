@@ -4,19 +4,19 @@ import (
 	"testing"
 	"time"
 
-	goarrow "github.com/apache/arrow/go/v18/arrow"
-	"github.com/apache/arrow/go/v18/arrow/array"
-	"github.com/apache/arrow/go/v18/arrow/memory"
+	goarrow "github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
 )
 
-func recordOf(name string, arr goarrow.Array) goarrow.Record {
+func recordOf(name string, arr goarrow.Array) goarrow.RecordBatch {
 	schema := goarrow.NewSchema([]goarrow.Field{
 		{Name: name, Type: arr.DataType(), Nullable: true},
 	}, nil)
-	return array.NewRecord(schema, []goarrow.Array{arr}, int64(arr.Len()))
+	return array.NewRecordBatch(schema, []goarrow.Array{arr}, int64(arr.Len()))
 }
 
 // TestFromArrowLargeString covers the *array.LargeString case.

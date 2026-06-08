@@ -2,6 +2,7 @@ package expr
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -32,10 +33,105 @@ type Expr struct {
 	dtype  dtypes.DataType
 	op     string
 	target *Expr
+	names  []string // multi-column selectors (Cols, Struct, Fold) and field lists
 }
 
 func Col(name string) Expr {
 	return Expr{kind: KindCol, name: name}
+}
+
+// selectorAll is the column-name sentinel for the all-columns selector (pl.all()).
+const selectorAll = "*"
+
+// All selects every column (pl.all()). It is a multi-column selector expanded by
+// the Select/WithColumns projection layer.
+func All() Expr {
+	return Expr{kind: KindCol, name: selectorAll}
+}
+
+// Cols selects the named columns (pl.col("a","b")). It expands, in the given
+// order, to one column per name.
+func Cols(names ...string) Expr {
+	return Expr{kind: KindCol, op: "selector_cols", names: append([]string(nil), names...)}
+}
+
+// Exclude selects every column except the named ones (pl.exclude("a")).
+func Exclude(names ...string) Expr {
+	return All().Exclude(names...)
+}
+
+// StructCols packs the named columns into a single Struct column (pl.struct([...])).
+// The default output name is "struct"; use Alias to rename.
+func StructCols(names ...string) Expr {
+	return Expr{kind: KindUnary, op: "struct_pack", name: "struct", names: append([]string(nil), names...)}
+}
+
+// FoldSpec carries the accumulator, reduce function, and operand exprs for Fold.
+type FoldSpec struct {
+	Acc   any
+	Fn    func(acc any, next any) (any, error)
+	Exprs []Expr
+}
+
+// Fold horizontally reduces the operand exprs left-to-right per row, starting from
+// acc (pl.fold(acc, function, exprs)). fn is applied as fn(acc, next_value).
+func Fold(acc any, fn func(acc any, next any) (any, error), exprs ...Expr) Expr {
+	return Expr{kind: KindUnary, op: "fold", name: "fold", value: FoldSpec{Acc: acc, Fn: fn, Exprs: exprs}}
+}
+
+// SelectorColumns resolves a multi-column selector against the available column
+// names (in schema order). ok is false for a normal single-column/value expr that
+// the caller should evaluate as-is.
+func SelectorColumns(e Expr, available []string) (cols []string, ok bool) {
+	switch e.kind {
+	case KindCol:
+		switch {
+		case e.op == "selector_cols":
+			return append([]string(nil), e.names...), true
+		case e.name == selectorAll:
+			return append([]string(nil), available...), true
+		case isRegexName(e.name):
+			re, err := regexp.Compile(e.name)
+			if err != nil {
+				return nil, false
+			}
+			out := make([]string, 0, len(available))
+			for _, n := range available {
+				if re.MatchString(n) {
+					out = append(out, n)
+				}
+			}
+			return out, true
+		}
+		return nil, false
+	case KindUnary:
+		if strings.HasPrefix(e.op, "exclude:") && e.target != nil {
+			base, isSel := SelectorColumns(*e.target, available)
+			if !isSel {
+				return nil, false
+			}
+			excluded := map[string]struct{}{}
+			for _, n := range strings.Split(strings.TrimPrefix(e.op, "exclude:"), ",") {
+				if n != "" {
+					excluded[n] = struct{}{}
+				}
+			}
+			out := make([]string, 0, len(base))
+			for _, n := range base {
+				if _, drop := excluded[n]; !drop {
+					out = append(out, n)
+				}
+			}
+			return out, true
+		}
+	}
+	return nil, false
+}
+
+// isRegexName reports whether a column selector follows Polars' regex convention
+// (anchored with ^...$), e.g. pl.col("^foo.*$").
+func isRegexName(name string) bool {
+	return len(name) >= 2 && name[0] == '^' && name[len(name)-1] == '$'
 }
 
 func Lit(v any) Expr {
@@ -113,6 +209,10 @@ func (e Expr) StrUpper() Expr {
 
 func (e Expr) StrReplace(old string, new string) Expr {
 	return Expr{kind: KindUnary, op: "str_replace:" + old + ":" + new, target: &e}
+}
+
+func (e Expr) StrReplaceAll(old string, new string) Expr {
+	return Expr{kind: KindUnary, op: "str_replace_all:" + old + ":" + new, target: &e}
 }
 
 func (e Expr) StrTrim() Expr {
@@ -1001,7 +1101,52 @@ func (e Expr) Name() string {
 	if e.kind == KindAgg && e.target != nil {
 		return fmt.Sprintf("%s_%s", e.op, e.target.Name())
 	}
+	if e.name != "" {
+		return e.name
+	}
 	return "expr"
+}
+
+// Names returns the column-name list carried by multi-column exprs (Cols,
+// StructCols, Fold). It is nil for ordinary exprs.
+func (e Expr) Names() []string {
+	return e.names
+}
+
+// MapAggregates returns a copy of e with every aggregation sub-expression replaced
+// by a literal scalar. fn classifies a node: it returns (scalar, true) for an
+// aggregation to fold to a constant, or (_, false) to recurse into the node's
+// children. This lets the eager evaluator support aggregations nested inside
+// row-wise expressions (e.g. pl.col("b") + pl.col("c").first()) by precomputing
+// the reductions and broadcasting them.
+func MapAggregates(e Expr, fn func(Expr) (any, bool, error)) (Expr, error) {
+	scalar, isAgg, err := fn(e)
+	if err != nil {
+		return Expr{}, err
+	}
+	if isAgg {
+		lit := Lit(scalar)
+		if e.alias != "" {
+			lit = lit.Alias(e.alias)
+		}
+		return lit, nil
+	}
+	// A window/group context (.over()) evaluates its own aggregation per group; do
+	// not fold aggregations nested under it into a global scalar.
+	if strings.HasPrefix(e.op, "over:") {
+		return e, nil
+	}
+	out := e
+	for _, slot := range []**Expr{&out.target, &out.left, &out.right, &out.extra} {
+		if *slot != nil {
+			child, err := MapAggregates(**slot, fn)
+			if err != nil {
+				return Expr{}, err
+			}
+			*slot = &child
+		}
+	}
+	return out, nil
 }
 
 func (e Expr) Kind() Kind {

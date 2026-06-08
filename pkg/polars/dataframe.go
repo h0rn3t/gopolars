@@ -596,7 +596,59 @@ func (d *df) Upsample(by string, every time.Duration) (DataFrame, error) {
 	if every <= 0 {
 		return d, nil
 	}
-	return d.Sort(SortInput{By: []string{by}})
+	sorted, err := d.Sort(SortInput{By: []string{by}})
+	if err != nil {
+		return nil, err
+	}
+	n := sorted.Height()
+	if n == 0 {
+		return sorted, nil
+	}
+	tcol, err := sorted.GetColumn(by)
+	if err != nil {
+		return nil, err
+	}
+	first, ok1 := tcol.Value(0).(time.Time)
+	last, ok2 := tcol.Value(n - 1).(time.Time)
+	if !ok1 || !ok2 {
+		return nil, fmt.Errorf("upsample: column %q must be Datetime", by)
+	}
+	// Build the regular grid [first, last] stepping by `every`. Existing rows are
+	// kept; gap rows carry their timestamp and null for every other column.
+	cols := sorted.Columns()
+	colSeries := make([]Series, len(cols))
+	for i, c := range cols {
+		colSeries[i], _ = sorted.GetColumn(c)
+	}
+	idxByTime := make(map[time.Time]int, n)
+	for i := 0; i < n; i++ {
+		if tv, ok := tcol.Value(i).(time.Time); ok {
+			if _, seen := idxByTime[tv]; !seen {
+				idxByTime[tv] = i
+			}
+		}
+	}
+	newVals := make([][]any, len(cols))
+	for ts := first; !ts.After(last); ts = ts.Add(every) {
+		if ri, exists := idxByTime[ts]; exists {
+			for ci := range cols {
+				newVals[ci] = append(newVals[ci], colSeries[ci].Value(ri))
+			}
+		} else {
+			for ci, c := range cols {
+				if c == by {
+					newVals[ci] = append(newVals[ci], ts)
+				} else {
+					newVals[ci] = append(newVals[ci], nil)
+				}
+			}
+		}
+	}
+	inputs := make([]frame.SeriesInput, len(cols))
+	for ci, c := range cols {
+		inputs[ci] = frame.SeriesInput{Name: c, Values: newVals[ci]}
+	}
+	return NewDataFrame(NewDataFrameInput{Columns: inputs})
 }
 
 func (d *df) Limit(n int) DataFrame {
@@ -972,7 +1024,15 @@ func (d *df) Unstack(by string) ([]DataFrame, error) {
 }
 
 func (d *df) Unnest(columns ...string) (DataFrame, error) {
-	return d.Clone(), nil
+	cur := d.value
+	for _, col := range columns {
+		next, err := cur.FlattenStruct(col, "")
+		if err != nil {
+			return nil, err
+		}
+		cur = next
+	}
+	return &df{value: cur}, nil
 }
 
 func (d *df) Pivot(input PivotInput) (DataFrame, error) {
@@ -992,17 +1052,53 @@ func (d *df) Pivot(input PivotInput) (DataFrame, error) {
 
 func (d *df) Transpose() (DataFrame, error) {
 	rows := d.Rows()
+	cols := d.Columns()
 	if len(rows) == 0 {
 		return d.Limit(0), nil
 	}
-	values := make([]frame.SeriesInput, 0, len(rows))
-	cols := d.Columns()
-	for i, col := range cols {
-		rowVals := make([]any, 0, len(rows))
-		for _, r := range rows {
-			rowVals = append(rowVals, r[col])
+	// Each original row becomes an output column ("column_0", "column_1", ...);
+	// each output column holds that row's value for every original column, so the
+	// result is (ncols x nrows) -> (nrows x ncols). Matches Polars' default.
+	//
+	// Every output column mixes values from all original columns, so they share a
+	// single supertype: numeric if every original column is numeric, otherwise
+	// String (Polars casts incompatible columns to String on transpose).
+	stringify := false
+	anyFloat := false
+	for _, col := range cols {
+		s, err := d.GetColumn(col)
+		if err != nil {
+			return nil, err
 		}
-		values = append(values, frame.SeriesInput{Name: fmt.Sprintf("row_%d", i), Values: rowVals})
+		switch s.DataType() {
+		case dtypes.Int64:
+		case dtypes.Float64:
+			anyFloat = true
+		default:
+			stringify = true
+		}
+	}
+	cast := func(v any) any {
+		if v == nil {
+			return nil
+		}
+		if stringify {
+			return fmt.Sprint(v)
+		}
+		if anyFloat {
+			if f, ok := toFloat64(v); ok {
+				return f
+			}
+		}
+		return v
+	}
+	values := make([]frame.SeriesInput, 0, len(rows))
+	for j, r := range rows {
+		colVals := make([]any, 0, len(cols))
+		for _, col := range cols {
+			colVals = append(colVals, cast(r[col]))
+		}
+		values = append(values, frame.SeriesInput{Name: fmt.Sprintf("column_%d", j), Values: colVals})
 	}
 	return NewDataFrame(NewDataFrameInput{Columns: values})
 }

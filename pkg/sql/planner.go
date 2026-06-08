@@ -79,6 +79,35 @@ func planSingle(parsed ParsedQuery, catalog Catalog) ([]logical.Node, error) {
 	if len(windowSpecs) > 0 {
 		nodes = append(nodes, logical.Node{Type: logical.NodeWindow, Windows: windowSpecs})
 	}
+	// When a non-`*` projection would drop a source column that ORDER BY
+	// references, carry that column through the projection and restore the
+	// original output schema after the sort. SQL allows ORDER BY to reference
+	// source columns not present in the SELECT list; without this the sort would
+	// fail with "column not found". The GROUP BY / window / DISTINCT paths are
+	// excluded (ordering by a dropped source column there is ill-defined).
+	var carryCols, projOutputs []string
+	if len(parsed.OrderBy) > 0 && len(parsed.GroupBy) == 0 && len(windowSpecs) == 0 && !parsed.Distinct {
+		out := make(map[string]bool)
+		hasProjection := false
+		for _, item := range parsed.Select {
+			if item.Expr.Kind() == expr.KindCol && item.Expr.ColName() == "*" {
+				continue
+			}
+			hasProjection = true
+			n := item.Expr.Name()
+			projOutputs = append(projOutputs, n)
+			out[n] = true
+		}
+		if hasProjection {
+			seen := make(map[string]bool)
+			for _, o := range parsed.OrderBy {
+				if !out[o.Column] && !seen[o.Column] {
+					carryCols = append(carryCols, o.Column)
+					seen[o.Column] = true
+				}
+			}
+		}
+	}
 	if len(parsed.GroupBy) > 0 {
 		aggExprs := make([]expr.Expr, 0, len(parsed.Select))
 		for _, item := range parsed.Select {
@@ -109,6 +138,9 @@ func planSingle(parsed ParsedQuery, catalog Catalog) ([]logical.Node, error) {
 			}
 			selectExprs = append(selectExprs, item.Expr)
 		}
+		for _, c := range carryCols {
+			selectExprs = append(selectExprs, expr.Col(c))
+		}
 		if len(selectExprs) > 0 {
 			nodes = append(nodes, logical.Node{Type: logical.NodeSelect, Exprs: selectExprs})
 		}
@@ -124,6 +156,13 @@ func planSingle(parsed ParsedQuery, catalog Catalog) ([]logical.Node, error) {
 			desc = append(desc, o.Desc)
 		}
 		nodes = append(nodes, logical.Node{Type: logical.NodeSort, Columns: cols, Descending: desc})
+		if len(carryCols) > 0 {
+			restore := make([]expr.Expr, 0, len(projOutputs))
+			for _, n := range projOutputs {
+				restore = append(restore, expr.Col(n))
+			}
+			nodes = append(nodes, logical.Node{Type: logical.NodeSelect, Exprs: restore})
+		}
 	}
 	if parsed.Offset != nil {
 		length := 1<<31 - 1

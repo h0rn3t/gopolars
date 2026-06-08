@@ -118,7 +118,7 @@ func writeArrowIPC(path string, cols map[string][]float64) error {
 	}
 	defer func() { _ = writer.Close() }()
 
-	rec := array.NewRecord(schema, arrays, int64(rowCount))
+	rec := array.NewRecordBatch(schema, arrays, int64(rowCount))
 	defer rec.Release()
 
 	return writer.Write(rec)
