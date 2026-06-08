@@ -7,3 +7,10 @@ coverage.out
 research/
 .claude/
 .opencode/
+
+# Build/test artifacts
+*.test
+*.out
+*.prof
+__pycache__/
+.playwright-mcp/
