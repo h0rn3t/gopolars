@@ -6,8 +6,7 @@ package polars
 // Python service ../ms-calculations uses the `polars` library (energy balance / profiling
 // pipelines). Each test reproduces a real call site as a self-contained Go fixture and asserts
 // gopolars produces the polars result. Where gopolars lacks a polars equivalent or diverges in
-// semantics, the test either reimplements the behavior on gopolars primitives or skips with a
-// "gopolars gap:" message (see skipGap) — it never asserts a false pass.
+// semantics, the test reimplements the behavior on gopolars primitives — it never asserts a false pass.
 //
 // The shared helpers below match the existing pkg/polars test conventions (standard testing,
 // helper constructors, flat assertions, no testify).
@@ -63,13 +62,6 @@ func asFloat(t *testing.T, v any) float64 {
 		t.Fatalf("asFloat: unexpected type %T (%v)", v, v)
 		return 0
 	}
-}
-
-// skipGap records a gopolars↔polars divergence as a skip rather than a false pass. The message is
-// greppable via `go test -run Parity -v | grep 'gopolars gap:'` to form the follow-up gap inventory.
-func skipGap(t *testing.T, op, polarsBehavior string) {
-	t.Helper()
-	t.Skipf("gopolars gap: %s — %s", op, polarsBehavior)
 }
 
 // roundHalfEvenN rounds x to n decimal places using round-half-to-even (banker's rounding) on the

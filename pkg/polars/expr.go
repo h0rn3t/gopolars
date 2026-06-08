@@ -11,6 +11,31 @@ func Col(name string) Expr {
 	return e.Col(name)
 }
 
+// All selects every column (pl.all()).
+func All() Expr {
+	return e.All()
+}
+
+// Cols selects the named columns in order (pl.col("a","b")).
+func Cols(names ...string) Expr {
+	return e.Cols(names...)
+}
+
+// Exclude selects every column except the named ones (pl.exclude("a")).
+func Exclude(names ...string) Expr {
+	return e.Exclude(names...)
+}
+
+// StructCols packs the named columns into a single Struct column (pl.struct([...])).
+func StructCols(names ...string) Expr {
+	return e.StructCols(names...)
+}
+
+// Fold horizontally reduces exprs left-to-right per row from acc (pl.fold).
+func Fold(acc any, fn func(acc any, next any) (any, error), exprs ...Expr) Expr {
+	return e.Fold(acc, fn, exprs...)
+}
+
 func Lit(v any) Expr {
 	return e.Lit(v)
 }

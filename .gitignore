@@ -5,3 +5,5 @@ AGENTS.md
 coverage.out
 *.coverprofile
 research/
+.claude/
+.opencode/

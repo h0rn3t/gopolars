@@ -82,11 +82,3 @@ func TestParityBankersResidueCarryConservesSum(t *testing.T) {
 		}
 	}
 }
-
-// TestParityRoundDecimalsModeUnsupported records the gap: gopolars Series.Round()/Expr.Round() take
-// no decimals or rounding-mode argument and round to an integer using half-away-from-zero
-// (pkg/expr/eval.go), so polars' .round(decimals=3) with banker's rounding has no native equivalent.
-func TestParityRoundDecimalsModeUnsupported(t *testing.T) {
-	skipGap(t, "Series.Round(decimals, mode)",
-		"polars rounds to N decimals with round-half-to-even; gopolars Round() rounds to integer half-away-from-zero only")
-}

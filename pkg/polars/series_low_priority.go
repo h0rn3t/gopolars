@@ -494,97 +494,69 @@ func requireInt64Series(name string, s Series) error {
 	return nil
 }
 
-func (s seriesFacade) BitwiseAnd(other Series) (Series, error) {
-	if err := requireInt64Series("bitwise_and", s); err != nil {
-		return nil, err
-	}
-	if err := requireInt64Series("bitwise_and", other); err != nil {
-		return nil, err
-	}
+// bitwiseBinary applies a bitwise op element-wise. Both operands must share the
+// same dtype: Int64 (integer bitwise) or Boolean (logical and/or/xor). Boolean
+// inputs yield a Boolean result, matching Polars.
+func (s seriesFacade) bitwiseBinary(other Series, name string, intOp func(int64, int64) int64, boolOp func(bool, bool) bool) (Series, error) {
 	if s.Len() != other.Len() {
-		return nil, fmt.Errorf("bitwise_and: length mismatch")
+		return nil, fmt.Errorf("%s: length mismatch", name)
 	}
-	values := make([]any, s.Len())
 	o, ok := other.(seriesFacade)
 	if !ok {
-		return nil, fmt.Errorf("bitwise_and: unsupported series implementation")
+		return nil, fmt.Errorf("%s: unsupported series implementation", name)
 	}
-	for i := 0; i < s.Len(); i++ {
-		if s.value.IsNull(i) || o.value.IsNull(i) {
-			values[i] = nil
-			continue
+	dt := s.DataType()
+	if dt != other.DataType() {
+		return nil, fmt.Errorf("%s: dtype mismatch (%s vs %s)", name, dt, other.DataType())
+	}
+	values := make([]any, s.Len())
+	switch dt {
+	case dtypes.Int64:
+		for i := 0; i < s.Len(); i++ {
+			if s.value.IsNull(i) || o.value.IsNull(i) {
+				values[i] = nil
+				continue
+			}
+			a, _ := s.Value(i).(int64)
+			b, _ := o.Value(i).(int64)
+			values[i] = intOp(a, b)
 		}
-		a, _ := s.Value(i).(int64)
-		b, _ := o.Value(i).(int64)
-		values[i] = a & b
+	case dtypes.Boolean:
+		for i := 0; i < s.Len(); i++ {
+			if s.value.IsNull(i) || o.value.IsNull(i) {
+				values[i] = nil
+				continue
+			}
+			a, _ := s.Value(i).(bool)
+			b, _ := o.Value(i).(bool)
+			values[i] = boolOp(a, b)
+		}
+	default:
+		return nil, fmt.Errorf("%s: expected int64 or bool dtype, got %s", name, dt)
 	}
-	out, err := iseries.New(s.Name(), dtypes.Int64, values)
+	out, err := iseries.New(s.Name(), dt, values)
 	if err != nil {
 		return nil, err
 	}
 	return seriesFacade{value: out}, nil
+}
+
+func (s seriesFacade) BitwiseAnd(other Series) (Series, error) {
+	return s.bitwiseBinary(other, "bitwise_and",
+		func(a, b int64) int64 { return a & b },
+		func(a, b bool) bool { return a && b })
 }
 
 func (s seriesFacade) BitwiseOr(other Series) (Series, error) {
-	if err := requireInt64Series("bitwise_or", s); err != nil {
-		return nil, err
-	}
-	if err := requireInt64Series("bitwise_or", other); err != nil {
-		return nil, err
-	}
-	if s.Len() != other.Len() {
-		return nil, fmt.Errorf("bitwise_or: length mismatch")
-	}
-	o, ok := other.(seriesFacade)
-	if !ok {
-		return nil, fmt.Errorf("bitwise_or: unsupported series implementation")
-	}
-	values := make([]any, s.Len())
-	for i := 0; i < s.Len(); i++ {
-		if s.value.IsNull(i) || o.value.IsNull(i) {
-			values[i] = nil
-			continue
-		}
-		a, _ := s.Value(i).(int64)
-		b, _ := o.Value(i).(int64)
-		values[i] = a | b
-	}
-	out, err := iseries.New(s.Name(), dtypes.Int64, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return s.bitwiseBinary(other, "bitwise_or",
+		func(a, b int64) int64 { return a | b },
+		func(a, b bool) bool { return a || b })
 }
 
 func (s seriesFacade) BitwiseXor(other Series) (Series, error) {
-	if err := requireInt64Series("bitwise_xor", s); err != nil {
-		return nil, err
-	}
-	if err := requireInt64Series("bitwise_xor", other); err != nil {
-		return nil, err
-	}
-	if s.Len() != other.Len() {
-		return nil, fmt.Errorf("bitwise_xor: length mismatch")
-	}
-	o, ok := other.(seriesFacade)
-	if !ok {
-		return nil, fmt.Errorf("bitwise_xor: unsupported series implementation")
-	}
-	values := make([]any, s.Len())
-	for i := 0; i < s.Len(); i++ {
-		if s.value.IsNull(i) || o.value.IsNull(i) {
-			values[i] = nil
-			continue
-		}
-		a, _ := s.Value(i).(int64)
-		b, _ := o.Value(i).(int64)
-		values[i] = a ^ b
-	}
-	out, err := iseries.New(s.Name(), dtypes.Int64, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return s.bitwiseBinary(other, "bitwise_xor",
+		func(a, b int64) int64 { return a ^ b },
+		func(a, b bool) bool { return a != b })
 }
 
 func (s seriesFacade) int64UnaryBits(fn func(int64) int64) (Series, error) {

@@ -105,8 +105,7 @@ func TestParityCrossJoin(t *testing.T) {
 	)
 	out, err := hourly.Join(JoinInput{Other: apIDs, How: JoinTypeCross})
 	if err != nil {
-		skipGap(t, "DataFrame.Join cross", "polars supports how='cross' (cartesian product)")
-		return
+		t.Fatalf("DataFrame.Join cross: %v", err)
 	}
 	if out.Height() != hourly.Height()*apIDs.Height() {
 		t.Errorf("cross join height = %d, want %d (3*2)", out.Height(), hourly.Height()*apIDs.Height())

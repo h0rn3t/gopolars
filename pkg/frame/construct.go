@@ -11,6 +11,10 @@ import (
 type SeriesInput struct {
 	Name   string
 	Values []any
+	// DType optionally pins the column dtype. When empty, the dtype is inferred
+	// from Values; an explicit DType lets all-null or empty columns be typed
+	// (the inference path cannot determine a dtype with no non-null values).
+	DType dtypes.DataType
 }
 
 type FromAnyColumnsInput struct {
@@ -20,9 +24,13 @@ type FromAnyColumnsInput struct {
 func FromAnyColumns(input FromAnyColumnsInput) (DataFrame, error) {
 	out := make([]series.Series, 0, len(input.Columns))
 	for _, c := range input.Columns {
-		dt, err := inferAnyDataType(c.Values)
-		if err != nil {
-			return DataFrame{}, err
+		dt := c.DType
+		if dt == "" {
+			var err error
+			dt, err = inferAnyDataType(c.Values)
+			if err != nil {
+				return DataFrame{}, err
+			}
 		}
 		s, err := series.New(c.Name, dt, c.Values)
 		if err != nil {

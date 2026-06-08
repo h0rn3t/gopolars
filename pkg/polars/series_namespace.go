@@ -167,18 +167,24 @@ func (n SeriesStructNS) Field(name string) (Series, error) {
 			return nil, fmt.Errorf("struct.Field: value at %d is not map[string]any", i)
 		}
 		inner := m[name]
+		// Preserve the field's native value/dtype (matching Polars) instead of
+		// stringifying. Normalize narrow numeric types to the canonical int64/
+		// float64 the series constructor expects.
 		switch t := inner.(type) {
 		case nil:
 			values[i] = nil
-		case string:
-			values[i] = t
-		case int, int32, int64, float32, float64, bool:
-			values[i] = fmt.Sprint(t)
+		case int:
+			values[i] = int64(t)
+		case int32:
+			values[i] = int64(t)
+		case float32:
+			values[i] = float64(t)
 		default:
-			values[i] = fmt.Sprint(t)
+			values[i] = t
 		}
 	}
-	return NewSeries(NewSeriesInput{Name: n.s.Name() + "_" + name, DType: dtypes.String, Values: values})
+	dt := inferDataTypeFromValues(values, dtypes.String)
+	return NewSeries(NewSeriesInput{Name: n.s.Name() + "_" + name, DType: dt, Values: values})
 }
 
 // Codes повертає цілочисельні коди категорій у порядку першої появи рядка.

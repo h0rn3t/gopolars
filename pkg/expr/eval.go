@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -38,12 +39,47 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 		}
 		return cast(v, e.CastType())
 	case KindUnary:
+		// struct_pack reads several columns by name and assembles a struct value;
+		// it has no single target, so handle it before the target deref below.
+		if e.Op() == "struct_pack" {
+			m := make(map[string]any, len(e.names))
+			for _, name := range e.names {
+				val, ok := row.ValueByName(name)
+				if !ok {
+					return nil, fmt.Errorf("struct field column %s not found", name)
+				}
+				m[name] = val
+			}
+			return m, nil
+		}
+		// fold horizontally reduces several operand exprs per row; no single target.
+		if e.Op() == "fold" {
+			spec, ok := e.Value().(FoldSpec)
+			if !ok {
+				return nil, fmt.Errorf("fold missing spec")
+			}
+			acc := spec.Acc
+			for i := range spec.Exprs {
+				v, err := Eval(spec.Exprs[i], row)
+				if err != nil {
+					return nil, err
+				}
+				acc, err = spec.Fn(acc, v)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return acc, nil
+		}
 		v, err := Eval(*e.Target(), row)
 		if err != nil {
 			return nil, err
 		}
 		switch e.Op() {
 		case "not":
+			if v == nil {
+				return nil, nil
+			}
 			b, ok := v.(bool)
 			if !ok {
 				return nil, fmt.Errorf("not expects bool")
@@ -106,7 +142,9 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 			if !ok {
 				return nil, fmt.Errorf("dt_weekday expects datetime")
 			}
-			return int64(t.Weekday()), nil
+			// Polars/ISO weekday: Monday=1 .. Sunday=7. Go's time.Weekday is
+			// Sunday=0 .. Saturday=6, so remap.
+			return int64((int(t.Weekday())+6)%7) + 1, nil
 		case "list_len":
 			list, ok := v.([]any)
 			if !ok {
@@ -364,8 +402,11 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 			}
 			return nil, fmt.Errorf("sign expects numeric")
 		case "neg":
-			if f, ok := toFloat(v); ok {
-				return -f, nil
+			switch t := v.(type) {
+			case int64:
+				return -t, nil
+			case float64:
+				return -t, nil
 			}
 			return nil, fmt.Errorf("neg expects numeric")
 		case "not_":
@@ -418,6 +459,24 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				}
 				return roundToSigFigs(f, digits), nil
 			}
+			if strings.HasPrefix(e.Op(), "str_replace_all:") {
+				spec := strings.TrimPrefix(e.Op(), "str_replace_all:")
+				parts := strings.SplitN(spec, ":", 2)
+				if len(parts) != 2 {
+					return nil, fmt.Errorf("invalid str_replace_all configuration")
+				}
+				s, ok := v.(string)
+				if !ok {
+					return nil, fmt.Errorf("str_replace_all expects string")
+				}
+				re, err := regexp.Compile(parts[0])
+				if err != nil {
+					return nil, fmt.Errorf("str_replace_all invalid pattern %q: %w", parts[0], err)
+				}
+				// Replacement is taken literally (no $-group expansion), matching the
+				// common Polars str.replace_all(pattern, value) usage.
+				return re.ReplaceAllLiteralString(s, parts[1]), nil
+			}
 			if strings.HasPrefix(e.Op(), "str_replace:") {
 				spec := strings.TrimPrefix(e.Op(), "str_replace:")
 				parts := strings.SplitN(spec, ":", 2)
@@ -428,7 +487,17 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				if !ok {
 					return nil, fmt.Errorf("str_replace expects string")
 				}
-				return strings.ReplaceAll(s, parts[0], parts[1]), nil
+				// Polars str.replace replaces only the FIRST match, with the pattern
+				// treated as a regex (literal=False default).
+				re, err := regexp.Compile(parts[0])
+				if err != nil {
+					return nil, fmt.Errorf("str_replace invalid pattern %q: %w", parts[0], err)
+				}
+				loc := re.FindStringIndex(s)
+				if loc == nil {
+					return s, nil
+				}
+				return s[:loc[0]] + parts[1] + s[loc[1]:], nil
 			}
 			if strings.HasPrefix(e.Op(), "struct_field:") {
 				key := strings.TrimPrefix(e.Op(), "struct_field:")
@@ -557,11 +626,25 @@ func roundToSigFigs(v float64, digits int) float64 {
 	return math.Round(v*scale) / scale
 }
 
+// kleeneBool interprets a value as a three-valued boolean: ok=false when it is
+// neither a bool nor null; isNull=true for a null (nil) operand.
+func kleeneBool(v any) (b bool, isNull bool, ok bool) {
+	if v == nil {
+		return false, true, true
+	}
+	if bb, isb := v.(bool); isb {
+		return bb, false, true
+	}
+	return false, false, false
+}
+
 func evalBin(op string, left any, right any) (any, error) {
 	switch op {
 	case "eq":
+		// A comparison with null yields null (Polars semantics). Null-aware
+		// equality lives in eq_missing/ne_missing.
 		if left == nil || right == nil {
-			return left == nil && right == nil, nil
+			return nil, nil
 		}
 		if lf, ok := left.(float64); ok && math.IsNaN(lf) {
 			return false, nil
@@ -572,7 +655,7 @@ func evalBin(op string, left any, right any) (any, error) {
 		return left == right, nil
 	case "ne":
 		if left == nil || right == nil {
-			return left != nil || right != nil, nil
+			return nil, nil
 		}
 		if lf, ok := left.(float64); ok && math.IsNaN(lf) {
 			return true, nil
@@ -582,6 +665,9 @@ func evalBin(op string, left any, right any) (any, error) {
 		}
 		return left != right, nil
 	case "gt", "ge", "lt", "le":
+		if left == nil || right == nil {
+			return nil, nil
+		}
 		return compare(op, left, right)
 	case "add", "sub", "mul", "div":
 		return arith(op, left, right)
@@ -592,34 +678,36 @@ func evalBin(op string, left any, right any) (any, error) {
 			return nil, fmt.Errorf("pow expects numeric")
 		}
 		return math.Pow(lf, rf), nil
-	case "and":
-		l, lok := left.(bool)
-		r, rok := right.(bool)
+	case "and", "and_":
+		// Three-valued (Kleene) AND: a definite false wins; otherwise any null
+		// makes the result null; otherwise true.
+		lb, ln, lok := kleeneBool(left)
+		rb, rn, rok := kleeneBool(right)
 		if !lok || !rok {
 			return nil, fmt.Errorf("and expects bool")
 		}
-		return l && r, nil
-	case "and_":
-		l, lok := left.(bool)
-		r, rok := right.(bool)
-		if !lok || !rok {
-			return nil, fmt.Errorf("and_ expects bool")
+		if (!ln && !lb) || (!rn && !rb) {
+			return false, nil
 		}
-		return l && r, nil
-	case "or":
-		l, lok := left.(bool)
-		r, rok := right.(bool)
+		if ln || rn {
+			return nil, nil
+		}
+		return true, nil
+	case "or", "or_":
+		// Three-valued (Kleene) OR: a definite true wins; otherwise any null
+		// makes the result null; otherwise false.
+		lb, ln, lok := kleeneBool(left)
+		rb, rn, rok := kleeneBool(right)
 		if !lok || !rok {
 			return nil, fmt.Errorf("or expects bool")
 		}
-		return l || r, nil
-	case "or_":
-		l, lok := left.(bool)
-		r, rok := right.(bool)
-		if !lok || !rok {
-			return nil, fmt.Errorf("or_ expects bool")
+		if (!ln && lb) || (!rn && rb) {
+			return true, nil
 		}
-		return l || r, nil
+		if ln || rn {
+			return nil, nil
+		}
+		return false, nil
 	case "contains":
 		l, lok := left.(string)
 		r, rok := right.(string)
@@ -789,6 +877,9 @@ func evalBin(op string, left any, right any) (any, error) {
 		}
 		return left, nil
 	case "xor":
+		if left == nil || right == nil {
+			return nil, nil
+		}
 		l, lok := left.(bool)
 		r, rok := right.(bool)
 		if !lok || !rok {
@@ -890,6 +981,16 @@ func arith(op string, left any, right any) (any, error) {
 			}
 			return l / r, nil
 		}
+	case string:
+		// String "+" concatenates (matching Polars); other ops are unsupported.
+		r, ok := right.(string)
+		if !ok {
+			return nil, fmt.Errorf("arith type mismatch")
+		}
+		if op == "add" {
+			return l + r, nil
+		}
+		return nil, fmt.Errorf("unsupported string arithmetic %q", op)
 	}
 	return nil, fmt.Errorf("unsupported arithmetic types")
 }

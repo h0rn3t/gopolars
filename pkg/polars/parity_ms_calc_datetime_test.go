@@ -56,29 +56,3 @@ func TestParityHourlyRangeLeftClosed(t *testing.T) {
 		}
 	}
 }
-
-// TestParityDatetimeRangeGeneratorUnsupported records the gap: gopolars exposes no top-level
-// pl.datetime_range / pl.date_range generator (closed/interval/eager).
-func TestParityDatetimeRangeGeneratorUnsupported(t *testing.T) {
-	skipGap(t, "datetime_range / date_range",
-		"polars generates ranges via pl.datetime_range/date_range(interval, closed, eager); gopolars has no top-level generator")
-}
-
-// TestParityTimezoneConvertDate documents the gap for profiling.py:301 —
-// dt.convert_time_zone("Europe/Kyiv").dt.date(). The gopolars Dt namespace exposes only Year(); there
-// is no convert_time_zone / date. The expected Kyiv-local date is computed via Go's time package as
-// the reference the native op would need to match.
-func TestParityTimezoneConvertDate(t *testing.T) {
-	kyiv, err := time.LoadLocation("Europe/Kyiv")
-	if err != nil {
-		t.Skipf("Europe/Kyiv tzdata unavailable: %v", err)
-	}
-	// 2024-07-01 22:30 UTC is 2024-07-02 01:30 in Kyiv (UTC+3 DST) -> date 2024-07-02.
-	utc := time.Date(2024, 7, 1, 22, 30, 0, 0, time.UTC)
-	wantDate := utc.In(kyiv).Format("2006-01-02")
-	if wantDate != "2024-07-02" {
-		t.Fatalf("reference Kyiv date = %s, want 2024-07-02", wantDate)
-	}
-	skipGap(t, "Series.dt.convert_time_zone(...).dt.date()",
-		"polars converts tz then extracts the local date; gopolars Dt namespace has no convert_time_zone/date (expected 2024-07-02)")
-}

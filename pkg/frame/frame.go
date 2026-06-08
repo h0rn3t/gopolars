@@ -25,6 +25,37 @@ type DataFrame struct {
 	cols   map[string]series.Series
 	order  []string
 	height int
+	// context holds columns made referenceable by LazyFrame.with_context but not
+	// part of this frame's own columns. They may have a different length and are
+	// resolved only as a fallback (typically via an aggregation like .first()).
+	context map[string]series.Series
+}
+
+// WithContextColumns returns a copy of d that also resolves the given columns as
+// context (LazyFrame.with_context). They are not added to the frame's own columns.
+func (d DataFrame) WithContextColumns(cols map[string]series.Series) DataFrame {
+	if len(cols) == 0 {
+		return d
+	}
+	merged := make(map[string]series.Series, len(d.context)+len(cols))
+	for k, v := range d.context {
+		merged[k] = v
+	}
+	for k, v := range cols {
+		merged[k] = v
+	}
+	out := d
+	out.context = merged
+	return out
+}
+
+// contextColumn resolves a name against the context columns.
+func (d DataFrame) contextColumn(name string) (series.Series, bool) {
+	if d.context == nil {
+		return series.Series{}, false
+	}
+	s, ok := d.context[name]
+	return s, ok
 }
 
 func New(input NewInput) (DataFrame, error) {
@@ -239,9 +270,166 @@ func (d DataFrame) Glimpse(maxRows int) string {
 	return strings.TrimSpace(b.String())
 }
 
+// expandColExprs rewrites multi-column selectors and struct wildcards into one
+// concrete expr per output column. Handles: regex pl.col("^...$"), pl.all(),
+// pl.col("a","b"), pl.exclude(...), <selector>.exclude(...), and a struct
+// wildcard pl.col("s").struct.field("*") (expanded to one field column each). All
+// other exprs pass through unchanged.
+func (d DataFrame) expandColExprs(exprs []expr.Expr) ([]expr.Expr, error) {
+	needsExpand := false
+	for _, e := range exprs {
+		if _, ok := expr.SelectorColumns(e, d.order); ok {
+			needsExpand = true
+			break
+		}
+		if d.isStructWildcard(e) {
+			needsExpand = true
+			break
+		}
+	}
+	if !needsExpand {
+		return exprs, nil
+	}
+	out := make([]expr.Expr, 0, len(exprs))
+	for _, e := range exprs {
+		if cols, ok := expr.SelectorColumns(e, d.order); ok {
+			for _, name := range cols {
+				out = append(out, expr.Col(name))
+			}
+			continue
+		}
+		if d.isStructWildcard(e) {
+			target := e.Target()
+			// pl.struct([...]).struct.field("*") unpacks back to the source columns.
+			if target.Op() == "struct_pack" {
+				for _, f := range target.Names() {
+					out = append(out, expr.Col(f))
+				}
+				continue
+			}
+			for _, f := range d.structFieldNames(target.ColName()) {
+				out = append(out, target.StructField(f).Alias(f))
+			}
+			continue
+		}
+		out = append(out, e)
+	}
+	return out, nil
+}
+
+// isStructWildcard reports whether e is <struct>.struct.field("*"), where <struct>
+// is either an existing struct column or an inline pl.struct([...]).
+func (d DataFrame) isStructWildcard(e expr.Expr) bool {
+	if e.Kind() != expr.KindUnary || e.Op() != "struct_field:*" {
+		return false
+	}
+	t := e.Target()
+	if t == nil {
+		return false
+	}
+	if t.Op() == "struct_pack" {
+		return true
+	}
+	if t.Kind() != expr.KindCol {
+		return false
+	}
+	_, ok := d.cols[t.ColName()]
+	return ok
+}
+
+// structFieldNames returns the union of field names in a struct column, sorted
+// (gopolars structs are map-backed and don't preserve insertion order).
+func (d DataFrame) structFieldNames(column string) []string {
+	base, ok := d.cols[column]
+	if !ok {
+		return nil
+	}
+	keys := map[string]struct{}{}
+	for i := 0; i < d.height; i++ {
+		if m, ok := base.Value(i).(map[string]any); ok {
+			for k := range m {
+				keys[k] = struct{}{}
+			}
+		}
+	}
+	out := make([]string, 0, len(keys))
+	for k := range keys {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// allRowIndices returns [0,1,...,height-1] for whole-frame aggregation.
+func (d DataFrame) allRowIndices() []int {
+	idx := make([]int, d.height)
+	for i := range idx {
+		idx[i] = i
+	}
+	return idx
+}
+
+// aggToScalar reduces an aggregation node to a single scalar over the whole frame.
+// It backs MapAggregates so aggregations nested in row-wise expressions (e.g.
+// pl.col("b") + pl.col("c").first()) precompute to a broadcast constant. Returns
+// ok=false for non-aggregation nodes (the caller then recurses into children).
+func (d DataFrame) aggToScalar(e expr.Expr) (any, bool, error) {
+	if e.Kind() == expr.KindAgg {
+		v, err := (GroupBy{df: d}).evalAgg(e, d.allRowIndices())
+		return v, true, err
+	}
+	if e.Kind() == expr.KindUnary && e.Target() != nil {
+		switch e.Op() {
+		case "first", "last":
+			s, err := d.evalExprAsSeriesVectorized(*e.Target())
+			if err != nil {
+				return nil, false, err
+			}
+			if s.Len() == 0 {
+				return nil, true, nil
+			}
+			if e.Op() == "first" {
+				return s.Value(0), true, nil
+			}
+			return s.Value(s.Len() - 1), true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+// foldAggregates rewrites each expr, replacing any aggregation sub-expression with
+// its precomputed scalar (broadcast). allScalar is true when every expr is itself
+// a top-level aggregation (so a Select should reduce to a single row, like Polars);
+// it is false when any expr is a full-length column or a literal-only projection.
+func (d DataFrame) foldAggregates(exprs []expr.Expr) (out []expr.Expr, allScalar bool, err error) {
+	out = make([]expr.Expr, len(exprs))
+	allScalar = len(exprs) > 0
+	for i, e := range exprs {
+		if _, isTopAgg, aerr := d.aggToScalar(e); aerr != nil {
+			return nil, false, aerr
+		} else if !isTopAgg {
+			allScalar = false
+		}
+		folded, ferr := expr.MapAggregates(e, d.aggToScalar)
+		if ferr != nil {
+			return nil, false, ferr
+		}
+		out[i] = folded
+	}
+	return out, allScalar, nil
+}
+
 func (d DataFrame) Select(exprs ...expr.Expr) (DataFrame, error) {
 	if len(exprs) == 0 {
 		return d, nil
+	}
+	exprs, err := d.expandColExprs(exprs)
+	if err != nil {
+		return DataFrame{}, err
+	}
+	exprs, allScalar, err := d.foldAggregates(exprs)
+	if err != nil {
+		return DataFrame{}, err
 	}
 	outSeries := make([]series.Series, 0, len(exprs))
 	for _, ex := range exprs {
@@ -249,9 +437,18 @@ func (d DataFrame) Select(exprs ...expr.Expr) (DataFrame, error) {
 		if err != nil {
 			return DataFrame{}, err
 		}
+		// A pure-aggregation select reduces to a single row (Polars semantics):
+		// the broadcast scalar columns are sliced to their first element.
+		if allScalar && col.Len() > 1 {
+			col = col.Slice([]int{0})
+		}
 		outSeries = append(outSeries, col)
 	}
-	return New(NewInput{Series: outSeries})
+	out, err := New(NewInput{Series: outSeries})
+	if err != nil {
+		return DataFrame{}, err
+	}
+	return out.WithContextColumns(d.context), nil
 }
 
 func (d DataFrame) Filter(predicate expr.Expr) (DataFrame, error) {
@@ -266,6 +463,12 @@ func (d DataFrame) Filter(predicate expr.Expr) (DataFrame, error) {
 			v, err := expr.Eval(predicate, rowAccessor{df: d, row: i})
 			if err != nil {
 				return err
+			}
+			// A null predicate (e.g. a comparison against a null cell) drops the
+			// row, matching Polars: only rows where the predicate is True survive.
+			if v == nil {
+				mask[i] = false
+				continue
 			}
 			b, ok := v.(bool)
 			if !ok {
@@ -291,6 +494,13 @@ func (d DataFrame) Filter(predicate expr.Expr) (DataFrame, error) {
 }
 
 func (d DataFrame) WithColumns(exprs ...expr.Expr) (DataFrame, error) {
+	exprs, err := d.expandColExprs(exprs)
+	if err != nil {
+		return DataFrame{}, err
+	}
+	if exprs, _, err = d.foldAggregates(exprs); err != nil {
+		return DataFrame{}, err
+	}
 	out := d.shallowClone()
 	for _, ex := range exprs {
 		col, err := d.evalExprAsSeriesVectorized(ex)
@@ -621,18 +831,24 @@ func (d DataFrame) Tail(n int) DataFrame {
 }
 
 func (d DataFrame) Slice(offset int, length int) DataFrame {
+	if length <= 0 || d.height == 0 {
+		return d.Limit(0)
+	}
+	// A negative offset counts from the end; the window [offset, offset+length)
+	// is then clamped to [0, height), so a window starting before row 0 keeps
+	// only its overlap (matching Polars) rather than sliding forward.
+	if offset < 0 {
+		offset = d.height + offset
+	}
+	end := offset + length
 	if offset < 0 {
 		offset = 0
 	}
-	if length < 0 {
-		length = 0
-	}
-	if offset >= d.height {
-		return d.Limit(0)
-	}
-	end := offset + length
 	if end > d.height {
 		end = d.height
+	}
+	if offset >= d.height || end <= offset {
+		return d.Limit(0)
 	}
 	indexes := make([]int, 0, end-offset)
 	for i := offset; i < end; i++ {
@@ -1388,6 +1604,13 @@ func (d DataFrame) FlattenStruct(column string, prefix string) (DataFrame, error
 			keys[k] = struct{}{}
 		}
 	}
+	// Emit field columns in a deterministic (sorted) order; map-backed structs
+	// don't preserve insertion order.
+	keyList := make([]string, 0, len(keys))
+	for k := range keys {
+		keyList = append(keyList, k)
+	}
+	sort.Strings(keyList)
 	out := make([]series.Series, 0, len(d.order)+len(keys))
 	for _, name := range d.order {
 		if name == column {
@@ -1396,7 +1619,7 @@ func (d DataFrame) FlattenStruct(column string, prefix string) (DataFrame, error
 		s, _ := d.Series(name)
 		out = append(out, s.Clone())
 	}
-	for key := range keys {
+	for _, key := range keyList {
 		values := make([]any, d.height)
 		for i := 0; i < d.height; i++ {
 			v := base.Value(i)
@@ -1760,10 +1983,11 @@ func (d DataFrame) clone() DataFrame {
 // column buffers.
 func (d DataFrame) shallowClone() DataFrame {
 	out := DataFrame{
-		schema: make(dtypes.Schema, len(d.schema)),
-		cols:   make(map[string]series.Series, len(d.cols)),
-		order:  make([]string, len(d.order)),
-		height: d.height,
+		schema:  make(dtypes.Schema, len(d.schema)),
+		cols:    make(map[string]series.Series, len(d.cols)),
+		order:   make([]string, len(d.order)),
+		height:  d.height,
+		context: d.context,
 	}
 	copy(out.schema, d.schema)
 	copy(out.order, d.order)
@@ -1780,6 +2004,10 @@ func (d DataFrame) evalExprAsSeries(e expr.Expr) (series.Series, error) {
 	if e.Kind() == expr.KindCol {
 		s, ok := d.cols[e.ColName()]
 		if !ok {
+			// Fall back to a with_context column (kept at its own length).
+			if cs, cok := d.contextColumn(e.ColName()); cok {
+				return cs.Rename(e.Name()), nil
+			}
 			return series.Series{}, fmt.Errorf("column %s not found", e.ColName())
 		}
 		return s.Rename(e.Name()), nil
@@ -1813,6 +2041,8 @@ func (d DataFrame) evalExprAsSeriesVectorized(e expr.Expr) (series.Series, error
 			return d.evalRank(*e.Target(), e.Name())
 		case e.Op() == "reverse":
 			return d.evalReverse(*e.Target(), e.Name())
+		case strings.HasPrefix(e.Op(), "shift:"):
+			return d.evalShift(*e.Target(), strings.TrimPrefix(e.Op(), "shift:"), e.Name())
 		case strings.HasPrefix(e.Op(), "rolling_"):
 			return d.evalRolling(*e.Target(), e.Op(), e.Name())
 		case strings.HasPrefix(e.Op(), "over:"):
@@ -1984,6 +2214,22 @@ func (d DataFrame) evalReverse(target expr.Expr, name string) (series.Series, er
 		out[i] = base.Value(d.height - 1 - i)
 	}
 	return series.New(name, base.DataType(), out)
+}
+
+// evalShift is the column-wise shift for Select/WithColumns. The row-wise eval
+// path treats "shift:" as identity (a window op can't be done per row), so the
+// vectorized evaluator dispatches here to reuse the typed Series shift, which
+// fills the vacated head/tail with nulls.
+func (d DataFrame) evalShift(target expr.Expr, spec string, name string) (series.Series, error) {
+	periods, err := strconv.Atoi(spec)
+	if err != nil {
+		return series.Series{}, fmt.Errorf("invalid shift periods %q: %w", spec, err)
+	}
+	base, err := d.evalExprAsSeriesVectorized(target)
+	if err != nil {
+		return series.Series{}, err
+	}
+	return base.Shift(periods).Rename(name), nil
 }
 
 // rollingFloat64Input extracts a []float64 view and validity mask from a Series
@@ -2549,6 +2795,14 @@ type rowAccessor struct {
 func (r rowAccessor) ValueByName(name string) (any, bool) {
 	s, ok := r.df.cols[name]
 	if !ok {
+		// with_context column: resolve at the current row if it is long enough,
+		// otherwise treat as null (mismatched lengths are caught when materialized).
+		if cs, cok := r.df.contextColumn(name); cok {
+			if r.row < cs.Len() {
+				return cs.Value(r.row), true
+			}
+			return nil, true
+		}
 		return nil, false
 	}
 	return s.Value(r.row), true
