@@ -645,6 +645,55 @@ func applyWindows(df frame.DataFrame, windows []logical.WindowSpec) (frame.DataF
 				for i, row := range ordered {
 					values[row] = int64(i + 1)
 				}
+			case "rank", "dense_rank":
+				// Ties (equal ORDER BY keys) share a rank; RANK leaves gaps
+				// (1,1,3), DENSE_RANK does not (1,1,2).
+				rank := int64(1)
+				dense := int64(1)
+				for i, row := range ordered {
+					if i > 0 && orderKeyChanged(current, w.OrderBy, ordered[i-1], row) {
+						rank = int64(i + 1)
+						dense++
+					}
+					if w.Func == "rank" {
+						values[row] = rank
+					} else {
+						values[row] = dense
+					}
+				}
+			case "lag", "lead":
+				s, ok := current.Series(w.Target)
+				if !ok {
+					return frame.DataFrame{}, fmt.Errorf("window target column %s not found", w.Target)
+				}
+				offset := w.Offset
+				if offset == 0 {
+					offset = 1
+				}
+				for i, row := range ordered {
+					j := i - offset
+					if w.Func == "lead" {
+						j = i + offset
+					}
+					if j >= 0 && j < len(ordered) {
+						values[row] = s.Value(ordered[j])
+					} else {
+						values[row] = w.Default
+					}
+				}
+			case "first_value", "last_value":
+				s, ok := current.Series(w.Target)
+				if !ok {
+					return frame.DataFrame{}, fmt.Errorf("window target column %s not found", w.Target)
+				}
+				edge := ordered[0]
+				if w.Func == "last_value" {
+					edge = ordered[len(ordered)-1]
+				}
+				v := s.Value(edge)
+				for _, row := range ordered {
+					values[row] = v
+				}
 			default:
 				agg, err := computePartitionAgg(current, ordered, w.Func, w.Target)
 				if err != nil {
@@ -657,9 +706,9 @@ func applyWindows(df frame.DataFrame, windows []logical.WindowSpec) (frame.DataF
 		}
 		dt := dtypes.Float64
 		switch w.Func {
-		case "count", "row_number":
+		case "count", "row_number", "rank", "dense_rank":
 			dt = dtypes.Int64
-		case "sum", "min", "max":
+		case "sum", "min", "max", "lag", "lead", "first_value", "last_value":
 			if s, ok := current.Series(w.Target); ok {
 				dt = s.DataType()
 			}
@@ -674,6 +723,21 @@ func applyWindows(df frame.DataFrame, windows []logical.WindowSpec) (frame.DataF
 		}
 	}
 	return current, nil
+}
+
+// orderKeyChanged reports whether two rows differ on any ORDER BY column
+// (used to detect rank ties).
+func orderKeyChanged(df frame.DataFrame, orderBy []string, prev int, row int) bool {
+	for _, col := range orderBy {
+		s, ok := df.Series(col)
+		if !ok {
+			continue
+		}
+		if compareForOrder(s.Value(prev), s.Value(row)) != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func computePartitionAgg(df frame.DataFrame, rows []int, fn string, target string) (any, error) {

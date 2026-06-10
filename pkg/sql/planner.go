@@ -74,6 +74,8 @@ func planSingle(parsed ParsedQuery, catalog Catalog) ([]logical.Node, error) {
 			PartitionBy: item.Window.PartitionBy,
 			OrderBy:     by,
 			Descending:  desc,
+			Offset:      item.Window.Offset,
+			Default:     item.Window.Default,
 		})
 	}
 	if len(windowSpecs) > 0 {
@@ -197,6 +199,9 @@ func planJoins(from FromClause, catalog Catalog) ([]logical.Node, error) {
 	for _, jc := range from.Joins {
 		if jc.Table.Subquery != nil {
 			return nil, fmt.Errorf("subquery join sources are not supported")
+		}
+		if jc.Table.Fn != nil {
+			return nil, fmt.Errorf("table function %s is not resolved; execute through a SQLContext", jc.Table.Fn.Name)
 		}
 		other, ok := catalog.Resolve(jc.Table.Name)
 		if !ok {
