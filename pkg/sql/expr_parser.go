@@ -397,6 +397,27 @@ func (p *exprParser) parseIdentifier() (expr.Expr, error) {
 	// function call
 	if p.peek().kind == tokLParen {
 		p.next()
+		// EXTRACT(part FROM expr) has its own argument syntax.
+		if strings.EqualFold(name, "extract") {
+			return p.parseExtract()
+		}
+		// COUNT(DISTINCT expr) counts distinct non-null values; DISTINCT inside
+		// any other function is rejected.
+		if keyword(p.peek(), "distinct") {
+			if !strings.EqualFold(name, "count") {
+				return expr.Expr{}, fmt.Errorf("DISTINCT inside %s is not supported", strings.ToUpper(name))
+			}
+			p.next()
+			arg, err := p.parse()
+			if err != nil {
+				return expr.Expr{}, err
+			}
+			if p.peek().kind != tokRParen {
+				return expr.Expr{}, fmt.Errorf("expected ')' to close COUNT(DISTINCT ...)")
+			}
+			p.next()
+			return expr.CountDistinct(arg), nil
+		}
 		args := make([]expr.Expr, 0)
 		if p.peek().kind != tokRParen {
 			for {
@@ -419,6 +440,29 @@ func (p *exprParser) parseIdentifier() (expr.Expr, error) {
 		return buildFunction(name, args)
 	}
 	return expr.Col(name), nil
+}
+
+// parseExtract parses the body of EXTRACT(part FROM expr); the opening '(' has
+// already been consumed.
+func (p *exprParser) parseExtract() (expr.Expr, error) {
+	part := p.peek()
+	if part.kind != tokIdent {
+		return expr.Expr{}, fmt.Errorf("expected date part after EXTRACT(")
+	}
+	p.next()
+	if !keyword(p.peek(), "from") {
+		return expr.Expr{}, fmt.Errorf("expected FROM in EXTRACT expression")
+	}
+	p.next()
+	e, err := p.parse()
+	if err != nil {
+		return expr.Expr{}, err
+	}
+	if p.peek().kind != tokRParen {
+		return expr.Expr{}, fmt.Errorf("expected ')' to close EXTRACT")
+	}
+	p.next()
+	return buildDatePart(part.text, e)
 }
 
 func (p *exprParser) parseCase() (expr.Expr, error) {

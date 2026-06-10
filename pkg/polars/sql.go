@@ -25,12 +25,6 @@ func ParseSQL(input ParseSQLInput) (LazyFrame, error) {
 	if err != nil {
 		return nil, err
 	}
-	if input.Table != "" && parsed.Table == "" {
-		parsed.Table = input.Table
-	}
-	if parsed.Table == "" {
-		return nil, fmt.Errorf("table is required")
-	}
 	tables := make(map[string]frame.DataFrame, len(input.Tables)+1)
 	for k, v := range input.Tables {
 		tables[k] = v
@@ -39,6 +33,15 @@ func ParseSQL(input ParseSQLInput) (LazyFrame, error) {
 		if _, ok := tables[input.Table]; !ok {
 			tables[input.Table] = input.Source
 		}
+	}
+	if err := resolveTableFns(&parsed, tables); err != nil {
+		return nil, err
+	}
+	if input.Table != "" && parsed.Table == "" {
+		parsed.Table = input.Table
+	}
+	if parsed.Table == "" {
+		return nil, fmt.Errorf("table is required")
 	}
 	catalog := gsql.NewCatalog(tables)
 	bound, err := gsql.Bind(parsed, catalog)
@@ -49,8 +52,12 @@ func ParseSQL(input ParseSQLInput) (LazyFrame, error) {
 	if err != nil {
 		return nil, err
 	}
+	source := input.Source
+	if f, ok := tables[parsed.Table]; ok {
+		source = f
+	}
 	return &lf{
-		source: input.Source,
+		source: source,
 		engine: input.Engine,
 		nodes:  nodes,
 	}, nil

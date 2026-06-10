@@ -3,6 +3,7 @@ package frame
 import (
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
@@ -134,8 +135,100 @@ func (g GroupBy) evalAgg(aggExpr expr.Expr, idxs []int) (any, error) {
 			seen[fmt.Sprintf("%v", v)] = struct{}{}
 		}
 		return int64(len(seen)), nil
+	case "count_distinct":
+		// SQL COUNT(DISTINCT col): distinct non-null values.
+		target := aggExpr.Target()
+		if target == nil {
+			return nil, fmt.Errorf("count_distinct target is nil")
+		}
+		seen := map[string]struct{}{}
+		for _, idx := range idxs {
+			v, err := expr.Eval(*target, rowAccessor{df: g.df, row: idx})
+			if err != nil {
+				return nil, err
+			}
+			if v == nil {
+				continue
+			}
+			seen[fmt.Sprintf("%v", v)] = struct{}{}
+		}
+		return int64(len(seen)), nil
+	case "std", "var", "median":
+		target := aggExpr.Target()
+		if target == nil {
+			return nil, fmt.Errorf("%s target is nil", aggExpr.Op())
+		}
+		values := make([]float64, 0, len(idxs))
+		for _, idx := range idxs {
+			v, err := expr.Eval(*target, rowAccessor{df: g.df, row: idx})
+			if err != nil {
+				return nil, err
+			}
+			if v == nil {
+				continue
+			}
+			f, ok := toFloat(v)
+			if !ok {
+				return nil, fmt.Errorf("%s expects numeric values", aggExpr.Op())
+			}
+			if math.IsNaN(f) {
+				continue
+			}
+			values = append(values, f)
+		}
+		if aggExpr.Op() == "median" {
+			return medianOf(values), nil
+		}
+		// Sample variance (ddof=1, the Polars default); null below two values.
+		if len(values) < 2 {
+			return nil, nil
+		}
+		mean := 0.0
+		for _, v := range values {
+			mean += v
+		}
+		mean /= float64(len(values))
+		ss := 0.0
+		for _, v := range values {
+			d := v - mean
+			ss += d * d
+		}
+		variance := ss / float64(len(values)-1)
+		if aggExpr.Op() == "var" {
+			return variance, nil
+		}
+		return math.Sqrt(variance), nil
+	case "first", "last":
+		target := aggExpr.Target()
+		if target == nil {
+			return nil, fmt.Errorf("%s target is nil", aggExpr.Op())
+		}
+		if len(idxs) == 0 {
+			return nil, nil
+		}
+		idx := idxs[0]
+		if aggExpr.Op() == "last" {
+			idx = idxs[len(idxs)-1]
+		}
+		return expr.Eval(*target, rowAccessor{df: g.df, row: idx})
 	}
 	return nil, fmt.Errorf("unsupported aggregate %s", aggExpr.Op())
+}
+
+// medianOf returns the median of values (mean of the middle two for even
+// counts), or nil for an empty slice.
+func medianOf(values []float64) any {
+	if len(values) == 0 {
+		return nil
+	}
+	sorted := make([]float64, len(values))
+	copy(sorted, values)
+	sort.Float64s(sorted)
+	mid := len(sorted) / 2
+	if len(sorted)%2 == 1 {
+		return sorted[mid]
+	}
+	return (sorted[mid-1] + sorted[mid]) / 2
 }
 
 func (g GroupBy) sum(target expr.Expr, idxs []int) (any, error) {
@@ -310,10 +403,10 @@ func (g GroupBy) extreme(aggExpr expr.Expr, idxs []int, isMin bool) (any, error)
 }
 
 func (g GroupBy) aggType(aggExpr expr.Expr) (dtypes.DataType, error) {
-	if aggExpr.Op() == "count" || aggExpr.Op() == "n_unique" {
+	if aggExpr.Op() == "count" || aggExpr.Op() == "n_unique" || aggExpr.Op() == "count_distinct" {
 		return dtypes.Int64, nil
 	}
-	if aggExpr.Op() == "mean" {
+	if aggExpr.Op() == "mean" || aggExpr.Op() == "std" || aggExpr.Op() == "var" || aggExpr.Op() == "median" {
 		return dtypes.Float64, nil
 	}
 	target := aggExpr.Target()

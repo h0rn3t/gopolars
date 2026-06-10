@@ -77,8 +77,9 @@ func resolveQueryColumns(parsed ParsedQuery, catalog Catalog) (ParsedQuery, erro
 	}
 	infos := make([]tableInfo, 0, len(refs))
 	for _, tr := range refs {
-		if tr.Subquery != nil {
-			// Subquery sources have no catalog schema; skip column resolution.
+		if tr.Subquery != nil || tr.Fn != nil {
+			// Subquery and unresolved table-function sources have no catalog
+			// schema; skip column resolution.
 			return parsed, nil
 		}
 		df, ok := catalog.Resolve(tr.Name)

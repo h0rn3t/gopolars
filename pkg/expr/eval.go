@@ -90,24 +90,36 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 		case "is_not_null":
 			return v != nil, nil
 		case "str_len":
+			if v == nil {
+				return nil, nil
+			}
 			s, ok := v.(string)
 			if !ok {
 				return nil, fmt.Errorf("str_len expects string")
 			}
 			return int64(len(s)), nil
 		case "str_lower":
+			if v == nil {
+				return nil, nil
+			}
 			s, ok := v.(string)
 			if !ok {
 				return nil, fmt.Errorf("str_lower expects string")
 			}
 			return strings.ToLower(s), nil
 		case "str_upper":
+			if v == nil {
+				return nil, nil
+			}
 			s, ok := v.(string)
 			if !ok {
 				return nil, fmt.Errorf("str_upper expects string")
 			}
 			return strings.ToUpper(s), nil
 		case "str_trim":
+			if v == nil {
+				return nil, nil
+			}
 			s, ok := v.(string)
 			if !ok {
 				return nil, fmt.Errorf("str_trim expects string")
@@ -571,9 +583,28 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				}
 				return m[key], nil
 			}
+			if out, handled, err := evalSQLUnary(e.Op(), v); handled {
+				return out, err
+			}
 			return nil, fmt.Errorf("unsupported unary op %s", e.Op())
 		}
 	case KindTern:
+		if e.Op() == "str_pad_start" || e.Op() == "str_pad_end" || e.Op() == "str_split_part" {
+			target, err := Eval(*e.Target(), row)
+			if err != nil {
+				return nil, err
+			}
+			left, err := Eval(*e.Left(), row)
+			if err != nil {
+				return nil, err
+			}
+			right, err := Eval(*e.Right(), row)
+			if err != nil {
+				return nil, err
+			}
+			out, _, err := evalSQLTern(e.Op(), target, left, right)
+			return out, err
+		}
 		if e.Op() == "clip" {
 			current, err := Eval(*e.Target(), row)
 			if err != nil {
@@ -965,6 +996,9 @@ func evalBin(op string, left any, right any) (any, error) {
 	case "search_sorted":
 		return left, nil
 	default:
+		if out, handled, err := evalSQLBin(op, left, right); handled {
+			return out, err
+		}
 		return nil, fmt.Errorf("unsupported binary op %s", op)
 	}
 }

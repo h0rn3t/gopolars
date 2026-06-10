@@ -5,7 +5,9 @@ import (
 	"testing"
 )
 
-func TestParseRejectsUnsupportedStatements(t *testing.T) {
+// Parse is the SELECT-only entry point (DataFrame.SQL / LazyFrame.SQL); it
+// keeps rejecting every non-SELECT statement.
+func TestParseRejectsNonSelectStatements(t *testing.T) {
 	cases := []string{
 		"CREATE TABLE x AS SELECT * FROM t",
 		"DROP TABLE t",
@@ -27,8 +29,29 @@ func TestParseRejectsUnsupportedStatements(t *testing.T) {
 	}
 }
 
-func TestParseRejectsTableFunction(t *testing.T) {
-	if _, err := Parse("SELECT * FROM read_csv('x.csv')"); err == nil {
-		t.Fatalf("expected error for table function in FROM")
+// ParseStatement keeps DML and ALTER unsupported (matching Polars SQL).
+func TestParseStatementRejectsDML(t *testing.T) {
+	cases := []string{
+		"INSERT INTO t VALUES (1)",
+		"UPDATE t SET a = 1",
+		"DELETE FROM t",
+		"ALTER TABLE t ADD COLUMN c INT",
+		"DESCRIBE t",
+		"USE db",
+	}
+	for _, q := range cases {
+		_, err := ParseStatement(q)
+		if err == nil {
+			t.Fatalf("ParseStatement(%q) returned nil error, want unsupported error", q)
+		}
+		if !strings.Contains(err.Error(), "unsupported") {
+			t.Fatalf("ParseStatement(%q) error = %v, want it to mention 'unsupported'", q, err)
+		}
+	}
+}
+
+func TestParseRejectsUnknownTableFunction(t *testing.T) {
+	if _, err := Parse("SELECT * FROM read_xlsx('x.xlsx')"); err == nil {
+		t.Fatalf("expected error for unknown table function in FROM")
 	}
 }

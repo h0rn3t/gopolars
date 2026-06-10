@@ -50,17 +50,23 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 ### SQL and Query Planning
 
 - SQL parsing and planning for `SELECT` pipelines
+- Session DDL via `SQLContext`: `CREATE TABLE <name> AS <select>`, `DROP TABLE [IF EXISTS]`, `TRUNCATE TABLE`, `SHOW TABLES`, `EXPLAIN <select>`
+- Table functions in `FROM`/`JOIN`: `read_csv('path')`, `read_parquet('path')`, `read_json('path')`, `read_ipc('path')` (with aliases, usable in CTEs and subqueries)
 - Joins: `INNER`, `LEFT`, `RIGHT`, `FULL [OUTER]`, `CROSS` (and comma cross joins), with table aliases and qualified columns
 - Boolean predicate logic (`AND`/`OR`/`NOT`) with correct precedence in `WHERE`/`HAVING`/`ON`
 - `CASE WHEN … THEN … ELSE … END`, `IS [NOT] NULL`, `IN`/`BETWEEN`/`LIKE`, `CAST(x AS t)` / `x::t`
-- Scalar functions: string (`UPPER`, `LOWER`, `LENGTH`, `SUBSTR`, `TRIM`, `CONCAT`, `REPLACE`), math (`ABS`, `ROUND`, `CEIL`, `FLOOR`, `POWER`, `SQRT`, `MOD`), date (`YEAR`/`MONTH`/`DAY`/`HOUR`/`MINUTE`/`SECOND`), and `COALESCE`/`NULLIF`
-- Aggregates (`SUM`/`MIN`/`MAX`/`AVG`/`COUNT`/`N_UNIQUE`), `GROUP BY`/`HAVING`, `ORDER BY`, `SELECT DISTINCT`, `LIMIT`/`OFFSET`
+- Scalar functions:
+  - string: `UPPER`, `LOWER`, `LENGTH`/`CHAR_LENGTH`, `OCTET_LENGTH`, `BIT_LENGTH`, `SUBSTR`, `LEFT`, `RIGHT`, `TRIM`/`LTRIM`/`RTRIM`, `CONCAT`, `CONCAT_WS`, `REPLACE`, `REVERSE`, `INITCAP`, `LPAD`/`RPAD`, `SPLIT_PART`, `STRPOS`/`POSITION`, `STARTS_WITH`/`ENDS_WITH`, `REGEXP_LIKE`
+  - math: `ABS`, `ROUND`, `CEIL`, `FLOOR`, `POWER`, `SQRT`, `CBRT`, `MOD`, `EXP`, `LN`, `LOG` (1/2-arg), `LOG2`, `LOG10`, `LOG1P`, `SIGN`, `PI()`, `DEGREES`/`RADIANS`, `SIN`/`COS`/`TAN`/`COT`, `ASIN`/`ACOS`/`ATAN`/`ATAN2`
+  - temporal: `YEAR`/`MONTH`/`DAY`/`HOUR`/`MINUTE`/`SECOND`, `DATE_PART('part', d)` / `EXTRACT(part FROM d)`, `DAYOFWEEK`, `DAYOFYEAR`/`ORDINAL_DAY`
+  - conditional: `COALESCE`, `NULLIF`, `IFNULL`, `IF(cond, a, b)`, `GREATEST`/`LEAST`
+- Aggregates: `SUM`/`MIN`/`MAX`/`AVG`/`COUNT`/`COUNT(DISTINCT col)`/`N_UNIQUE`/`STDDEV`/`VARIANCE`/`MEDIAN`/`FIRST`/`LAST`, with `GROUP BY`/`HAVING`, `ORDER BY`, `SELECT DISTINCT`, `LIMIT`/`OFFSET`
+- Window functions: `SUM`/`MEAN`/`MIN`/`MAX`/`COUNT`, `ROW_NUMBER`, `RANK`/`DENSE_RANK`, `LAG`/`LEAD` (offset + default), `FIRST_VALUE`/`LAST_VALUE` with `PARTITION BY` and `ORDER BY`
 - CTE support (`WITH ... AS (...)`)
 - Subqueries in `FROM`
 - Set operations: `UNION`, `INTERSECT`, `EXCEPT`
-- Window expression support with `PARTITION BY` and `ORDER BY`
 - Logical optimization passes including pushdown and adaptive planning rules
-- Out of scope (clear error): DDL (`CREATE`/`DROP`/`ALTER`), SQL table functions (`read_csv`), `EXPLAIN`, `SHOW`, correlated subqueries
+- Out of scope (clear error): DML (`INSERT`/`UPDATE`/`DELETE`), `ALTER TABLE`, correlated subqueries — matching Polars SQL
 
 ### IO and Interoperability
 

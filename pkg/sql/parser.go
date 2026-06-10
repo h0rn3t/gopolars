@@ -44,6 +44,9 @@ type WindowSpec struct {
 	Alias       string
 	PartitionBy []string
 	OrderBy     []OrderItem
+	// Offset and Default parameterize LAG/LEAD.
+	Offset  int
+	Default any
 }
 
 // unsupportedStatements maps a leading keyword of an out-of-scope statement to a
@@ -154,7 +157,9 @@ func parseSelectQuery(raw string) (ParsedQuery, error) {
 	if !strings.HasPrefix(lower, "select ") {
 		return ParsedQuery{}, fmt.Errorf("only select queries are supported")
 	}
-	fromIdx := strings.Index(lower, " from ")
+	// Paren- and quote-aware: a FROM inside EXTRACT(... FROM ...) or a string
+	// literal is not the clause boundary.
+	fromIdx := topLevelIndexFold(normalized, " from ")
 	if fromIdx == -1 {
 		return ParsedQuery{}, fmt.Errorf("missing FROM clause")
 	}
@@ -322,48 +327,69 @@ func parseWindowExpr(raw string, alias string) (WindowSpec, error) {
 		return WindowSpec{}, fmt.Errorf("invalid OVER clause")
 	}
 	inside := strings.TrimSpace(overPart[1 : len(overPart)-1])
-	fnLower := strings.ToLower(fnPart)
-	spec := WindowSpec{}
-	switch {
-	case strings.HasPrefix(fnLower, "sum("):
-		target, ok := readFnArg(fnPart)
-		if !ok {
-			return WindowSpec{}, fmt.Errorf("invalid sum window expression")
+	lp := strings.Index(fnPart, "(")
+	if lp == -1 || !strings.HasSuffix(fnPart, ")") {
+		return WindowSpec{}, fmt.Errorf("invalid window expression")
+	}
+	fnName := strings.ToLower(strings.TrimSpace(fnPart[:lp]))
+	argsRaw := strings.TrimSpace(fnPart[lp+1 : len(fnPart)-1])
+	args := make([]string, 0, 3)
+	if argsRaw != "" {
+		for _, a := range splitTopLevel(argsRaw, ',') {
+			args = append(args, strings.TrimSpace(a))
 		}
-		spec.Func = "sum"
-		spec.Target = target
-	case strings.HasPrefix(fnLower, "mean(") || strings.HasPrefix(fnLower, "rolling_mean("):
-		target, ok := readFnArg(fnPart)
-		if !ok {
-			return WindowSpec{}, fmt.Errorf("invalid mean window expression")
+	}
+	wantWindowArgs := func(n int) error {
+		if len(args) != n {
+			return fmt.Errorf("window function %s expects %d argument(s), got %d", fnName, n, len(args))
+		}
+		return nil
+	}
+	spec := WindowSpec{}
+	switch fnName {
+	case "sum", "min", "max", "count", "first_value", "last_value":
+		if err := wantWindowArgs(1); err != nil {
+			return WindowSpec{}, err
+		}
+		spec.Func = fnName
+		spec.Target = args[0]
+	case "mean", "avg", "rolling_mean":
+		if err := wantWindowArgs(1); err != nil {
+			return WindowSpec{}, err
 		}
 		spec.Func = "mean"
-		spec.Target = target
-	case strings.HasPrefix(fnLower, "min("):
-		target, ok := readFnArg(fnPart)
-		if !ok {
-			return WindowSpec{}, fmt.Errorf("invalid min window expression")
+		spec.Target = args[0]
+	case "row_number", "rank", "dense_rank":
+		if err := wantWindowArgs(0); err != nil {
+			return WindowSpec{}, err
 		}
-		spec.Func = "min"
-		spec.Target = target
-	case strings.HasPrefix(fnLower, "max("):
-		target, ok := readFnArg(fnPart)
-		if !ok {
-			return WindowSpec{}, fmt.Errorf("invalid max window expression")
+		spec.Func = fnName
+	case "lag", "lead":
+		if len(args) < 1 || len(args) > 3 {
+			return WindowSpec{}, fmt.Errorf("window function %s expects between 1 and 3 arguments, got %d", fnName, len(args))
 		}
-		spec.Func = "max"
-		spec.Target = target
-	case strings.HasPrefix(fnLower, "count("):
-		target, ok := readFnArg(fnPart)
-		if !ok {
-			return WindowSpec{}, fmt.Errorf("invalid count window expression")
+		spec.Func = fnName
+		spec.Target = args[0]
+		spec.Offset = 1
+		if len(args) >= 2 {
+			off, err := strconv.Atoi(args[1])
+			if err != nil {
+				return WindowSpec{}, fmt.Errorf("window function %s requires an integer offset", fnName)
+			}
+			spec.Offset = off
 		}
-		spec.Func = "count"
-		spec.Target = target
-	case fnLower == "row_number()":
-		spec.Func = "row_number"
+		if len(args) == 3 {
+			def, err := parseExpression(args[2])
+			if err != nil {
+				return WindowSpec{}, err
+			}
+			if def.Kind() != expr.KindLit {
+				return WindowSpec{}, fmt.Errorf("window function %s requires a literal default", fnName)
+			}
+			spec.Default = def.Value()
+		}
 	default:
-		return WindowSpec{}, fmt.Errorf("unsupported window function")
+		return WindowSpec{}, fmt.Errorf("unsupported window function: %s", fnName)
 	}
 	if alias == "" {
 		alias = fmt.Sprintf("%s_window", spec.Func)
@@ -486,15 +512,6 @@ func topLevelIndexFold(s string, sub string) int {
 		}
 	}
 	return -1
-}
-
-func readFnArg(raw string) (string, bool) {
-	l := strings.Index(raw, "(")
-	r := strings.LastIndex(raw, ")")
-	if l == -1 || r == -1 || r <= l+1 {
-		return "", false
-	}
-	return strings.TrimSpace(raw[l+1 : r]), true
 }
 
 func readFirstToken(s string) (string, string) {

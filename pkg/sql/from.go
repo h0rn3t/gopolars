@@ -7,12 +7,30 @@ import (
 	"github.com/h0rn3t/gopolars/pkg/expr"
 )
 
-// TableRef is a table reference in a FROM/JOIN clause: a named table or a
-// parenthesized subquery, with an optional alias.
+// TableRef is a table reference in a FROM/JOIN clause: a named table, a
+// parenthesized subquery, or a file-reading table function, with an optional
+// alias.
 type TableRef struct {
 	Name     string
 	Alias    string
 	Subquery *ParsedQuery
+	Fn       *TableFn
+}
+
+// TableFn is a file-reading table function reference in table position, e.g.
+// read_csv('data.csv'). Name is the canonical lowercase function name. The
+// reference is resolved to a DataFrame by the executing layer before binding.
+type TableFn struct {
+	Name string
+	Path string
+}
+
+// tableFnNames are the supported FROM-clause table functions.
+var tableFnNames = map[string]bool{
+	"read_csv":     true,
+	"read_parquet": true,
+	"read_json":    true,
+	"read_ipc":     true,
 }
 
 // key returns the identifier used to qualify columns of this table reference:
@@ -129,6 +147,20 @@ func readTableRef(words []string, pos int) (TableRef, int, error) {
 		tr.Name = w
 	}
 	pos++
+	// table function: an identifier immediately followed by a parenthesized
+	// argument list, e.g. read_csv('data.csv').
+	if tr.Subquery == nil && pos < len(words) && strings.HasPrefix(words[pos], "(") {
+		fnName := strings.ToLower(tr.Name)
+		if !tableFnNames[fnName] {
+			return TableRef{}, pos, fmt.Errorf("unknown table function %s", tr.Name)
+		}
+		path, err := parseTableFnArg(fnName, words[pos])
+		if err != nil {
+			return TableRef{}, pos, err
+		}
+		tr.Fn = &TableFn{Name: fnName, Path: path}
+		pos++
+	}
 	// optional alias: "AS name" or a bare identifier that is not a keyword
 	if pos < len(words) {
 		nxt := words[pos]
@@ -154,6 +186,25 @@ func readTableRef(words []string, pos int) (TableRef, int, error) {
 		}
 	}
 	return tr, pos, nil
+}
+
+// parseTableFnArg validates a table function's argument list at parse time:
+// exactly one single-quoted string literal (the file path).
+func parseTableFnArg(fnName string, group string) (string, error) {
+	inner := strings.TrimSpace(group[1 : len(group)-1])
+	toks, err := lex(inner)
+	if err != nil {
+		return "", fmt.Errorf("invalid %s argument: %w", fnName, err)
+	}
+	for _, t := range toks {
+		if t.kind == tokComma {
+			return "", fmt.Errorf("%s expects exactly one argument", fnName)
+		}
+	}
+	if len(toks) != 2 || toks[0].kind != tokString {
+		return "", fmt.Errorf("%s requires a string literal path", fnName)
+	}
+	return toks[0].text, nil
 }
 
 // matchJoinType recognizes a join keyword sequence at pos and returns its

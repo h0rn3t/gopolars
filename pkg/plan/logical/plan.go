@@ -77,4 +77,8 @@ type WindowSpec struct {
 	PartitionBy []string
 	OrderBy     []string
 	Descending  []bool
+	// Offset and Default parameterize LAG/LEAD (offset defaults to 1; Default
+	// fills rows shifted past the partition edge).
+	Offset  int
+	Default any
 }
