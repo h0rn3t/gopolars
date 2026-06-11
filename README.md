@@ -2,6 +2,9 @@
 
 [![CI](https://github.com/h0rn3t/gopolars/actions/workflows/ci.yml/badge.svg)](https://github.com/h0rn3t/gopolars/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/h0rn3t/gopolars/graph/badge.svg)](https://codecov.io/gh/h0rn3t/gopolars)
+[![Release](https://img.shields.io/github/v/release/h0rn3t/gopolars?sort=semver)](https://github.com/h0rn3t/gopolars/releases/latest)
+[![Go Reference](https://pkg.go.dev/badge/github.com/h0rn3t/gopolars/pkg/polars.svg)](https://pkg.go.dev/github.com/h0rn3t/gopolars/pkg/polars)
+[![Go 1.26+](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go)](go.mod)
 
 `gopolars` is a high-performance Go DataFrame library inspired by Polars Python API.
 
@@ -15,9 +18,34 @@
 
 Set the repository **Website** (GitHub → Settings → About) to the API docs URL above so it appears in the sidebar.
 
+## Installation
+
+```bash
+go get github.com/h0rn3t/gopolars@latest
+```
+
+Or pin the latest release:
+
+```bash
+go get github.com/h0rn3t/gopolars@v0.1.0
+```
+
+Import the public API package:
+
+```go
+import "github.com/h0rn3t/gopolars/pkg/polars"
+```
+
+Requires **Go 1.26+**. SIMD acceleration is optional and opt-in
+(`GOEXPERIMENT=simd` on `amd64`); see [Performance / SIMD Acceleration](#performance--simd-acceleration).
+
 ## Current status
 
-The project has completed parity waves through **v0.6** and now covers a broad core for Go-native analytics pipelines, including advanced joins, reshape operations, temporal windows, and performance diagnostics.\
+First tagged release: **[v0.1.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.1.0)**. The public
+API is versioned with SemVer; while `< v1.0.0` it may still evolve between minor versions (see the
+versioning and migration notes under [`docs/`](docs/)).
+
+The project has completed internal parity waves through **v0.6** and now covers a broad core for Go-native analytics pipelines, including advanced joins, reshape operations, temporal windows, and performance diagnostics.\
 It is production-usable for many DataFrame workloads, but it is **not yet a full drop-in replacement** for Python Polars.
 
 - ✅ Strong DataFrame/LazyFrame core for real analytics workloads
