@@ -45,13 +45,13 @@ First tagged release: **[v0.1.0](https://github.com/h0rn3t/gopolars/releases/tag
 API is versioned with SemVer; while `< v1.0.0` it may still evolve between minor versions (see the
 versioning and migration notes under [`docs/`](docs/)).
 
-The project has completed internal parity waves through **v0.6** and now covers a broad core for Go-native analytics pipelines, including advanced joins, reshape operations, temporal windows, and performance diagnostics.\
+The project has driven its internal parity waves up to the **v1.0 tracking matrix** ([`docs/parity/v1_0_coverage.json`](docs/parity/v1_0_coverage.json)) and now covers a broad core for Go-native analytics pipelines, including advanced joins, reshape operations, temporal windows, the SQL DDL and table-function surface, and performance diagnostics.\
 It is production-usable for many DataFrame workloads, but it is **not yet a full drop-in replacement** for Python Polars.
 
 - ✅ Strong DataFrame/LazyFrame core for real analytics workloads
 - ✅ Stable IO surface (CSV/JSON/Parquet/IPC + scans + pushdown)
 - ✅ **75%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
-- ✅ **675 / 680** tracked Python Polars methods implemented on the [full parity matrix](docs/parity/python_polars_full_matrix.md) (5 rows intentionally out of scope: `DataFrame.__setitem__` + four Series non-goals — see matrix notes)
+- ✅ **675 / 680** tracked Python Polars methods implemented on the [full parity matrix](#python-polars-vs-gopolars-function-matrix) (5 rows intentionally out of scope: `DataFrame.__setitem__` + four Series non-goals — see matrix notes)
 
 ## Implemented capabilities
 
@@ -59,21 +59,19 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 
 - Eager and lazy execution over a columnar in-memory DataFrame engine
 - Core DataFrame operations: `select`, `filter`, `with_columns`, `sort`, `limit`, `group_by`, `join`
-- Extended DataFrame surface: `slice`, `head`, `tail`, `unique`, `concat`, `fill_null`, `drop_nulls`, `drop`, `rename`
+- Extended DataFrame surface: `slice`, `head`, `tail`, `unique`, `concat`, `fill_null`/`fill_nan`, `drop_nulls`/`drop_nans`, `drop`, `rename`, `gather_every`, `top_k`/`bottom_k`, `interpolate`, `transpose`, horizontal reducers (`sum`/`min`/`max`/`mean_horizontal`), and `describe`
 - Eager fused fast path: `FilterAggregateDirect` computes `filter().sum/min/max/mean/count` in a single masked pass without building a lazy plan or materializing a filtered DataFrame
-- Join modes: `inner`, `left`, `right`, `full`, `semi`, `anti`, `cross`, `asof`
-- Temporal analytics: `group_by_dynamic`, `rolling_mean`
-- Reshape support: `melt`, `pivot`
-- Public `Series` API with null-aware operations, vector arithmetic and comparisons
-- Expression namespaces for string/datetime/list/struct workflows:
-  - `list_len`
-  - `list_contains`
-  - `list_get`
-  - `struct_field`
-  - `str_lower`, `str_upper`, `str_len`, `str_replace`, `str_trim`, `starts_with`, `contains`
-  - `dt_year`, `dt_month`, `dt_day`, `dt_hour`, `dt_weekday`
-  - `explode`
-  - `flatten` (struct flattening)
+- Join modes: `inner`, `left`, `right`, `full`, `semi`, `anti`, `cross`, `asof` (plus predicate `join_where`)
+- Temporal analytics: `group_by_dynamic`, time-based `rolling`, and the full rolling-aggregate family (`rolling_mean`/`sum`/`min`/`max`/`median`/`std`/`var`/`quantile`, their `*_by` variants, and `ewm_mean`)
+- Reshape support: `melt`/`unpivot`, `pivot`, `unstack`, `explode`, `unnest`, struct `flatten`, `transpose`
+- Rich public `Series` API: null-aware vector arithmetic and comparisons, aggregations, cumulative ops (`cum_sum`/`max`/`min`/`prod`/`count`), rolling and EWM windows, ranking/sorting, binning (`cut`/`qcut`/`hist`), bitwise ops, plus `str`/`dt`/`arr`/`struct`/`cat`/`bin` namespaces
+- Expression API (217 tracked `Expr` methods) with namespaces for string/datetime/list/struct workflows:
+  - string (`str`): `str_lower`, `str_upper`, `str_len`/`str_char_len`, `str_trim`/`str_ltrim`/`str_rtrim`, `str_replace`/`str_replace_all`, `str_substr`, `str_left`/`str_right`, `str_pad_start`/`str_pad_end`, `str_split_part`, `str_reverse`, `str_to_title`, `str_concat`/`str_concat_ws`, `starts_with`/`ends_with`, `contains`/`str_like`
+  - datetime (`dt`): `dt_year`, `dt_month`, `dt_day`, `dt_hour`, `dt_minute`, `dt_second`, `dt_weekday`, `dt_ordinal_day`
+  - list (`arr`): `list_len`, `list_get`, `list_contains`
+  - struct: `struct_field`, `struct` packing
+  - window / analytics: `over`, `rank`, `cum_*`, `rolling_*`, `ewm_mean`, `diff`, `shift`, `pct_change`, `interpolate`, `fill_null`/`fill_nan`
+  - reshape: `explode`, `flatten` (struct flattening)
 
 ### SQL and Query Planning
 
@@ -171,7 +169,8 @@ out, err := polars.ReadDatabase(ctx, polars.ReadDatabaseInput{
 | Cloud-style partitioned dataset scans                             | ✅ ready        |
 | Explain/telemetry schema v2 and perf markers                      | ✅ ready        |
 | Full Python Polars API parity (680-method tracked matrix)         | ✅ ~99.3% (675/680) |
-| Full SQL surface: DDL, SQL table functions, complete fn catalog   | 🚧 in progress |
+| SQL DDL + table functions in FROM/JOIN                            | ✅ ready        |
+| Long-tail SQL function-catalog parity with Python Polars          | 🚧 in progress |
 | Performance parity on all workloads                               | 🚧 in progress |
 | Ecosystem parity (all namespaces, plugins, advanced UDF patterns) | 🚧 in progress |
 
