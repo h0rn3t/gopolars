@@ -1,0 +1,83 @@
+name: Parity (nightly refresh)
+
+# The parity gate (TestParityBudgets) runs on every push as part of the normal
+# `go test -race ./...` job in ci.yml, validating the committed
+# bench/top30/top30_summary.json against docs/performance/parity_budgets.json.
+#
+# This workflow refreshes the numbers against Python Polars:
+#   * parity-refresh   re-runs the top30 cross-language suite (light: 1K + 1M) to
+#                      regenerate the summary, then re-runs the gate on the fresh
+#                      ratios.
+#   * cross-filter-sum re-runs ./run-bench.sh --python for the filter+sum pipeline
+#                      at 1,000,000 elements (all three Go execution paths) versus
+#                      Python Polars, and uploads the comparison summary.
+# Neither commits; a real regression surfaces as a failing gate / a visible row in
+# the comparison table, and a developer ratchets budgets after inspecting the diff.
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # daily 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  parity-refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Python Polars
+        run: python -m pip install -r bench/top30/requirements-bench.txt
+
+      - name: Refresh top30 summary (Python + Go, light mode)
+        # -light is a test-binary flag, so it must follow the package path.
+        run: go test -run=NONE -bench=BenchmarkTop30 ./bench/top30/ -light
+
+      - name: Enforce parity gate against fresh numbers
+        run: go test -run TestParityBudgets ./bench/top30/
+
+  cross-filter-sum:
+    name: Cross filter+sum vs Polars (1M)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Python Polars
+        run: python -m pip install -r bench/cross/requirements-bench.txt
+
+      - name: Run filter+sum cross benchmark at 1M vs Polars
+        # All three Go paths (eager / lazy / eager_direct) over both selectivity
+        # profiles, at 1,000,000 elements only, compared against Python Polars.
+        run: bash run-bench.sh --python -bench='BenchmarkCrossFilterSum/.+/.+/.+/size_1M$' -benchtime=2s -count=1
+
+      - name: Upload comparison summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filter-sum-1m-summary
+          path: bench/cross/filter_sum_summary.json
+          if-no-files-found: warn

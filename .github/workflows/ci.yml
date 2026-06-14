@@ -88,6 +88,11 @@ jobs:
         run: |
           go test -race -coverprofile=coverage.out -covermode=atomic ./pkg/...
 
+      - name: Coverage threshold gate
+        # Fails the build if any pkg/... package drops below its per-package floor
+        # (70%) or the combined total falls below 75%. See scripts/coverage.sh.
+        run: make cover-enforce
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         # Coverage upload is best-effort: a Codecov uploader/infra failure (e.g.

@@ -47,8 +47,17 @@ func join(left DataFrame, input JoinInput) (DataFrame, error) {
 		rightIndex[string(scratch)] = append(rightIndex[string(scratch)], i)
 	}
 
+	// matchedRight is only consulted to emit the unmatched right rows of a
+	// right/full join, so it is allocated only then — and as a bounded []bool
+	// over the right height rather than a map that grows with match count. For
+	// inner/left/semi/anti joins no match-tracking buffer is allocated at all.
+	needMatched := input.How == JoinTypeRight || input.How == JoinTypeFull
+	var matchedRight []bool
+	if needMatched {
+		matchedRight = make([]bool, input.Other.height)
+	}
+
 	pairs := make([]pair, 0, left.height)
-	matchedRight := map[int]struct{}{}
 	for i := 0; i < left.height; i++ {
 		scratch = chunk.AppendRowKey(scratch[:0], leftKeyCols, i)
 		rightRows := rightIndex[string(scratch)]
@@ -64,22 +73,21 @@ func join(left DataFrame, input JoinInput) (DataFrame, error) {
 		}
 		if input.How == JoinTypeSemi {
 			pairs = append(pairs, pair{left: i, right: rightRows[0]})
-			for _, rr := range rightRows {
-				matchedRight[rr] = struct{}{}
-			}
 			continue
 		}
 		if input.How == JoinTypeAnti {
 			continue
 		}
 		for _, rr := range rightRows {
-			matchedRight[rr] = struct{}{}
+			if needMatched {
+				matchedRight[rr] = true
+			}
 			pairs = append(pairs, pair{left: i, right: rr})
 		}
 	}
-	if input.How == JoinTypeRight || input.How == JoinTypeFull {
+	if needMatched {
 		for rr := 0; rr < input.Other.height; rr++ {
-			if _, ok := matchedRight[rr]; ok {
+			if matchedRight[rr] {
 				continue
 			}
 			pairs = append(pairs, pair{left: -1, right: rr})

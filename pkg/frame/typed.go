@@ -74,12 +74,43 @@ func (d DataFrame) filterBatch(predicate expr.Expr) (DataFrame, bool, error) {
 	if !ok {
 		return DataFrame{}, false, nil
 	}
-	out := make([]series.Series, 0, len(d.order))
-	for _, name := range d.order {
-		out = append(out, d.cols[name].Slice(keep))
-	}
-	df, err := New(NewInput{Series: out})
+	df, err := New(NewInput{Series: d.takeColumns(keep)})
 	return df, true, err
+}
+
+// takeColumns gathers the rows at keep across every column, in column order.
+// When the gather is large and the frame has more than one column the per-column
+// Slice calls run concurrently — each column is independent and the output slots
+// are disjoint — so the otherwise-serial materialization tail of filter/drop/
+// sort/unique uses the idle cores left over after the (already parallel)
+// predicate evaluation. Columns are distributed round-robin across at most
+// GOMAXPROCS workers, bounded by the column count. Below the threshold, for a
+// single column, or with one CPU, it stays sequential to avoid goroutine
+// overhead — the regime where gopolars already beats Polars on small data.
+func (d DataFrame) takeColumns(keep []int) []series.Series {
+	out := make([]series.Series, len(d.order))
+	workers := runtime.GOMAXPROCS(0)
+	if len(d.order) <= 1 || len(keep) < parallelFilterThreshold || workers <= 1 {
+		for i, name := range d.order {
+			out[i] = d.cols[name].Slice(keep)
+		}
+		return out
+	}
+	if workers > len(d.order) {
+		workers = len(d.order)
+	}
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for w := 0; w < workers; w++ {
+		go func(w int) {
+			defer wg.Done()
+			for i := w; i < len(d.order); i += workers {
+				out[i] = d.cols[d.order[i]].Slice(keep)
+			}
+		}(w)
+	}
+	wg.Wait()
+	return out
 }
 
 // filterKeep evaluates plan over cols and returns the surviving row indices in

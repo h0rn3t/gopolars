@@ -486,11 +486,7 @@ func (d DataFrame) Filter(predicate expr.Expr) (DataFrame, error) {
 			keep = append(keep, i)
 		}
 	}
-	out := make([]series.Series, 0, len(d.order))
-	for _, name := range d.order {
-		out = append(out, d.cols[name].Slice(keep))
-	}
-	return New(NewInput{Series: out})
+	return New(NewInput{Series: d.takeColumns(keep)})
 }
 
 func (d DataFrame) WithColumns(exprs ...expr.Expr) (DataFrame, error) {
@@ -544,11 +540,7 @@ func (d DataFrame) Sort(input SortInput) (DataFrame, error) {
 	// instead of an O(n log n) comparison sort. Falls back below for multi-key,
 	// nullable, NaN, or non-numeric sorts (preserving NaN-last / nulls ordering).
 	if idx, ok := d.radixArgsort(input); ok {
-		out := make([]series.Series, 0, len(d.order))
-		for _, name := range d.order {
-			out = append(out, d.cols[name].Slice(idx))
-		}
-		return New(NewInput{Series: out})
+		return New(NewInput{Series: d.takeColumns(idx)})
 	}
 
 	indexes := make([]int, d.height)
@@ -580,11 +572,7 @@ func (d DataFrame) Sort(input SortInput) (DataFrame, error) {
 		}
 		return false
 	})
-	out := make([]series.Series, 0, len(d.order))
-	for _, name := range d.order {
-		out = append(out, d.cols[name].Slice(indexes))
-	}
-	return New(NewInput{Series: out})
+	return New(NewInput{Series: d.takeColumns(indexes)})
 }
 
 // radixArgsort returns an index permutation for a sort whose leading key is a
@@ -1211,67 +1199,116 @@ func (d DataFrame) Interpolate(columns ...string) (DataFrame, error) {
 	return out, nil
 }
 
-func (d DataFrame) DropNaNs(columns ...string) DataFrame {
-	targets := map[string]struct{}{}
-	for _, c := range columns {
-		targets[c] = struct{}{}
+// dropTargets returns the column names DropNulls/DropNaNs must inspect: the
+// named columns that exist (in column order), or every column when none are
+// named. Missing names are ignored, matching the prior per-row behavior.
+func (d DataFrame) dropTargets(columns []string) []string {
+	if len(columns) == 0 {
+		return d.order
 	}
-	keep := make([]int, 0, d.height)
-	for row := 0; row < d.height; row++ {
-		drop := false
-		for _, name := range d.order {
-			if len(targets) > 0 {
-				if _, ok := targets[name]; !ok {
-					continue
-				}
-			}
-			v := d.cols[name].Value(row)
-			if fv, ok := v.(float64); ok && math.IsNaN(fv) {
-				drop = true
-				break
-			}
-		}
-		if !drop {
-			keep = append(keep, row)
-		}
-	}
-	out := make([]series.Series, 0, len(d.order))
+	out := make([]string, 0, len(columns))
 	for _, name := range d.order {
-		out = append(out, d.cols[name].Slice(keep))
+		if slices.Contains(columns, name) {
+			out = append(out, name)
+		}
 	}
-	df, _ := New(NewInput{Series: out})
+	return out
+}
+
+// gatherRows materializes the rows at keep across every column, gathering
+// columns concurrently when the gather is large enough to amortize it.
+func (d DataFrame) gatherRows(keep []int) DataFrame {
+	df, _ := New(NewInput{Series: d.takeColumns(keep)})
 	return df
 }
 
-func (d DataFrame) DropNulls(columns ...string) DataFrame {
-	targets := map[string]struct{}{}
-	for _, c := range columns {
-		targets[c] = struct{}{}
-	}
-	keep := make([]int, 0, d.height)
-	for row := 0; row < d.height; row++ {
-		drop := false
-		for _, name := range d.order {
-			if len(targets) > 0 {
-				if _, ok := targets[name]; !ok {
-					continue
-				}
-			}
-			if d.cols[name].IsNull(row) {
-				drop = true
-				break
-			}
-		}
-		if !drop {
+// keepFromDropped returns the ascending indices of rows whose dropped bit is
+// clear.
+func keepFromDropped(dropped []bool, height int) []int {
+	keep := make([]int, 0, height)
+	for row := 0; row < height; row++ {
+		if !dropped[row] {
 			keep = append(keep, row)
 		}
 	}
-	out := make([]series.Series, 0, len(d.order))
-	for _, name := range d.order {
-		out = append(out, d.cols[name].Slice(keep))
+	return keep
+}
+
+func (d DataFrame) DropNaNs(columns ...string) DataFrame {
+	// Only float64 columns can hold NaN, so the drop mask is built column-at-a-
+	// time over the typed backing buffers — no per-row boxing via Value(row).
+	var dropped []bool
+	for _, name := range d.dropTargets(columns) {
+		s := d.cols[name]
+		col := s.Column()
+		if col != nil {
+			f64s, ok := col.Float64s()
+			if !ok {
+				continue
+			}
+			nulls := col.Nulls()
+			for row, v := range f64s {
+				if (nulls == nil || !nulls[row]) && math.IsNaN(v) {
+					if dropped == nil {
+						dropped = make([]bool, d.height)
+					}
+					dropped[row] = true
+				}
+			}
+			continue
+		}
+		// Defensive fallback for a column without a typed chunk.
+		for row := 0; row < d.height; row++ {
+			if fv, ok := s.Value(row).(float64); ok && math.IsNaN(fv) {
+				if dropped == nil {
+					dropped = make([]bool, d.height)
+				}
+				dropped[row] = true
+			}
+		}
 	}
-	df, _ := New(NewInput{Series: out})
-	return df
+	if dropped == nil {
+		return d // no NaN in scope: share the existing columns
+	}
+	return d.gatherRows(keepFromDropped(dropped, d.height))
+}
+
+func (d DataFrame) DropNulls(columns ...string) DataFrame {
+	// A null-free column drops nothing, so it is skipped via the cached null
+	// count; columns with nulls contribute their validity mask to the drop set
+	// in a single column-at-a-time pass instead of a per-row IsNull probe.
+	var dropped []bool
+	for _, name := range d.dropTargets(columns) {
+		s := d.cols[name]
+		col := s.Column()
+		if col != nil {
+			if col.NullCount() == 0 {
+				continue
+			}
+			for row, isNull := range col.Nulls() {
+				if isNull {
+					if dropped == nil {
+						dropped = make([]bool, d.height)
+					}
+					dropped[row] = true
+				}
+			}
+			continue
+		}
+		// Defensive fallback for a column without a typed chunk.
+		for row := 0; row < d.height; row++ {
+			if s.IsNull(row) {
+				if dropped == nil {
+					dropped = make([]bool, d.height)
+				}
+				dropped[row] = true
+			}
+		}
+	}
+	if dropped == nil {
+		return d // no nulls in scope: share the existing columns
+	}
+	return d.gatherRows(keepFromDropped(dropped, d.height))
 }
 
 func (d DataFrame) Unique(columns ...string) (DataFrame, error) {

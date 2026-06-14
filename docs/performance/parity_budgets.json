@@ -1,0 +1,125 @@
+{
+  "version": "v0.3",
+  "reference_scale": "1M",
+  "tolerance": 0.4,
+  "regression_check_ceiling": 3.0,
+  "_doc": "Parity gate contract. ratio = python_time / go_time at reference_scale; r_min is the minimum acceptable ratio. A workload passes when best measured ratio >= r_min AND (where baseline < regression_check_ceiling) has not regressed below baseline by more than tolerance. r_min seeded at 0.65x the measured ratio to absorb Python-side run-to-run variance on a shared machine; the ratio conflates Go time (controlled) with Python time (noisy), so the gate's strongest guarantee is the absolute r_min floor. Re-seed this file and parity_baseline.json from the same run when committing a new top30_summary.json, ideally on a quiescent machine. r_min<1.0 requires justification; out_of_scope excluded.",
+  "workloads": {
+    "DataFrame/drop_nulls": {
+      "r_min": 1.0
+    },
+    "DataFrame/fill_null": {
+      "r_min": 0.1763,
+      "justification": "Single-pass typed fill; floor tracks the measured 1M ratio."
+    },
+    "DataFrame/filter": {
+      "r_min": 0.172,
+      "justification": "Polars runs this op multi-threaded over chunked Arrow; gopolars now parallelizes the predicate eval and the per-column gather, but floors at the measured 1M ratio. Ratchet upward as the path improves."
+    },
+    "DataFrame/group_by": {
+      "r_min": 0.715,
+      "justification": "Polars runs this op multi-threaded over chunked Arrow; gopolars now parallelizes the predicate eval and the per-column gather, but floors at the measured 1M ratio. Ratchet upward as the path improves."
+    },
+    "DataFrame/head": {
+      "r_min": 0.5755,
+      "justification": "Sub-microsecond fixed overhead dominates at this scale; not materialization-bound."
+    },
+    "DataFrame/join": {
+      "r_min": 0.1609,
+      "justification": "Polars runs this op multi-threaded over chunked Arrow; gopolars now parallelizes the predicate eval and the per-column gather, but floors at the measured 1M ratio. Ratchet upward as the path improves."
+    },
+    "DataFrame/select": {
+      "r_min": 1.0
+    },
+    "DataFrame/sort": {
+      "r_min": 0.4011,
+      "justification": "Polars runs this op multi-threaded over chunked Arrow; gopolars now parallelizes the predicate eval and the per-column gather, but floors at the measured 1M ratio. Ratchet upward as the path improves."
+    },
+    "DataFrame/tail": {
+      "r_min": 0.3811,
+      "justification": "Sub-microsecond fixed overhead dominates at this scale; not materialization-bound."
+    },
+    "DataFrame/unique": {
+      "r_min": 0.208,
+      "justification": "Polars runs this op multi-threaded over chunked Arrow; gopolars now parallelizes the predicate eval and the per-column gather, but floors at the measured 1M ratio. Ratchet upward as the path improves."
+    },
+    "DataFrame/with_columns": {
+      "r_min": 1.0
+    },
+    "Expr/cum_sum": {
+      "r_min": 1.0
+    },
+    "Expr/fill_nan": {
+      "r_min": 0.1921,
+      "justification": "Single-pass typed fill; floor tracks the measured 1M ratio."
+    },
+    "Expr/fill_null": {
+      "r_min": 0.1233,
+      "justification": "Single-pass typed fill; floor tracks the measured 1M ratio."
+    },
+    "Expr/over": {
+      "r_min": 0.2609,
+      "justification": "Window partitioning is single-threaded in gopolars; floor tracks the measured 1M ratio."
+    },
+    "Expr/rank": {
+      "r_min": 0.4819,
+      "justification": "Window partitioning is single-threaded in gopolars; floor tracks the measured 1M ratio."
+    },
+    "Expr/rolling_max": {
+      "r_min": 0.9596,
+      "justification": "Floor tracks the measured 1M ratio; ratchet upward as the path improves."
+    },
+    "Expr/rolling_mean": {
+      "r_min": 1.0
+    },
+    "Expr/rolling_min": {
+      "r_min": 0.9672,
+      "justification": "Floor tracks the measured 1M ratio; ratchet upward as the path improves."
+    },
+    "Expr/rolling_sum": {
+      "r_min": 1.0
+    },
+    "LazyFrame/collect": {
+      "r_min": 1.0
+    },
+    "LazyFrame/inspect": {
+      "r_min": 1.0
+    },
+    "LazyFrame/sql": {
+      "r_min": 0.0,
+      "out_of_scope": true,
+      "justification": "Harness artifact: Polars evaluates a trivial cached lazy plan while gopolars runs the full SQL pipeline; not like-for-like. Excluded (r_min=0)."
+    },
+    "SQLContext/execute": {
+      "r_min": 1.0
+    },
+    "SQLContext/register": {
+      "r_min": 1.0
+    },
+    "SQLContext/tables": {
+      "r_min": 1.0
+    },
+    "Series/drop_nans": {
+      "r_min": 0.0586,
+      "justification": "Polars runs this op multi-threaded over chunked Arrow; gopolars now parallelizes the predicate eval and the per-column gather, but floors at the measured 1M ratio. Ratchet upward as the path improves."
+    },
+    "Series/fill_nan": {
+      "r_min": 0.2981,
+      "justification": "Single-pass typed fill; floor tracks the measured 1M ratio."
+    },
+    "Series/is_not_null": {
+      "r_min": 0.135,
+      "justification": "Boolean validity mask produced single-pass; floor tracks the measured 1M ratio."
+    },
+    "Series/is_null": {
+      "r_min": 0.1628,
+      "justification": "Boolean validity mask produced single-pass; floor tracks the measured 1M ratio."
+    },
+    "Series/null_count": {
+      "r_min": 1.0
+    },
+    "Series/to_list": {
+      "r_min": 1.0
+    }
+  }
+}

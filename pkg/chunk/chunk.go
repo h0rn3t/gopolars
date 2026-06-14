@@ -304,24 +304,87 @@ func (c *Column) Times() ([]time.Time, bool) {
 }
 
 // Slice gathers rows at the given indices into a new Column, preserving order.
+// All indices must be in [0, Len); for outer-join null-fill (-1 sentinels) use
+// Gather instead.
 func (c *Column) Slice(indices []int) *Column {
-	out := &Column{dtype: c.dtype, n: len(indices), nulls: make([]bool, len(indices)), nullCount: unknownNullCount}
+	return c.gatherTyped(indices, false)
+}
+
+// gatherSlice copies src[indices[d]] into dst[d] for every d. When needNulls is
+// set it also gathers validity: a -1 index or a null source row marks the
+// output row null (and leaves the typed value at its zero). When needNulls is
+// clear the tight value loop runs with no per-row branching — the case that
+// dominates null-free numeric gathers.
+func gatherSlice[T any](dst, src []T, indices []int, needNulls bool, outNulls, srcNulls []bool) {
+	if !needNulls {
+		for d, s := range indices {
+			dst[d] = src[s]
+		}
+		return
+	}
+	for d, s := range indices {
+		if s < 0 || (srcNulls != nil && srcNulls[s]) {
+			outNulls[d] = true
+			continue
+		}
+		dst[d] = src[s]
+	}
+}
+
+// gatherTyped builds a new Column by gathering rows at the given indices,
+// preserving order. It switches on dtype once and runs a tight typed loop,
+// rather than the per-row dtype switch that copyRow performs.
+//
+// When allowNullFill is true an index of -1 yields a null row (outer-join
+// null-fill); when false every index must be in range. If the source carries no
+// nulls and no null-fill is needed, the output validity slice is left nil — no
+// []bool is allocated and no per-row null bookkeeping runs — and the null count
+// is recorded as a known zero. This is the common case for filter/sort/unique
+// materialization over null-free columns.
+func (c *Column) gatherTyped(indices []int, allowNullFill bool) *Column {
+	n := len(indices)
+	out := &Column{dtype: c.dtype, n: n, nullCount: unknownNullCount}
+
+	// The gather can only introduce a null when the source actually has null
+	// rows or when a -1 sentinel is present. NullCount() is cached, so a
+	// null-free column (including one carrying an all-false validity slice from
+	// construction) takes the no-validity fast path. Probe for a sentinel only
+	// when null-fill is allowed and the source is otherwise null-free, so the
+	// common in-range gather stays a single pass.
+	needNulls := c.NullCount() != 0
+	if allowNullFill && !needNulls {
+		for _, s := range indices {
+			if s < 0 {
+				needNulls = true
+				break
+			}
+		}
+	}
+	if needNulls {
+		out.nulls = make([]bool, n)
+	} else {
+		out.nullCount = 0
+	}
+
 	switch c.dtype {
 	case dtypes.Int64:
-		out.i64 = make([]int64, len(indices))
+		out.i64 = make([]int64, n)
+		gatherSlice(out.i64, c.i64, indices, needNulls, out.nulls, c.nulls)
 	case dtypes.Float64:
-		out.f64 = make([]float64, len(indices))
+		out.f64 = make([]float64, n)
+		gatherSlice(out.f64, c.f64, indices, needNulls, out.nulls, c.nulls)
 	case dtypes.String, dtypes.Categorical, dtypes.Enum:
-		out.str = make([]string, len(indices))
+		out.str = make([]string, n)
+		gatherSlice(out.str, c.str, indices, needNulls, out.nulls, c.nulls)
 	case dtypes.Boolean:
-		out.bln = make([]bool, len(indices))
+		out.bln = make([]bool, n)
+		gatherSlice(out.bln, c.bln, indices, needNulls, out.nulls, c.nulls)
 	case dtypes.Datetime:
-		out.tim = make([]time.Time, len(indices))
+		out.tim = make([]time.Time, n)
+		gatherSlice(out.tim, c.tim, indices, needNulls, out.nulls, c.nulls)
 	default:
-		out.boxed = make([]any, len(indices))
-	}
-	for dst, src := range indices {
-		c.copyRow(out, dst, src)
+		out.boxed = make([]any, n)
+		gatherSlice(out.boxed, c.boxed, indices, needNulls, out.nulls, c.nulls)
 	}
 	return out
 }

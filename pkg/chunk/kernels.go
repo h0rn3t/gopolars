@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"sync/atomic"
-	"time"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 )
@@ -64,29 +63,7 @@ func (c *Column) CloneIfShared() *Column {
 // outer joins); all other indices must be in [0, Len). The source column is not
 // modified.
 func (c *Column) Gather(indices []int) *Column {
-	out := &Column{dtype: c.dtype, n: len(indices), nulls: make([]bool, len(indices)), nullCount: unknownNullCount}
-	switch c.dtype {
-	case dtypes.Int64:
-		out.i64 = make([]int64, len(indices))
-	case dtypes.Float64:
-		out.f64 = make([]float64, len(indices))
-	case dtypes.String, dtypes.Categorical, dtypes.Enum:
-		out.str = make([]string, len(indices))
-	case dtypes.Boolean:
-		out.bln = make([]bool, len(indices))
-	case dtypes.Datetime:
-		out.tim = make([]time.Time, len(indices))
-	default:
-		out.boxed = make([]any, len(indices))
-	}
-	for dst, src := range indices {
-		if src < 0 {
-			out.nulls[dst] = true
-			continue
-		}
-		c.copyRow(out, dst, src)
-	}
-	return out
+	return c.gatherTyped(indices, true)
 }
 
 // FillNullFloat64 returns a new Float64 column with every null entry replaced by
