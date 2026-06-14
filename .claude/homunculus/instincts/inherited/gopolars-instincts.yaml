@@ -1,0 +1,388 @@
+# Instincts generated from https://github.com/h0rn3t/gopolars
+# Generated: 2026-06-14T18:35:16.924Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: gopolars-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/h0rn3t/gopolars
+---
+
+# Gopolars Commit Length
+
+## Action
+
+Keep commit messages concise (~4 characters)
+
+## Evidence
+
+- Average commit message length: 4 chars
+- Based on 3 commits
+
+---
+id: gopolars-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/h0rn3t/gopolars
+---
+
+# Gopolars Naming Files
+
+## Action
+
+Use snake_case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: snake_case
+
+---
+id: gopolars-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/h0rn3t/gopolars
+---
+
+# Gopolars Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: gopolars-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/h0rn3t/gopolars
+---
+
+# Gopolars Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: gopolars-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/h0rn3t/gopolars
+---
+
+# Gopolars Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: gopolars-workflow-add-or-update-benchmarks
+trigger: "when doing add or update benchmarks"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/h0rn3t/gopolars
+---
+
+# Gopolars Workflow Add Or Update Benchmarks
+
+## Action
+
+Follow the add-or-update-benchmarks workflow:
+1. Edit or add files under bench/ to include new benchmark data, tests, or results.
+2. Update documentation or summary files (e.g., .md, .json, .csv) in bench/ or docs/performance/.
+3. Optionally update related Go implementation files in pkg/ to support new benchmarks.
+4. Update or run scripts (e.g., run-bench.sh) to generate or validate results.
+5. Update CI workflow files if benchmark automation is needed.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: bench/**, docs/performance/**, pkg/**.go
+
+---
+id: gopolars-workflow-expand-test-coverage
+trigger: "when doing expand test coverage"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/h0rn3t/gopolars
+---
+
+# Gopolars Workflow Expand Test Coverage
+
+## Action
+
+Follow the expand-test-coverage workflow:
+1. Add new *_test.go files or expand existing test files across multiple pkg/ subdirectories.
+2. Update scripts or Makefile to support new tests or coverage reporting.
+3. Update CI workflow files to ensure new tests are run.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: pkg/**/**_test.go, scripts/coverage.sh, Makefile
+
+---
+id: gopolars-instinct-file-naming
+trigger: "When creating or renaming a file in the repository"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: h0rn3t/gopolars
+---
+
+# Gopolars Instinct File Naming
+
+## Action
+
+Use snake_case for file names
+
+## Evidence
+
+- Pattern in namingConventions.files: snake_case
+- Consistent with Go community standards
+
+---
+id: gopolars-instinct-function-naming
+trigger: "When defining a new function"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: h0rn3t/gopolars
+---
+
+# Gopolars Instinct Function Naming
+
+## Action
+
+Use camelCase for function names
+
+## Evidence
+
+- Pattern in namingConventions.functions: camelCase
+
+---
+id: gopolars-instinct-class-naming
+trigger: "When defining a new struct or class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: h0rn3t/gopolars
+---
+
+# Gopolars Instinct Class Naming
+
+## Action
+
+Use PascalCase for struct or class names
+
+## Evidence
+
+- Pattern in namingConventions.classes: PascalCase
+
+---
+id: gopolars-instinct-constant-naming
+trigger: "When declaring a constant"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: h0rn3t/gopolars
+---
+
+# Gopolars Instinct Constant Naming
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for constant names
+
+## Evidence
+
+- Pattern in namingConventions.constants: SCREAMING_SNAKE_CASE
+
+---
+id: gopolars-instinct-import-style
+trigger: "When importing modules in Go files"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: h0rn3t/gopolars
+---
+
+# Gopolars Instinct Import Style
+
+## Action
+
+Use relative imports
+
+## Evidence
+
+- Pattern in importStyle: relative
+
+---
+id: gopolars-instinct-export-style
+trigger: "When exporting functions or variables"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: h0rn3t/gopolars
+---
+
+# Gopolars Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in exportStyle: named
+
+---
+id: gopolars-instinct-test-file-location
+trigger: "When adding or updating tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: h0rn3t/gopolars
+---
+
+# Gopolars Instinct Test File Location
+
+## Action
+
+Place Go test files as *_test.go under pkg/ subdirectories
+
+## Evidence
+
+- Pattern in filesInvolved: pkg/**/**_test.go
+- Architecture: testLocation is separate
+
+---
+id: gopolars-instinct-test-script-update
+trigger: "When adding new tests or updating test coverage"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: h0rn3t/gopolars
+---
+
+# Gopolars Instinct Test Script Update
+
+## Action
+
+Update scripts/coverage.sh and Makefile to support new tests or coverage reporting
+
+## Evidence
+
+- expand-test-coverage workflow: scripts/coverage.sh, Makefile updated
+
+---
+id: gopolars-instinct-test-ci-update
+trigger: "When adding or modifying tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: h0rn3t/gopolars
+---
+
+# Gopolars Instinct Test Ci Update
+
+## Action
+
+Update .github/workflows/ci.yml to ensure new tests are run
+
+## Evidence
+
+- expand-test-coverage workflow: .github/workflows/ci.yml updated
+
+---
+id: gopolars-instinct-commit-format-freeform
+trigger: "When making a commit"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: h0rn3t/gopolars
+---
+
+# Gopolars Instinct Commit Format Freeform
+
+## Action
+
+Use a freeform commit message without a required prefix; keep messages concise (average ~4 words)
+
+## Evidence
+
+- commits.type: freeform
+- commits.prefixes: []
+- commits.averageLength: 4
+
+---
+id: gopolars-instinct-add-or-update-benchmarks
+trigger: "When someone wants to add new performance benchmarks or update benchmark results"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: h0rn3t/gopolars
+---
+
+# Gopolars Instinct Add Or Update Benchmarks
+
+## Action
+
+Edit or add files under bench/, update docs/performance/, optionally update pkg/ Go files, update/run run-bench.sh, and update CI workflow files if needed
+
+## Evidence
+
+- add-or-update-benchmarks workflow steps and filesInvolved
+
+---
+id: gopolars-instinct-expand-test-coverage
+trigger: "When someone wants to improve or expand test coverage for the codebase"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: h0rn3t/gopolars
+---
+
+# Gopolars Instinct Expand Test Coverage
+
+## Action
+
+Add or expand *_test.go files in pkg/, update scripts/coverage.sh and Makefile, and update CI workflow files
+
+## Evidence
+
+- expand-test-coverage workflow steps and filesInvolved
+
