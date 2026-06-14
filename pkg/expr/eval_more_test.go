@@ -23,7 +23,7 @@ func TestEvalBinArithmetic(t *testing.T) {
 		{"mul", int64(6), int64(7), int64(42), false},
 		{"div", int64(8), int64(2), int64(4), false},
 		{"add", 2.5, 0.5, 3.0, false},
-		{"div", 1.0, 0.0, nil, true},   // float divide by zero
+		{"div", 1.0, 0.0, nil, true},           // float divide by zero
 		{"div", int64(1), int64(0), nil, true}, // int divide by zero
 		{"add", "go", "lang", "golang", false}, // string concat
 		{"sub", "a", "b", nil, true},           // unsupported string op
@@ -65,10 +65,10 @@ func TestEvalBinComparisons(t *testing.T) {
 		{"gt", "b", "a", true},
 		{"eq", int64(5), int64(5), true},
 		{"ne", int64(5), int64(6), true},
-		{"gt", nil, int64(1), nil},      // null comparison -> null
-		{"eq", nil, int64(1), nil},      // null equality -> null
-		{"eq", math.NaN(), 1.0, false},  // NaN never equal
-		{"ne", math.NaN(), 1.0, true},   // NaN always not-equal
+		{"gt", nil, int64(1), nil},     // null comparison -> null
+		{"eq", nil, int64(1), nil},     // null equality -> null
+		{"eq", math.NaN(), 1.0, false}, // NaN never equal
+		{"ne", math.NaN(), 1.0, true},  // NaN always not-equal
 	}
 	for _, tc := range cases {
 		got, err := evalBin(tc.op, tc.l, tc.r)
@@ -260,11 +260,11 @@ func TestSQLSubstr(t *testing.T) {
 	}{
 		{"hello", 1, 3, "hel"},
 		{"hello", 2, 3, "ell"},
-		{"hello", 0, 2, "he"},   // start < 1 clamps to 1
-		{"hello", 4, 10, "lo"},  // length clamps to end
-		{"hello", 9, 2, ""},     // start past end
-		{"hello", 2, 0, ""},     // non-positive length
-		{"héllo", 1, 2, "hé"},   // rune-aware
+		{"hello", 0, 2, "he"},  // start < 1 clamps to 1
+		{"hello", 4, 10, "lo"}, // length clamps to end
+		{"hello", 9, 2, ""},    // start past end
+		{"hello", 2, 0, ""},    // non-positive length
+		{"héllo", 1, 2, "hé"},  // rune-aware
 	}
 	for _, tc := range cases {
 		if got := sqlSubstr(tc.s, tc.start, tc.length); got != tc.want {
