@@ -26,9 +26,9 @@ type parityBudgetEntry struct {
 }
 
 type parityBudgetFile struct {
-	Version        string                       `json:"version"`
-	ReferenceScale string                       `json:"reference_scale"`
-	Tolerance      float64                      `json:"tolerance"`
+	Version        string  `json:"version"`
+	ReferenceScale string  `json:"reference_scale"`
+	Tolerance      float64 `json:"tolerance"`
 	// RegressionCheckCeiling skips the baseline-regression check for workloads
 	// whose baseline ratio is at or above this value: where Go is already this
 	// many times faster than Polars, the op runs in nanoseconds and carries
