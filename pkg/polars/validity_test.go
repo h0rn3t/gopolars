@@ -51,6 +51,71 @@ func TestIsNullIsNotNullInverse(t *testing.T) {
 	}
 }
 
+func TestIsNotNullNullFreeAllTrue(t *testing.T) {
+	s := mkFloatSeries(t, []any{1.0, 2.0, 3.0, 4.0})
+	got := s.IsNotNull()
+	if got.NullCount() != 0 {
+		t.Fatalf("validity mask must not contain nulls")
+	}
+	for i := 0; i < s.Len(); i++ {
+		if !got.Value(i).(bool) {
+			t.Errorf("is_not_null[%d] = false, want true on a null-free column", i)
+		}
+	}
+}
+
+// TestIsNotNullAllocationDoesNotScale proves is_not_null builds its result from
+// the validity state in a bounded number of allocations rather than boxing per
+// row: the alloc count at 64K rows must not exceed the count at 1K rows.
+func TestIsNotNullAllocationDoesNotScale(t *testing.T) {
+	mk := func(n int) Series {
+		vals := make([]any, n)
+		for i := range vals {
+			vals[i] = float64(i)
+		}
+		return mkFloatSeries(t, vals)
+	}
+	small := mk(1024)
+	large := mk(1 << 16)
+	aSmall := testing.AllocsPerRun(50, func() { _ = small.IsNotNull() })
+	aLarge := testing.AllocsPerRun(50, func() { _ = large.IsNotNull() })
+	if aLarge > aSmall {
+		t.Fatalf("is_not_null allocation scales with rows: n=1024 -> %.0f allocs, n=65536 -> %.0f allocs", aSmall, aLarge)
+	}
+}
+
+// BenchmarkIsNullNullFree and BenchmarkIsNotNullNullFree run on a null-free
+// column — the shape the cross-language top30 suite exercises — so the two can
+// be compared directly. After the memmove-backed all-true fill they should sit
+// within a small constant factor instead of is_not_null running ~7x slower.
+func BenchmarkIsNullNullFree(b *testing.B) {
+	vals := make([]any, 1_000_000)
+	for i := range vals {
+		vals[i] = float64(i)
+	}
+	s := mkFloatSeries(b, vals)
+	_ = s.NullCount()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = s.IsNull()
+	}
+}
+
+func BenchmarkIsNotNullNullFree(b *testing.B) {
+	vals := make([]any, 1_000_000)
+	for i := range vals {
+		vals[i] = float64(i)
+	}
+	s := mkFloatSeries(b, vals)
+	_ = s.NullCount()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = s.IsNotNull()
+	}
+}
+
 func BenchmarkNullCountCached(b *testing.B) {
 	vals := make([]any, 1_000_000)
 	for i := range vals {

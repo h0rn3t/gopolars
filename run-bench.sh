@@ -49,12 +49,18 @@ done
 # where expanding an empty array otherwise errors.
 have_count=""
 have_benchtime=""
+have_bench=""
 for a in ${GO_ARGS[@]+"${GO_ARGS[@]}"}; do
 	[[ "$a" == -count* ]] && have_count=1
 	[[ "$a" == -benchtime* ]] && have_benchtime=1
+	[[ "$a" == -bench=* || "$a" == -bench ]] && have_bench=1
 done
 [[ -z "$have_count" ]] && GO_ARGS+=("-count=1")
 [[ -z "$have_benchtime" ]] && GO_ARGS+=("-benchtime=2s")
+# Default to the whole cross benchmark (all sizes). A caller-supplied -bench
+# overrides it, e.g. -bench='BenchmarkCrossFilterSum/.*size_1M$' to run only the
+# 1,000,000-element comparison.
+[[ -z "$have_bench" ]] && GO_ARGS+=('-bench=BenchmarkCrossFilterSum$')
 
 echo "==> gopolars filter+sum cross benchmark"
 echo "    repo:    $ROOT"
@@ -89,7 +95,6 @@ fi
 echo
 set -x
 ${ENV_PREFIX[@]+"${ENV_PREFIX[@]}"} go test ./bench/cross \
-	-bench='BenchmarkCrossFilterSum$' \
 	-benchmem \
 	-timeout=900s \
 	${GO_ARGS[@]+"${GO_ARGS[@]}"}
