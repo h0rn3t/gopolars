@@ -63,7 +63,15 @@ func (c *Column) CloneIfShared() *Column {
 // outer joins); all other indices must be in [0, Len). The source column is not
 // modified.
 func (c *Column) Gather(indices []int) *Column {
-	return c.gatherTyped(indices, true)
+	return gatherTyped(c, indices, true)
+}
+
+// GatherInt32 is Gather over an int32 index buffer. Joins keep their
+// (leftIdx, rightIdx) pair buffers as int32 — half the memory of []int at the
+// 1M-row reference scale — and gather output columns directly from them without
+// first widening to []int. An index of -1 yields a null row, as in Gather.
+func (c *Column) GatherInt32(indices []int32) *Column {
+	return gatherTyped(c, indices, true)
 }
 
 // FillNullFloat64 returns a new Float64 column with every null entry replaced by
@@ -345,4 +353,62 @@ func appendUint64(dst []byte, v uint64) []byte {
 	return append(dst,
 		byte(v), byte(v>>8), byte(v>>16), byte(v>>24),
 		byte(v>>32), byte(v>>40), byte(v>>48), byte(v>>56))
+}
+
+// CanPackJoinKey reports whether c's dtype packs losslessly into a uint64, so an
+// equi-join can key a map[uint64] directly instead of allocating a byte-encoded
+// Go string per row. Int64, Float64, Boolean, and Datetime each fit a 64-bit
+// slot bijectively (with NaN canonicalized); String/Categorical/Enum and boxed
+// dtypes do not and must use the AppendRowKey byte fallback.
+func CanPackJoinKey(c *Column) bool {
+	if c == nil {
+		return false
+	}
+	switch c.dtype {
+	case dtypes.Int64, dtypes.Float64, dtypes.Boolean, dtypes.Datetime:
+		return true
+	default:
+		return false
+	}
+}
+
+// PackKeyFunc returns a closure that maps a row index to a uint64 encoding of a
+// single fixed-width key column's value — an exact (collision-free) join-table
+// key — with the per-dtype switch hoisted out of the row loop (the closure
+// captures the typed backing slice). This avoids materializing a whole-column
+// []uint64 key buffer (O(rows) memory) just to pack keys the build/probe read
+// once. ok is false for dtypes that do not pack losslessly (see CanPackJoinKey),
+// in which case the caller uses the byte-encoded AppendRowKey fallback. Null rows
+// are NOT distinguished here: callers detect nulls via c.Nulls() and key them
+// separately, exactly as the byte path's null tag keeps null keys apart from
+// every real value. NaN is canonicalized so all NaN payloads pack equal,
+// matching appendRowKey.
+func PackKeyFunc(c *Column) (keyAt func(int) uint64, ok bool) {
+	switch c.dtype {
+	case dtypes.Int64:
+		v := c.i64
+		return func(i int) uint64 { return uint64(v[i]) }, true
+	case dtypes.Float64:
+		v := c.f64
+		return func(i int) uint64 {
+			bits := math.Float64bits(v[i])
+			if math.IsNaN(v[i]) {
+				bits = canonicalNaNBits
+			}
+			return bits
+		}, true
+	case dtypes.Boolean:
+		v := c.bln
+		return func(i int) uint64 {
+			if v[i] {
+				return 1
+			}
+			return 0
+		}, true
+	case dtypes.Datetime:
+		v := c.tim
+		return func(i int) uint64 { return uint64(v[i].UnixNano()) }, true
+	default:
+		return nil, false
+	}
 }

@@ -779,6 +779,45 @@ func compareNulls(ni, nj, nullsLast bool) int {
 	return 1
 }
 
+// viewRows builds a frame over the contiguous row window [start,end) by taking a
+// zero-copy View of each column (sharing the parent's backing arrays) rather than
+// re-materializing the rows. Cost is O(columns) regardless of the window size or
+// frame height — head/tail/limit/slice no longer copy per row. Because the views
+// alias the parent's buffers, both the source column and the view are marked
+// shared so any future in-place mutator copies first (copy-on-write); no in-place
+// mutator exists today, so reads are always safe. A column without a typed chunk
+// falls back to an index Slice over the window.
+func (d DataFrame) viewRows(start, end int) DataFrame {
+	if start < 0 {
+		start = 0
+	}
+	if end > d.height {
+		end = d.height
+	}
+	if end < start {
+		end = start
+	}
+	out := make([]series.Series, 0, len(d.order))
+	for _, name := range d.order {
+		s := d.cols[name]
+		col := s.Column()
+		if col == nil {
+			indexes := make([]int, 0, end-start)
+			for i := start; i < end; i++ {
+				indexes = append(indexes, i)
+			}
+			out = append(out, s.Slice(indexes))
+			continue
+		}
+		view := col.View(start, end)
+		col.MarkShared()
+		view.MarkShared()
+		out = append(out, series.FromColumn(name, view))
+	}
+	df, _ := New(NewInput{Series: out})
+	return df
+}
+
 func (d DataFrame) Limit(n int) DataFrame {
 	if n >= d.height {
 		return d
@@ -786,16 +825,7 @@ func (d DataFrame) Limit(n int) DataFrame {
 	if n < 0 {
 		n = 0
 	}
-	indexes := make([]int, n)
-	for i := 0; i < n; i++ {
-		indexes[i] = i
-	}
-	out := make([]series.Series, 0, len(d.order))
-	for _, name := range d.order {
-		out = append(out, d.cols[name].Slice(indexes))
-	}
-	df, _ := New(NewInput{Series: out})
-	return df
+	return d.viewRows(0, n)
 }
 
 func (d DataFrame) Tail(n int) DataFrame {
@@ -805,17 +835,7 @@ func (d DataFrame) Tail(n int) DataFrame {
 	if n < 0 {
 		n = 0
 	}
-	start := d.height - n
-	indexes := make([]int, n)
-	for i := 0; i < n; i++ {
-		indexes[i] = start + i
-	}
-	out := make([]series.Series, 0, len(d.order))
-	for _, name := range d.order {
-		out = append(out, d.cols[name].Slice(indexes))
-	}
-	df, _ := New(NewInput{Series: out})
-	return df
+	return d.viewRows(d.height-n, d.height)
 }
 
 func (d DataFrame) Slice(offset int, length int) DataFrame {
@@ -838,16 +858,7 @@ func (d DataFrame) Slice(offset int, length int) DataFrame {
 	if offset >= d.height || end <= offset {
 		return d.Limit(0)
 	}
-	indexes := make([]int, 0, end-offset)
-	for i := offset; i < end; i++ {
-		indexes = append(indexes, i)
-	}
-	out := make([]series.Series, 0, len(d.order))
-	for _, name := range d.order {
-		out = append(out, d.cols[name].Slice(indexes))
-	}
-	df, _ := New(NewInput{Series: out})
-	return df
+	return d.viewRows(offset, end)
 }
 
 func (d DataFrame) Drop(columns ...string) (DataFrame, error) {
@@ -1325,13 +1336,11 @@ func (d DataFrame) Unique(columns ...string) (DataFrame, error) {
 		keyColumns[j] = s.Column()
 	}
 	// firstRow holds the first-seen row index per distinct key, in encounter
-	// order — exactly the rows kept by unique() — with no per-row boxing.
+	// order — exactly the rows kept by unique() — with no per-row boxing. The
+	// per-column materialization rides the shared parallel gather (takeColumns),
+	// so a large unique() uses the idle cores instead of a serial column loop.
 	_, keep := chunk.GroupIDs(keyColumns, d.height)
-	out := make([]series.Series, 0, len(d.order))
-	for _, name := range d.order {
-		out = append(out, d.cols[name].Slice(keep))
-	}
-	return New(NewInput{Series: out})
+	return New(NewInput{Series: d.takeColumns(keep)})
 }
 
 func (d DataFrame) Equals(other DataFrame) (bool, error) {

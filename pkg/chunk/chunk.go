@@ -307,15 +307,20 @@ func (c *Column) Times() ([]time.Time, bool) {
 // All indices must be in [0, Len); for outer-join null-fill (-1 sentinels) use
 // Gather instead.
 func (c *Column) Slice(indices []int) *Column {
-	return c.gatherTyped(indices, false)
+	return gatherTyped(c, indices, false)
 }
+
+// indexInteger is the set of index integer widths the gather kernels accept.
+// int is the canonical row index; int32 halves the index memory for wide joins,
+// where the (leftIdx, rightIdx) pair buffers dominate the join's working set.
+type indexInteger interface{ ~int | ~int32 }
 
 // gatherSlice copies src[indices[d]] into dst[d] for every d. When needNulls is
 // set it also gathers validity: a -1 index or a null source row marks the
 // output row null (and leaves the typed value at its zero). When needNulls is
 // clear the tight value loop runs with no per-row branching — the case that
 // dominates null-free numeric gathers.
-func gatherSlice[T any](dst, src []T, indices []int, needNulls bool, outNulls, srcNulls []bool) {
+func gatherSlice[T any, I indexInteger](dst, src []T, indices []I, needNulls bool, outNulls, srcNulls []bool) {
 	if !needNulls {
 		for d, s := range indices {
 			dst[d] = src[s]
@@ -341,7 +346,10 @@ func gatherSlice[T any](dst, src []T, indices []int, needNulls bool, outNulls, s
 // []bool is allocated and no per-row null bookkeeping runs — and the null count
 // is recorded as a known zero. This is the common case for filter/sort/unique
 // materialization over null-free columns.
-func (c *Column) gatherTyped(indices []int, allowNullFill bool) *Column {
+//
+// indices is generic over int / int32 so a join can gather over int32 pair
+// buffers (half the memory of []int) without first widening them to []int.
+func gatherTyped[I indexInteger](c *Column, indices []I, allowNullFill bool) *Column {
 	n := len(indices)
 	out := &Column{dtype: c.dtype, n: n, nullCount: unknownNullCount}
 
