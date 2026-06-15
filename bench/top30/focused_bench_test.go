@@ -3,6 +3,7 @@ package top30
 import (
 	"testing"
 
+	"github.com/h0rn3t/gopolars/pkg/frame"
 	"github.com/h0rn3t/gopolars/pkg/polars"
 )
 
@@ -71,6 +72,47 @@ func BenchmarkJoin1M(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		if _, err := df.Join(in); err != nil {
+			b.Fatalf("join: %v", err)
+		}
+	}
+}
+
+// wideKeyFrame builds an n-row frame with a unique Int64 key `k` = 0..n-1 and a
+// Float64 payload. Unlike benchFrame's 1000-distinct "i", the key is fully
+// distinct, so a self-join with another wideKeyFrame has BOTH sides above the
+// parallel threshold — the large-right case that exercises the sharded build,
+// which benchFrame's tiny right dimension never reaches.
+func wideKeyFrame(b *testing.B, n int) polars.DataFrame {
+	b.Helper()
+	k := make([]any, n)
+	v := make([]any, n)
+	for i := range n {
+		k[i] = int64(i)
+		v[i] = float64(i) * 0.5
+	}
+	df, err := polars.NewDataFrame(polars.NewDataFrameInput{
+		Columns: []frame.SeriesInput{
+			{Name: "k", Values: k},
+			{Name: "w", Values: v},
+		},
+	})
+	if err != nil {
+		b.Fatalf("wideKeyFrame: %v", err)
+	}
+	return df
+}
+
+// BenchmarkJoinLargeRight measures an inner join where BOTH sides are 1M rows
+// with fully distinct keys, so the build side exceeds the threshold and the
+// sharded parallel build runs — the path the small-right BenchmarkJoin1M never
+// reaches. Used to decide whether the parallel build pays for its complexity.
+func BenchmarkJoinLargeRight(b *testing.B) {
+	left := wideKeyFrame(b, focusedRows)
+	right := wideKeyFrame(b, focusedRows)
+	in := polars.JoinInput{Other: right, LeftOn: []string{"k"}, RightOn: []string{"k"}, How: polars.JoinTypeInner}
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := left.Join(in); err != nil {
 			b.Fatalf("join: %v", err)
 		}
 	}

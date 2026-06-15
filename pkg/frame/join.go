@@ -15,7 +15,15 @@ import (
 // probes across multiple workers, and the right-row count at or above which the
 // probe table is built sharded. Below it the goroutine/stitch overhead outweighs
 // the work and the join stays single-threaded — the small-frame regime where
-// gopolars already beats Polars. Mirrors parallelFilterThreshold.
+// gopolars already beats Polars.
+//
+// Measured basis (Apple M4 Pro, profile-tune-join-and-rowop-headroom §1–§2): a
+// 1M×1M high-cardinality join builds ~5.6x faster sharded than single-goroutine
+// (25 ms vs 127 ms), while a small-right join (right ≈ 1000) stays sequential and
+// cheap and the 1K join stays fully sequential and unregressed. A single
+// constant across build/probe/gather holds because their crossovers sit in the
+// same band; 1<<15 sits comfortably between the small-right (sequential, fast)
+// and 1M (parallel, 5.6x) regimes.
 const parallelJoinThreshold = 1 << 15 // 32768 rows
 
 func join(left DataFrame, input JoinInput) (DataFrame, error) {
@@ -83,7 +91,11 @@ func joinKeyColumns(df DataFrame, keys []string) ([]*chunk.Column, error) {
 // they live in nullRows; in the byte path the null-tagged key keeps them in the
 // map alongside non-null keys (a non-null value never produces the null tag). A
 // non-null packed key never collides with nullRows, so null and value matches
-// never cross. After build the table is read-only and safe for concurrent probes.
+// never cross. For a large right side the build is sharded across workers (shard
+// s owns keys with k%shards==s, each worker writing only its own map) — measured
+// ~5.6x faster at 1M×1M than a single-goroutine build, since it parallelizes the
+// per-key posting-slice allocation. After build the maps are read-only and safe
+// for concurrent probes.
 type probeTable struct {
 	packed   bool
 	shards   []map[uint64][]int32 // packed: len >= 1; probe at shards[k % len]
@@ -91,9 +103,9 @@ type probeTable struct {
 	byteMap  map[string][]int32   // !packed: byte-encoded key -> right rows
 
 	// Probe-side (left) key material, prepared once at build time.
-	leftPacked  []uint64        // packed: one packed key per left row
-	leftNulls   []bool          // packed: left null mask (nil == no nulls)
-	leftKeyCols []*chunk.Column // !packed: left key columns for AppendRowKey
+	leftKeyAt   func(int) uint64 // packed: per-row key (dtype switch hoisted; no O(rows) buffer)
+	leftNulls   []bool           // packed: left null mask (nil == no nulls)
+	leftKeyCols []*chunk.Column  // !packed: left key columns for AppendRowKey
 }
 
 // buildProbeTable constructs the right-side probe table and prepares the
@@ -106,11 +118,11 @@ func buildProbeTable(leftKeyCols, rightKeyCols []*chunk.Column, rightHeight, wor
 		chunk.CanPackJoinKey(rightKeyCols[0]) &&
 		rightKeyCols[0].DataType() == leftKeyCols[0].DataType() {
 		pt.packed = true
-		rightKeys, _ := chunk.PackKeyColumn(rightKeyCols[0])
+		rightKeyAt, _ := chunk.PackKeyFunc(rightKeyCols[0])
 		rightNulls := rightKeyCols[0].Nulls()
-		pt.leftPacked, _ = chunk.PackKeyColumn(leftKeyCols[0])
+		pt.leftKeyAt, _ = chunk.PackKeyFunc(leftKeyCols[0])
 		pt.leftNulls = leftKeyCols[0].Nulls()
-		pt.buildPacked(rightKeys, rightNulls, rightHeight, workers)
+		pt.buildPacked(rightKeyAt, rightNulls, rightHeight, workers)
 		return pt
 	}
 
@@ -132,9 +144,11 @@ func buildProbeTable(leftKeyCols, rightKeyCols []*chunk.Column, rightHeight, wor
 // buildPacked fills the packed shard maps from the right-side packed keys. Above
 // the threshold it shards the key space across workers so each worker owns the
 // keys with k % shards == s and writes only its own map — no shared writes, and
-// the maps are read-only after this returns. Null right rows are collected into
-// nullRows in a single pass by a dedicated goroutine.
-func (pt *probeTable) buildPacked(keys []uint64, nulls []bool, height, workers int) {
+// the maps are read-only after this returns. This parallelizes the per-key
+// posting-slice allocation, which dominates a high-cardinality build (measured
+// ~5.6x faster than a single-goroutine build at 1M×1M). Null right rows are
+// collected into nullRows in a single pass by a dedicated goroutine.
+func (pt *probeTable) buildPacked(keyAt func(int) uint64, nulls []bool, height, workers int) {
 	shards := 1
 	if height >= parallelJoinThreshold && workers > 1 {
 		shards = workers
@@ -148,7 +162,7 @@ func (pt *probeTable) buildPacked(keys []uint64, nulls []bool, height, workers i
 				pt.nullRows = append(pt.nullRows, int32(i))
 				continue
 			}
-			k := keys[i]
+			k := keyAt(i)
 			m[k] = append(m[k], int32(i))
 		}
 		pt.shards[0] = m
@@ -164,7 +178,7 @@ func (pt *probeTable) buildPacked(keys []uint64, nulls []bool, height, workers i
 				if nulls != nil && nulls[i] {
 					continue
 				}
-				k := keys[i]
+				k := keyAt(i)
 				if int(k%us) == s {
 					m[k] = append(m[k], int32(i))
 				}
@@ -192,7 +206,7 @@ func (pt *probeTable) lookup(leftRow int, scratch *[]byte) []int32 {
 		if pt.leftNulls != nil && pt.leftNulls[leftRow] {
 			return pt.nullRows
 		}
-		k := pt.leftPacked[leftRow]
+		k := pt.leftKeyAt(leftRow)
 		return pt.shards[int(k%uint64(len(pt.shards)))][k]
 	}
 	*scratch = chunk.AppendRowKey((*scratch)[:0], pt.leftKeyCols, leftRow)

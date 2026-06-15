@@ -372,41 +372,43 @@ func CanPackJoinKey(c *Column) bool {
 	}
 }
 
-// PackKeyColumn returns a per-row uint64 encoding of a single fixed-width key
-// column — one allocation for the whole column rather than a Go string per row —
-// for use as an exact (collision-free) join-table key. ok is false for dtypes
-// that do not pack losslessly (see CanPackJoinKey), in which case the caller
-// uses the byte-encoded AppendRowKey fallback. Null rows are NOT distinguished
-// here: callers detect nulls via c.Nulls() and key them separately, exactly as
-// the byte path's null tag keeps null keys apart from every real value. NaN is
-// canonicalized so all NaN payloads pack equal, matching appendRowKey.
-func PackKeyColumn(c *Column) (keys []uint64, ok bool) {
-	keys = make([]uint64, c.n)
+// PackKeyFunc returns a closure that maps a row index to a uint64 encoding of a
+// single fixed-width key column's value — an exact (collision-free) join-table
+// key — with the per-dtype switch hoisted out of the row loop (the closure
+// captures the typed backing slice). This avoids materializing a whole-column
+// []uint64 key buffer (O(rows) memory) just to pack keys the build/probe read
+// once. ok is false for dtypes that do not pack losslessly (see CanPackJoinKey),
+// in which case the caller uses the byte-encoded AppendRowKey fallback. Null rows
+// are NOT distinguished here: callers detect nulls via c.Nulls() and key them
+// separately, exactly as the byte path's null tag keeps null keys apart from
+// every real value. NaN is canonicalized so all NaN payloads pack equal,
+// matching appendRowKey.
+func PackKeyFunc(c *Column) (keyAt func(int) uint64, ok bool) {
 	switch c.dtype {
 	case dtypes.Int64:
-		for i, v := range c.i64 {
-			keys[i] = uint64(v)
-		}
+		v := c.i64
+		return func(i int) uint64 { return uint64(v[i]) }, true
 	case dtypes.Float64:
-		for i, v := range c.f64 {
-			bits := math.Float64bits(v)
-			if math.IsNaN(v) {
+		v := c.f64
+		return func(i int) uint64 {
+			bits := math.Float64bits(v[i])
+			if math.IsNaN(v[i]) {
 				bits = canonicalNaNBits
 			}
-			keys[i] = bits
-		}
+			return bits
+		}, true
 	case dtypes.Boolean:
-		for i, v := range c.bln {
-			if v {
-				keys[i] = 1
+		v := c.bln
+		return func(i int) uint64 {
+			if v[i] {
+				return 1
 			}
-		}
+			return 0
+		}, true
 	case dtypes.Datetime:
-		for i, t := range c.tim {
-			keys[i] = uint64(t.UnixNano())
-		}
+		v := c.tim
+		return func(i int) uint64 { return uint64(v[i].UnixNano()) }, true
 	default:
 		return nil, false
 	}
-	return keys, true
 }
