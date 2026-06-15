@@ -182,11 +182,6 @@ func MinMaxFloat64(vals []float64) (float64, float64) {
 	return min, max
 }
 
-// CountFloat64 returns the number of elements in vals.
-func CountFloat64(vals []float64) int64 {
-	return int64(len(vals))
-}
-
 // AddSlicesFloat64 returns a new slice where each element is a[i] + b[i].
 // The result length is min(len(a), len(b)).
 func AddSlicesFloat64(a, b []float64) []float64 {

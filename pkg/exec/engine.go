@@ -13,7 +13,6 @@ import (
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	"github.com/h0rn3t/gopolars/pkg/plan/logical"
 	"github.com/h0rn3t/gopolars/pkg/plan/optimizer"
-	"github.com/h0rn3t/gopolars/pkg/plan/physical"
 	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
@@ -85,11 +84,8 @@ func fuseFilterFrameAgg(nodes []logical.Node) []logical.Node {
 
 func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.DataFrame, error) {
 	optimized = fuseFilterFrameAgg(optimized)
-	physicalPlan := physical.Build(optimized)
-	scheduler := NewScheduler()
 	current := source
-	err := scheduler.Run(physicalPlan, func(op physical.Operator) error {
-		n := op.Node
+	runNode := func(n logical.Node) error {
 		switch n.Type {
 		case logical.NodeScan:
 			return nil
@@ -459,9 +455,11 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 		default:
 			return fmt.Errorf("unsupported node type %s", n.Type)
 		}
-	})
-	if err != nil {
-		return frame.DataFrame{}, err
+	}
+	for _, n := range optimized {
+		if err := runNode(n); err != nil {
+			return frame.DataFrame{}, err
+		}
 	}
 	return current, nil
 }

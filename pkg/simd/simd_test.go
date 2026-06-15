@@ -137,26 +137,6 @@ func TestMinMaxFloat64(t *testing.T) {
 	}
 }
 
-func TestCountFloat64(t *testing.T) {
-	cases := []struct {
-		name string
-		in   []float64
-		want int64
-	}{
-		{"empty", []float64{}, 0},
-		{"single", []float64{5}, 1},
-		{"multi", []float64{1, 2, 3}, 3},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := CountFloat64(c.in)
-			if got != c.want {
-				t.Fatalf("CountFloat64(%v) = %v, want %v", c.in, got, c.want)
-			}
-		})
-	}
-}
-
 func TestAddSlicesFloat64(t *testing.T) {
 	cases := []struct {
 		name string
