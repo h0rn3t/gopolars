@@ -1,5 +1,0 @@
-goos: darwin
-goarch: arm64
-pkg: github.com/h0rn3t/gopolars/bench/cross
-cpu: Apple M4 Pro
-BenchmarkCrossFilterSum/filter_sum/empty/eager/size_1K-12         	

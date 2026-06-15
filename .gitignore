@@ -12,5 +12,6 @@ research/
 *.test
 *.out
 *.prof
+bench.txt
 __pycache__/
 .playwright-mcp/

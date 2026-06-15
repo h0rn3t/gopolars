@@ -67,7 +67,7 @@ func TestSetOpsIntersectAndExcept(t *testing.T) {
 	}
 }
 
-func TestFrameAggMaxMinAndScheduler(t *testing.T) {
+func TestFrameAggMaxMin(t *testing.T) {
 	ts := time.Date(2026, 5, 28, 10, 0, 0, 0, time.UTC)
 	source, err := frame.FromAnyColumns(frame.FromAnyColumnsInput{
 		Columns: []frame.SeriesInput{
@@ -100,10 +100,5 @@ func TestFrameAggMaxMinAndScheduler(t *testing.T) {
 	label, _ = minOut.Series("label")
 	if label.Value(0) != "a" {
 		t.Fatalf("min label: %v", label.Value(0))
-	}
-
-	sched := NewScheduler()
-	if sched.Workers <= 0 {
-		t.Fatal("scheduler workers має бути > 0")
 	}
 }

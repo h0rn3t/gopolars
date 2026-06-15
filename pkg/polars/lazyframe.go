@@ -18,7 +18,6 @@ import (
 	iparquet "github.com/h0rn3t/gopolars/pkg/io/parquet"
 	"github.com/h0rn3t/gopolars/pkg/plan/logical"
 	"github.com/h0rn3t/gopolars/pkg/plan/optimizer"
-	"github.com/h0rn3t/gopolars/pkg/plan/physical"
 	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
@@ -653,12 +652,7 @@ func (l *lf) Explain(optimized bool) string {
 	}
 	optimizedNodes := optimizer.Optimize(l.nodes)
 	optimizedStage := renderStage(optimizedNodes)
-	physicalPlan := physical.Build(optimizedNodes)
-	physicalOps := make([]logical.Node, 0, len(physicalPlan.Operators))
-	for _, op := range physicalPlan.Operators {
-		physicalOps = append(physicalOps, op.Node)
-	}
-	physicalStage := renderStage(physicalOps)
+	physicalStage := renderStage(optimizedNodes)
 	return "logical=[" + logicalStage + "] optimized=[" + optimizedStage + "] physical=[" + physicalStage + "]"
 }
 

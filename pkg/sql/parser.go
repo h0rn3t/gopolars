@@ -197,7 +197,7 @@ func parseSelectQuery(raw string) (ParsedQuery, error) {
 		switch {
 		case strings.HasPrefix(l, "where "):
 			clause, next := splitClause(remaining[len("where "):])
-			w, err := parseCondition(clause)
+			w, err := parseExpression(clause)
 			if err != nil {
 				return ParsedQuery{}, err
 			}
@@ -216,7 +216,7 @@ func parseSelectQuery(raw string) (ParsedQuery, error) {
 			remaining = strings.TrimSpace(next)
 		case strings.HasPrefix(l, "having "):
 			clause, next := splitClause(remaining[len("having "):])
-			h, err := parseCondition(clause)
+			h, err := parseExpression(clause)
 			if err != nil {
 				return ParsedQuery{}, err
 			}
@@ -479,11 +479,6 @@ func splitTopLevelSetOp(raw string) (string, string, string, bool) {
 		}
 	}
 	return "", "", "", false
-}
-
-// parseCondition parses a SQL predicate (WHERE/HAVING/ON) into an expression.
-func parseCondition(input string) (expr.Expr, error) {
-	return parseExpression(input)
 }
 
 // topLevelIndexFold returns the byte index of sub (already lowercase) within s,
