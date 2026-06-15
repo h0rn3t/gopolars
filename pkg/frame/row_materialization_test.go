@@ -55,7 +55,7 @@ func seqVsParDF(t *testing.T, op func() DataFrame) (seq, par DataFrame) {
 // at a size above the gather threshold, under -race. The sparse case keeps far
 // more than parallelFilterThreshold rows, so the parallel gather branch engages.
 func TestDropNullsParallelMatchesSequential(t *testing.T) {
-	const n = 1 << 16 // 65536: above parallelFilterThreshold (32768)
+	const n = 1 << 16                        // 65536: above parallelFilterThreshold (32768)
 	for _, nullEvery := range []int{10, 2} { // ~10% sparse, ~50% dense
 		t.Run(fmt.Sprintf("nullEvery=%d", nullEvery), func(t *testing.T) {
 			df := buildNullFixture(t, n, nullEvery)
