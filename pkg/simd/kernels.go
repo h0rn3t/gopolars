@@ -1,6 +1,9 @@
 package simd
 
-import "math/bits"
+import (
+	"math"
+	"math/bits"
+)
 
 // This file holds column kernels used by the vectorized expression engine.
 // They are defined without a build tag so the same implementation compiles in
@@ -200,4 +203,139 @@ func CompressIndices(mask Bitmap, nRows int) []int {
 		}
 	}
 	return out
+}
+
+// Cmp identifies a `column <cmp> literal` comparison for the single-pass
+// filter-reduce kernels (SumWhereFloat64 / MinMaxWhereFloat64).
+type Cmp uint8
+
+const (
+	CmpGT Cmp = iota // v > lit
+	CmpGE            // v >= lit
+	CmpLT            // v < lit
+	CmpLE            // v <= lit
+	CmpEQ            // v == lit
+	CmpNE            // v != lit
+)
+
+// whereKeep reports whether v passes `v <cmp> lit` using Go's native float
+// comparison. For gt/ge/lt/le/eq a NaN operand never passes (NaN compares
+// false); ne returns true for a NaN v (NaN != lit), matching IEEE.
+func whereKeep(v, lit float64, op Cmp) bool {
+	switch op {
+	case CmpGT:
+		return v > lit
+	case CmpGE:
+		return v >= lit
+	case CmpLT:
+		return v < lit
+	case CmpLE:
+		return v <= lit
+	case CmpEQ:
+		return v == lit
+	default: // CmpNE
+		return v != lit
+	}
+}
+
+func boolToU64(b bool) uint64 {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// whereMask returns all-ones (passing) or zero (not passing) so a caller can
+// select a value branchlessly via bit-AND.
+func whereMask(v, lit float64, op Cmp) uint64 {
+	return -boolToU64(whereKeep(v, lit, op))
+}
+
+// SumWhereFloat64 reduces vals over the rows passing `vals[i] <cmp> lit` in a
+// single pass, returning the sum of the passing values and their count. It
+// builds no predicate bitmap and makes no second pass.
+//
+// The sum is accumulated branchlessly via a bit-mask select —
+// Float64frombits(Float64bits(v) & mask) yields exactly 0.0 for a non-passing
+// row, never NaN — so a non-passing NaN/±Inf value cannot poison the sum (a
+// `v * b2f(pass)` form would compute 0*NaN = NaN). Eight independent
+// accumulators over an unrolled loop (mirroring SumFloat64) keep several FADDs
+// in flight; a scalar tail handles the remainder. nulls, when non-nil, excludes
+// nulls[i] rows (also branchlessly).
+func SumWhereFloat64(vals []float64, op Cmp, lit float64, nulls []bool) (sum float64, count int) {
+	if nulls != nil {
+		for i, v := range vals {
+			m := whereMask(v, lit, op) &^ -boolToU64(nulls[i])
+			sum += math.Float64frombits(math.Float64bits(v) & m)
+			count += int(m & 1)
+		}
+		return sum, count
+	}
+	var s0, s1, s2, s3, s4, s5, s6, s7 float64
+	var c0, c1, c2, c3, c4, c5, c6, c7 uint64
+	rest := vals
+	for len(rest) >= 8 {
+		m0 := whereMask(rest[0], lit, op)
+		m1 := whereMask(rest[1], lit, op)
+		m2 := whereMask(rest[2], lit, op)
+		m3 := whereMask(rest[3], lit, op)
+		m4 := whereMask(rest[4], lit, op)
+		m5 := whereMask(rest[5], lit, op)
+		m6 := whereMask(rest[6], lit, op)
+		m7 := whereMask(rest[7], lit, op)
+		s0 += math.Float64frombits(math.Float64bits(rest[0]) & m0)
+		s1 += math.Float64frombits(math.Float64bits(rest[1]) & m1)
+		s2 += math.Float64frombits(math.Float64bits(rest[2]) & m2)
+		s3 += math.Float64frombits(math.Float64bits(rest[3]) & m3)
+		s4 += math.Float64frombits(math.Float64bits(rest[4]) & m4)
+		s5 += math.Float64frombits(math.Float64bits(rest[5]) & m5)
+		s6 += math.Float64frombits(math.Float64bits(rest[6]) & m6)
+		s7 += math.Float64frombits(math.Float64bits(rest[7]) & m7)
+		c0 += m0 & 1
+		c1 += m1 & 1
+		c2 += m2 & 1
+		c3 += m3 & 1
+		c4 += m4 & 1
+		c5 += m5 & 1
+		c6 += m6 & 1
+		c7 += m7 & 1
+		rest = rest[8:]
+	}
+	sum = ((s0 + s1) + (s2 + s3)) + ((s4 + s5) + (s6 + s7))
+	count = int(((c0 + c1) + (c2 + c3)) + ((c4 + c5) + (c6 + c7)))
+	for _, v := range rest {
+		m := whereMask(v, lit, op)
+		sum += math.Float64frombits(math.Float64bits(v) & m)
+		count += int(m & 1)
+	}
+	return sum, count
+}
+
+// MinMaxWhereFloat64 reduces vals over the rows passing `vals[i] <cmp> lit` in a
+// single pass, returning the min, max, and count of passing (non-null) values.
+// It builds no predicate bitmap. min and max are seeded on the first passing row
+// in ascending index order and combined with plain < / >, so NaN handling is
+// identical to MaskedReduceFloat64 (sticky-from-seed). When count == 0 the
+// returned min/max are 0 and callers treat the reduction as empty.
+func MinMaxWhereFloat64(vals []float64, op Cmp, lit float64, nulls []bool) (min, max float64, count int) {
+	for i, v := range vals {
+		if !whereKeep(v, lit, op) {
+			continue
+		}
+		if nulls != nil && nulls[i] {
+			continue
+		}
+		if count == 0 {
+			min, max = v, v
+		} else {
+			if v < min {
+				min = v
+			}
+			if v > max {
+				max = v
+			}
+		}
+		count++
+	}
+	return min, max, count
 }
