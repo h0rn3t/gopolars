@@ -295,7 +295,10 @@ func (d DataFrame) FilterAggregate(predicate expr.Expr, op string, args []string
 		}
 	}
 
-	reductions, ok := d.fusedReduce(plan, cols, d.order)
+	reductions, ok := d.fusedReduceFast(plan, cols, d.order, op)
+	if !ok {
+		reductions, ok = d.fusedReduce(plan, cols, d.order)
+	}
 	if !ok {
 		return DataFrame{}, false, nil
 	}
@@ -417,7 +420,10 @@ func (d DataFrame) FilterAggregateDirect(predicate expr.Expr, op string, cols []
 	// dominant cost at low selectivity, so the empty-filter case stays fast).
 	// The sequential branch applies the popcount selectivity gate, skipping the
 	// reduction kernel entirely when no rows survive.
-	reductions, ok := d.fusedReduce(plan, chunks, names)
+	reductions, ok := d.fusedReduceFast(plan, chunks, names, op)
+	if !ok {
+		reductions, ok = d.fusedReduce(plan, chunks, names)
+	}
 	if !ok {
 		return nil, fmt.Errorf("frame: FilterAggregateDirect: null predicate result or evaluation error")
 	}
@@ -524,6 +530,73 @@ func (d DataFrame) fusedReduceParallel(plan *evalbatch.Plan, cols map[string]*ch
 		}
 	}
 	return reductions, true
+}
+
+// fusedReduceFast handles the single-column `col <cmp> lit` float64 predicate
+// with a single-pass kernel that builds no predicate bitmap: it scans the value
+// array once, selecting passing rows inline. It returns ok=false (so the caller
+// falls back to the bitmap fusedReduce path) whenever the predicate shape, the
+// column count, or the column dtype is not eligible. Results are identical to
+// the bitmap path (sum within float reduction-order tolerance).
+func (d DataFrame) fusedReduceFast(plan *evalbatch.Plan, cols map[string]*chunk.Column, names []string, op string) ([]colReduction, bool) {
+	if len(names) != 1 {
+		return nil, false
+	}
+	colName, cmp, litF, ok := plan.AsColCmpLit()
+	if !ok || colName != names[0] {
+		return nil, false
+	}
+	c, found := cols[colName]
+	if !found || c.DataType() != dtypes.Float64 {
+		return nil, false
+	}
+	f64, ok := c.Float64s()
+	if !ok {
+		return nil, false
+	}
+	return []colReduction{d.reduceWhere(f64, cmp, litF, c.Nulls(), op)}, true
+}
+
+// reduceWhere runs the single-pass kernel for op over vals, parallelizing across
+// workers above parallelFilterThreshold and merging the per-range partials. Only
+// the reduction op needs computing: sum/mean/count use SumWhereFloat64, min/max
+// use MinMaxWhereFloat64.
+func (d DataFrame) reduceWhere(vals []float64, cmp simd.Cmp, lit float64, nulls []bool, op string) colReduction {
+	workers := runtime.GOMAXPROCS(0)
+	if len(vals) < parallelFilterThreshold || workers <= 1 {
+		return reduceWhereSeq(vals, cmp, lit, nulls, op)
+	}
+	ranges := partitionRanges(len(vals), workers)
+	partials := make([]colReduction, len(ranges))
+	var wg sync.WaitGroup
+	for i, rg := range ranges {
+		wg.Add(1)
+		go func(i, start, end int) {
+			defer wg.Done()
+			var wn []bool
+			if nulls != nil {
+				wn = nulls[start:end]
+			}
+			partials[i] = reduceWhereSeq(vals[start:end], cmp, lit, wn, op)
+		}(i, rg[0], rg[1])
+	}
+	wg.Wait()
+	var out colReduction
+	for i := range partials {
+		out.merge(partials[i])
+	}
+	return out
+}
+
+func reduceWhereSeq(vals []float64, cmp simd.Cmp, lit float64, nulls []bool, op string) colReduction {
+	switch op {
+	case "min", "max":
+		mn, mx, c := simd.MinMaxWhereFloat64(vals, cmp, lit, nulls)
+		return colReduction{min: mn, max: mx, count: c}
+	default: // sum, mean, count
+		s, c := simd.SumWhereFloat64(vals, cmp, lit, nulls)
+		return colReduction{sum: s, count: c}
+	}
 }
 
 // batchEvalColumn attempts to evaluate a projection/with-columns expression to a

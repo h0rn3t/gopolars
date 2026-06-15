@@ -34,6 +34,65 @@ func Compile(e expr.Expr) (*Plan, bool) {
 	return &Plan{root: e}, true
 }
 
+// AsColCmpLit reports whether the plan's root is a single `col <cmp> lit`
+// comparison with the column on the left and a numeric literal on the right —
+// the shape the single-pass filter-reduce fast path accelerates. It returns the
+// column name, the simd comparison code, the literal as float64, and ok.
+//
+// Only gt/ge/lt/le are reported: for these a NaN operand fails the comparison
+// under Go's native float semantics exactly as the bitmap path's NaN-exclusion
+// does, so the single-pass kernel is bit-for-bit equivalent. eq/ne (whose NaN
+// handling the row-wise evaluator treats specially) return ok=false and fall
+// back to the bitmap path. The column dtype is checked by the caller, which
+// holds the typed columns.
+func (p *Plan) AsColCmpLit() (col string, cmp simd.Cmp, litF float64, ok bool) {
+	e := p.root
+	if e.Kind() != expr.KindBin {
+		return "", 0, 0, false
+	}
+	var c simd.Cmp
+	switch e.Op() {
+	case "gt":
+		c = simd.CmpGT
+	case "ge":
+		c = simd.CmpGE
+	case "lt":
+		c = simd.CmpLT
+	case "le":
+		c = simd.CmpLE
+	default:
+		return "", 0, 0, false
+	}
+	l, r := e.Left(), e.Right()
+	if l == nil || r == nil || l.Kind() != expr.KindCol || r.Kind() != expr.KindLit {
+		return "", 0, 0, false
+	}
+	f, ok := numericLitToFloat(r.Value())
+	if !ok {
+		return "", 0, 0, false
+	}
+	return l.ColName(), c, f, true
+}
+
+// numericLitToFloat converts a numeric literal value to float64, reporting false
+// for non-numeric (e.g. string/bool) literals.
+func numericLitToFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	default:
+		return 0, false
+	}
+}
+
 var batchBinOps = map[string]bool{
 	"eq": true, "ne": true, "gt": true, "ge": true, "lt": true, "le": true,
 	"add": true, "sub": true, "mul": true, "div": true,

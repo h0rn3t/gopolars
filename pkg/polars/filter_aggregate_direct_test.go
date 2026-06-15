@@ -199,3 +199,96 @@ func TestFilterAggregateDirectAllocations(t *testing.T) {
 		t.Fatalf("FilterAggregateDirect allocated %v objs/op at 1M/50%%, want <= 8 (no []int/DataFrame materialization)", allocs)
 	}
 }
+
+// TestFilterAggregateDirectComparisonsMatchReference exercises the single-pass
+// fast path for gt/ge/lt/le over a column with nulls and NaN at a size above the
+// parallel threshold, checking every op against a hand-computed reference that
+// applies the same null/NaN-exclusion semantics.
+func TestFilterAggregateDirectComparisonsMatchReference(t *testing.T) {
+	const n = 40_000 // above parallelFilterThreshold: exercises parallel reduceWhere
+	vals := make([]any, n)
+	raw := make([]float64, n)
+	isNull := make([]bool, n)
+	for i := range vals {
+		switch {
+		case i%97 == 0:
+			vals[i] = nil
+			isNull[i] = true
+		case i%101 == 0:
+			vals[i] = math.NaN()
+			raw[i] = math.NaN()
+		default:
+			v := math.Sin(float64(i)) * 25
+			vals[i] = v
+			raw[i] = v
+		}
+	}
+	df, err := NewDataFrame(NewDataFrameInput{Columns: []frame.SeriesInput{{Name: "a", Values: vals}}})
+	if err != nil {
+		t.Fatalf("NewDataFrame: %v", err)
+	}
+
+	keep := func(v, lit float64, op string) bool {
+		switch op {
+		case "gt":
+			return v > lit
+		case "ge":
+			return v >= lit
+		case "lt":
+			return v < lit
+		default:
+			return v <= lit
+		}
+	}
+	const lit = 0.0
+	for _, op := range []string{"gt", "ge", "lt", "le"} {
+		var sum, min, max float64
+		var count int
+		for i := 0; i < n; i++ {
+			if isNull[i] || !keep(raw[i], lit, op) {
+				continue
+			}
+			v := raw[i]
+			if count == 0 {
+				min, max = v, v
+			} else {
+				if v < min {
+					min = v
+				}
+				if v > max {
+					max = v
+				}
+			}
+			sum += v
+			count++
+		}
+		var pred Expr
+		switch op {
+		case "gt":
+			pred = Col("a").Gt(Lit(lit))
+		case "ge":
+			pred = Col("a").Ge(Lit(lit))
+		case "lt":
+			pred = Col("a").Lt(Lit(lit))
+		default:
+			pred = Col("a").Le(Lit(lit))
+		}
+		want := map[string]float64{
+			"sum": sum, "min": min, "max": max,
+			"mean": sum / float64(count), "count": float64(count),
+		}
+		for agg, w := range want {
+			got, err := df.FilterAggregateDirect(pred, agg, []string{"a"})
+			if err != nil {
+				t.Fatalf("op %s/%s: %v", op, agg, err)
+			}
+			ok := got["a"] == w
+			if agg == "sum" || agg == "mean" {
+				ok = approxEqual(got["a"], w)
+			}
+			if !ok {
+				t.Fatalf("op %s/%s: got %v, want %v", op, agg, got["a"], w)
+			}
+		}
+	}
+}
