@@ -2,13 +2,14 @@
 // and reduction engine. The float64 reduction and element-wise kernels select
 // their implementation at runtime — no build tag required.
 //
-// On amd64, MinFloat64/MaxFloat64/MinMaxFloat64 and AddSlicesFloat64/
-// MulSlicesFloat64 dispatch to hand-written AVX2 assembly (reduce_amd64.s,
-// arith_amd64.s) when cpu.X86.HasAVX2 is true (kernels_amd64.go), and fall back
-// to the scalar multiple-accumulator bodies in scalar.go on pre-AVX2 amd64. On
-// every other architecture (simd_generic.go) the exported functions are those
-// same scalar bodies. SumFloat64 and DotProductFloat64 stay scalar everywhere:
-// the Go compiler already auto-vectorizes their float64 loops.
+// On amd64, the reductions MinFloat64/MaxFloat64/MinMaxFloat64 dispatch to
+// hand-written AVX2 assembly (reduce_amd64.s) when cpu.X86.HasAVX2 is true
+// (kernels_amd64.go), and fall back to the scalar multiple-accumulator bodies in
+// scalar.go on pre-AVX2 amd64. On every other architecture (simd_generic.go) the
+// exported functions are those same scalar bodies. SumFloat64, DotProductFloat64,
+// AddSlicesFloat64 and MulSlicesFloat64 stay scalar everywhere: the Go compiler
+// already auto-vectorizes their float64 loops (a measured EPYC 7763 run found a
+// hand-written AVX2 add/mul ~2.5x slower than the auto-vectorized scalar).
 //
 //	go build ./...   // one binary, AVX2 used at runtime on capable amd64 CPUs
 //

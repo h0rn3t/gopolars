@@ -63,39 +63,7 @@ func TestAVX2ReductionsMatchScalar(t *testing.T) {
 	}
 }
 
-func TestAVX2ArithMatchScalar(t *testing.T) {
-	mkPair := func(n int) (a, b []float64) {
-		a = make([]float64, n)
-		b = make([]float64, n)
-		for i := range a {
-			a[i] = math.Sin(float64(i))*100 + 0.5
-			b[i] = math.Cos(float64(i))*7 - 1.25
-		}
-		if n > 5 {
-			a[3] = math.NaN()
-			b[5] = math.Inf(1)
-			a[n-1] = math.Inf(-1)
-		}
-		return a, b
-	}
-	// Sizes spanning the 16-wide loop, the 4-wide loop, and the scalar tail.
-	for _, n := range []int{16, 17, 19, 20, 31, 64, 1009} {
-		a, b := mkPair(n)
-		dst := make([]float64, n)
-		addSlicesFloat64AVX2(dst, a, b)
-		want := addSlicesFloat64Scalar(a, b)
-		for i := range want {
-			if !exactOrBothNaN(dst[i], want[i]) {
-				t.Fatalf("add n=%d idx=%d: avx2=%v scalar=%v", n, i, dst[i], want[i])
-			}
-		}
-		dst2 := make([]float64, n)
-		mulSlicesFloat64AVX2(dst2, a, b)
-		wantMul := mulSlicesFloat64Scalar(a, b)
-		for i := range wantMul {
-			if !exactOrBothNaN(dst2[i], wantMul[i]) {
-				t.Fatalf("mul n=%d idx=%d: avx2=%v scalar=%v", n, i, dst2[i], wantMul[i])
-			}
-		}
-	}
-}
+// AddSlicesFloat64/MulSlicesFloat64 have no AVX2 variant — a measured EPYC 7763
+// run showed hand-written AVX2 add/mul ~2.5x slower than the compiler's
+// auto-vectorized scalar loop, so those kernels stay scalar (covered by
+// TestAddSlicesFloat64/TestMulSlicesFloat64 in simd_test.go).

@@ -4,15 +4,17 @@ package simd
 
 import "golang.org/x/sys/cpu"
 
-// amd64 backend: the exported float64 kernels dispatch at runtime to AVX2
-// assembly (reduce_amd64.s / arith_amd64.s) when the CPU supports it, and fall
-// back to the scalar multiple-accumulator bodies in scalar.go otherwise. No
-// build tag is required — selection is purely at runtime, so one binary is
-// correct on AVX2 and pre-AVX2 amd64 alike.
+// amd64 backend: the float64 reductions Min/Max/MinMax dispatch at runtime to
+// AVX2 assembly (reduce_amd64.s) when the CPU supports it (cpu.X86.HasAVX2),
+// falling back to the scalar multiple-accumulator bodies in scalar.go on
+// pre-AVX2 amd64. No build tag is required — selection is purely at runtime, so
+// one binary is correct on AVX2 and pre-AVX2 amd64 alike.
 //
-// Sum and DotProduct have no AVX2 variant: the Go compiler already
-// auto-vectorizes their scalar float64 loops, so a hand-written kernel does not
-// beat them (matching the turboslice project's own measured choice).
+// Sum, DotProduct, AddSlices and MulSlices have no AVX2 variant: the Go compiler
+// already auto-vectorizes their scalar float64 loops, and a measured EPYC 7763
+// run showed a hand-written AVX2 add/mul ~2.5x SLOWER than the auto-vectorized
+// scalar (the turboslice project reached the same conclusion). Only the
+// reductions, where the compiler will not vectorize the compare/select, win.
 
 var hasAVX2 = cpu.X86.HasAVX2
 
@@ -31,12 +33,6 @@ func maxFloat64AVX2(vals []float64) float64
 
 //go:noescape
 func minMaxFloat64AVX2(vals []float64) (float64, float64)
-
-//go:noescape
-func addSlicesFloat64AVX2(dst, a, b []float64)
-
-//go:noescape
-func mulSlicesFloat64AVX2(dst, a, b []float64)
 
 // SumFloat64 returns the sum of vals. Returns 0 for an empty slice.
 func SumFloat64(vals []float64) float64 { return sumFloat64Scalar(vals) }
@@ -69,30 +65,12 @@ func MinMaxFloat64(vals []float64) (float64, float64) {
 // AddSlicesFloat64 returns a new slice where each element is a[i] + b[i].
 // The result length is min(len(a), len(b)).
 func AddSlicesFloat64(a, b []float64) []float64 {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	if hasAVX2 && n >= avx2MinLen {
-		dst := make([]float64, n)
-		addSlicesFloat64AVX2(dst, a[:n], b[:n])
-		return dst
-	}
 	return addSlicesFloat64Scalar(a, b)
 }
 
 // MulSlicesFloat64 returns a new slice where each element is a[i] * b[i].
 // The result length is min(len(a), len(b)).
 func MulSlicesFloat64(a, b []float64) []float64 {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	if hasAVX2 && n >= avx2MinLen {
-		dst := make([]float64, n)
-		mulSlicesFloat64AVX2(dst, a[:n], b[:n])
-		return dst
-	}
 	return mulSlicesFloat64Scalar(a, b)
 }
 
