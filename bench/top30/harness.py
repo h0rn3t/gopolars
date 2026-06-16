@@ -3,10 +3,17 @@
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 import time
 
 import polars as pl
+
+# Reused output paths for the write_* ops so each timed iteration measures the
+# serialization + disk write, not temp-name churn. Overwritten every call.
+_OUT_CSV = os.path.join(tempfile.gettempdir(), "gopolars_top30_out.csv")
+_OUT_PARQUET = os.path.join(tempfile.gettempdir(), "gopolars_top30_out.parquet")
 
 _DATAFRAME_OPS = {
     "filter": lambda df: df.filter(pl.col("v") > 0),
@@ -20,6 +27,19 @@ _DATAFRAME_OPS = {
     "unique": lambda df: df.select("g").unique(),
     "fill_null": lambda df: df.fill_null(0.0),
     "drop_nulls": lambda df: df.drop_nulls("n"),
+    # Migration-surface methods (gopolars facade parity). iter_rows is wrapped in
+    # list() so the generator is fully materialized inside the timed call.
+    "clone": lambda df: df.clone(),
+    "drop": lambda df: df.drop("g"),
+    "rename": lambda df: df.rename({"v": "v2"}),
+    "is_empty": lambda df: df.is_empty(),
+    "item": lambda df: df.item(0, "v"),
+    "row": lambda df: df.row(0),
+    "vstack": lambda df: df.vstack(df),
+    "iter_rows": lambda df: list(df.iter_rows()),
+    "to_arrow": lambda df: df.to_arrow(),
+    "write_csv": lambda df: df.write_csv(_OUT_CSV),
+    "write_parquet": lambda df: df.write_parquet(_OUT_PARQUET),
 }
 
 _EXPR_OPS = {

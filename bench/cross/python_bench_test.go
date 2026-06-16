@@ -180,7 +180,6 @@ func BenchmarkCross(b *testing.B) {
 					b.Fatalf("python harness: %v", err)
 				}
 				pythonSecPerOp := pyRes.ElapsedSec / float64(pyRes.Iters)
-				b.ReportMetric(pythonSecPerOp, "python_sec/op")
 
 				b.SetBytes(int64(n * 8))
 				b.ResetTimer()
@@ -209,6 +208,12 @@ func BenchmarkCross(b *testing.B) {
 				}
 				b.StopTimer()
 				goNsPerOp := time.Since(start).Nanoseconds() / int64(b.N)
+
+				// Report Python metrics AFTER ResetTimer (which clears b.extra) so
+				// they are not silently dropped from the benchmark line — the same
+				// gotcha handled in BenchmarkCrossFilterSum.
+				b.ReportMetric(pythonSecPerOp, "python_sec/op")
+				b.ReportMetric(pythonSecPerOp/(float64(goNsPerOp)/1e9), "go_vs_python_speedup")
 
 				mu.Lock()
 				results = append(results, summaryEntry{
@@ -241,7 +246,6 @@ func BenchmarkCross(b *testing.B) {
 					b.Fatalf("python harness: %v", err)
 				}
 				pythonSecPerOp := pyRes.ElapsedSec / float64(pyRes.Iters)
-				b.ReportMetric(pythonSecPerOp, "python_sec/op")
 
 				b.SetBytes(int64(n * 8 * 2))
 				b.ResetTimer()
@@ -258,6 +262,11 @@ func BenchmarkCross(b *testing.B) {
 				}
 				b.StopTimer()
 				goNsPerOp := time.Since(start).Nanoseconds() / int64(b.N)
+
+				// See the singleOps note: report after ResetTimer so the metrics
+				// survive on the benchmark line.
+				b.ReportMetric(pythonSecPerOp, "python_sec/op")
+				b.ReportMetric(pythonSecPerOp/(float64(goNsPerOp)/1e9), "go_vs_python_speedup")
 
 				mu.Lock()
 				results = append(results, summaryEntry{

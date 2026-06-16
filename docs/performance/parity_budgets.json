@@ -46,6 +46,61 @@
     "DataFrame/with_columns": {
       "r_min": 1.0
     },
+    "DataFrame/clone": {
+      "r_min": 0.0,
+      "out_of_scope": true,
+      "justification": "Newly added migration-surface op; not yet calibrated. Reported in the nightly summary but non-gating until a baseline is seeded (./run-bench.sh --python), then ratchet into scope."
+    },
+    "DataFrame/drop": {
+      "r_min": 0.0,
+      "out_of_scope": true,
+      "justification": "Newly added migration-surface op; not yet calibrated. Reported but non-gating until a baseline is seeded."
+    },
+    "DataFrame/rename": {
+      "r_min": 0.0,
+      "out_of_scope": true,
+      "justification": "Newly added migration-surface op; not yet calibrated. Reported but non-gating until a baseline is seeded."
+    },
+    "DataFrame/is_empty": {
+      "r_min": 0.0,
+      "out_of_scope": true,
+      "justification": "Newly added migration-surface op; O(1) and noise-dominated. Reported but non-gating until a baseline is seeded."
+    },
+    "DataFrame/item": {
+      "r_min": 0.0,
+      "out_of_scope": true,
+      "justification": "Newly added migration-surface op; O(1) and noise-dominated. Reported but non-gating until a baseline is seeded."
+    },
+    "DataFrame/row": {
+      "r_min": 0.0,
+      "out_of_scope": true,
+      "justification": "Newly added migration-surface op; not yet calibrated. Reported but non-gating until a baseline is seeded."
+    },
+    "DataFrame/vstack": {
+      "r_min": 0.0,
+      "out_of_scope": true,
+      "justification": "Newly added migration-surface op; not yet calibrated. Reported but non-gating until a baseline is seeded."
+    },
+    "DataFrame/iter_rows": {
+      "r_min": 0.0,
+      "out_of_scope": true,
+      "justification": "Newly added migration-surface op; row-wise materialization is an anti-pattern in both engines. Reported but non-gating until a baseline is seeded."
+    },
+    "DataFrame/to_arrow": {
+      "r_min": 0.0,
+      "out_of_scope": true,
+      "justification": "Newly added migration-surface op; not yet calibrated. Reported but non-gating until a baseline is seeded."
+    },
+    "DataFrame/write_csv": {
+      "r_min": 0.0,
+      "out_of_scope": true,
+      "justification": "Newly added migration-surface op; I/O-bound serialization, not a like-for-like compute comparison. Reported but non-gating until a baseline is seeded."
+    },
+    "DataFrame/write_parquet": {
+      "r_min": 0.0,
+      "out_of_scope": true,
+      "justification": "Newly added migration-surface op; I/O-bound serialization, not a like-for-like compute comparison. Reported but non-gating until a baseline is seeded."
+    },
     "Expr/cum_sum": {
       "r_min": 1.0
     },

@@ -144,6 +144,9 @@ func BenchmarkTop30(b *testing.B) {
 	dataframeOps := []string{
 		"filter", "select", "with_columns", "sort", "group_by",
 		"join", "head", "tail", "unique", "fill_null", "drop_nulls",
+		// Migration-surface methods (gopolars facade parity vs Polars).
+		"clone", "drop", "rename", "is_empty", "item", "row", "vstack",
+		"iter_rows", "to_arrow", "write_csv", "write_parquet",
 	}
 	for _, op := range dataframeOps {
 		for _, n := range sizes {
@@ -163,10 +166,11 @@ func BenchmarkTop30(b *testing.B) {
 				pythonSecPerOp := pyRes.ElapsedSec / float64(pyRes.Iters)
 				b.ReportMetric(pythonSecPerOp, "python_sec/op")
 
+				outDir := b.TempDir()
 				b.ResetTimer()
 				start := time.Now()
 				for i := 0; i < b.N; i++ {
-					if err := benchDataFrame(ctx, df, op); err != nil {
+					if err := benchDataFrame(ctx, df, op, outDir); err != nil {
 						b.Fatalf("DataFrame/%s: %v", op, err)
 					}
 				}
@@ -382,7 +386,7 @@ func BenchmarkTop30(b *testing.B) {
 	}
 }
 
-func benchDataFrame(ctx context.Context, df polars.DataFrame, op string) error {
+func benchDataFrame(ctx context.Context, df polars.DataFrame, op, outDir string) error {
 	var err error
 	switch op {
 	case "filter":
@@ -416,6 +420,28 @@ func benchDataFrame(ctx context.Context, df polars.DataFrame, op string) error {
 		_, err = df.FillNull(float64(0))
 	case "drop_nulls":
 		_ = df.DropNaNs("n")
+	case "clone":
+		_ = df.Clone()
+	case "drop":
+		_, err = df.Drop("g")
+	case "rename":
+		_, err = df.Rename(map[string]string{"v": "v2"})
+	case "is_empty":
+		_ = df.IsEmpty()
+	case "item":
+		_, err = df.Item(0, "v")
+	case "row":
+		_, err = df.Row(0)
+	case "vstack":
+		_, err = df.VStack(df)
+	case "iter_rows":
+		_ = df.IterRows()
+	case "to_arrow":
+		_, err = df.ToArrow(polars.ToArrowInput{})
+	case "write_csv":
+		err = df.WriteCSV(polars.WriteCSVInput{Path: filepath.Join(outDir, "out.csv"), IncludeHeader: true, Separator: ','})
+	case "write_parquet":
+		err = df.WriteParquet(polars.WriteParquetInput{Path: filepath.Join(outDir, "out.parquet")})
 	}
 	return err
 }
