@@ -95,5 +95,7 @@ jobs:
           name: cross-1m-summary
           path: |
             bench/cross/filter_sum_summary.json
+            bench/cross/filter_sum_summary.md
             bench/cross/cross_summary.json
+            bench/cross/cross_summary.md
           if-no-files-found: warn

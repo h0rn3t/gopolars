@@ -1,33 +1,31 @@
 // Package simd provides the column kernels used by the vectorized expression
-// and reduction engine, with two backends selected at build time.
+// and reduction engine. The float64 reduction and element-wise kernels select
+// their implementation at runtime — no build tag required.
 //
-// On amd64 built with GOEXPERIMENT=simd the float64 reductions and elementwise
-// ops delegate to turboslice (simd_amd64.go). Every other build — including
-// arm64, and amd64 without the experiment — uses the generic implementations in
-// simd_generic.go.
+// On amd64, MinFloat64/MaxFloat64/MinMaxFloat64 and AddSlicesFloat64/
+// MulSlicesFloat64 dispatch to hand-written AVX2 assembly (reduce_amd64.s,
+// arith_amd64.s) when cpu.X86.HasAVX2 is true (kernels_amd64.go), and fall back
+// to the scalar multiple-accumulator bodies in scalar.go on pre-AVX2 amd64. On
+// every other architecture (simd_generic.go) the exported functions are those
+// same scalar bodies. SumFloat64 and DotProductFloat64 stay scalar everywhere:
+// the Go compiler already auto-vectorizes their float64 loops.
 //
-// Build with the turboslice SIMD backend:
+//	go build ./...   // one binary, AVX2 used at runtime on capable amd64 CPUs
 //
-//	GOEXPERIMENT=simd go build ./...
+// # Scalar reductions / fallback
 //
-// Build with the generic backend (auto-fallback):
-//
-//	go build ./...
-//
-// # arm64 / generic reductions
-//
-// The generic reductions (SumFloat64, MinFloat64, MaxFloat64, MinMaxFloat64)
-// are written with multiple independent accumulators over an unrolled loop, with
-// reslicing to hoist bounds checks. Breaking the single-accumulator dependency
-// chain lets a superscalar core keep several FADD/FCMP in flight; on Apple M4
-// Pro (arm64, Go 1.26) this is ~6.7x faster for Sum and ~3.5-5x for min/max than
-// the previous scalar loop. Go 1.26 does not emit NEON here (the hot loop is
-// independent scalar FADDD instructions), but the instruction-level parallelism
-// is sufficient, so no hand-written arm64 assembly is shipped. Min/max remain
-// order-independent and bit-identical to the scalar reference (each accumulator
-// is seeded from vals[0], so NaN is sticky-from-seed and later NaNs are ignored,
-// exactly as before); Sum reorders additions and therefore differs from a strict
-// left-to-right sum within floating-point reduction-order tolerance.
+// The scalar reductions (scalar.go) use multiple independent accumulators over
+// an unrolled loop, with reslicing to hoist bounds checks. Breaking the
+// single-accumulator dependency chain lets a superscalar core keep several
+// FADD/FCMP in flight; on Apple M4 Pro (arm64, Go 1.26) this is ~6.7x faster for
+// Sum and ~3.5-5x for min/max than a plain scalar loop, so no hand-written arm64
+// assembly is shipped. Min/max are order-independent and bit-identical to the
+// strict scalar reference (each accumulator is seeded from vals[0], so NaN is
+// sticky-from-seed and later NaNs are ignored); the AVX2 kernels choose their
+// VMINPD/VMAXPD operand order to reproduce exactly this NaN behaviour, and an
+// equivalence test pins them to the scalar bodies. Sum reorders additions and
+// therefore differs from a strict left-to-right sum within floating-point
+// reduction-order tolerance.
 //
 // # Filter / reduce kernels (kernels.go)
 //
