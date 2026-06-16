@@ -7,10 +7,14 @@ name: Parity (nightly refresh)
 # This workflow refreshes the numbers against Python Polars:
 #   * parity-refresh   re-runs the top30 cross-language suite (light: 1K + 1M) to
 #                      regenerate the summary, then re-runs the gate on the fresh
-#                      ratios.
-#   * cross-filter-sum re-runs ./run-bench.sh --python for the filter+sum pipeline
-#                      at 1,000,000 elements (all three Go execution paths) versus
-#                      Python Polars, and uploads the comparison summary.
+#                      ratios. Coverage now includes the migration-surface
+#                      DataFrame methods (clone/drop/rename/is_empty/item/row/
+#                      vstack/iter_rows/to_arrow/write_csv/write_parquet),
+#                      tracked as out_of_scope until baselines are seeded.
+#   * cross-filter-sum re-runs ./run-bench.sh --python at 1,000,000 elements:
+#                      the filter+sum pipeline (all three Go execution paths) plus
+#                      the primitive ops (sum/min/max/mean/minmax/add/mul) versus
+#                      Python Polars, and uploads both comparison summaries.
 # Neither commits; a real regression surfaces as a failing gate / a visible row in
 # the comparison table, and a developer ratchets budgets after inspecting the diff.
 
@@ -53,7 +57,7 @@ jobs:
         run: go test -run TestParityBudgets ./bench/top30/
 
   cross-filter-sum:
-    name: Cross filter+sum vs Polars (1M)
+    name: Cross filter+sum + primitives vs Polars (1M)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -78,10 +82,18 @@ jobs:
         # profiles, at 1,000,000 elements only, compared against Python Polars.
         run: bash run-bench.sh --python -bench='BenchmarkCrossFilterSum/.+/.+/.+/size_1M$' -benchtime=2s -count=1
 
-      - name: Upload comparison summary
+      - name: Run primitive ops cross benchmark at 1M vs Polars
+        # The 7 SIMD primitives (sum/min/max/mean/minmax/add/mul) at 1,000,000
+        # elements only, compared against Python Polars. ^...$ anchors the func
+        # name so this does NOT also re-run BenchmarkCrossFilterSum.
+        run: bash run-bench.sh --python -bench='^BenchmarkCross$/[a-z]+/size_1M$' -benchtime=2s -count=1
+
+      - name: Upload comparison summaries
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: filter-sum-1m-summary
-          path: bench/cross/filter_sum_summary.json
+          name: cross-1m-summary
+          path: |
+            bench/cross/filter_sum_summary.json
+            bench/cross/cross_summary.json
           if-no-files-found: warn
