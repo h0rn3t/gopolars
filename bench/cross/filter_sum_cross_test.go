@@ -12,7 +12,6 @@ package cross
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -387,17 +386,17 @@ func BenchmarkCrossFilterSum(b *testing.B) {
 		_, testFile, _, _ := runtime.Caller(0)
 		benchDir := filepath.Dir(testFile)
 		summaryPath := filepath.Join(benchDir, "filter_sum_summary.json")
-		f, err := os.Create(summaryPath)
-		if err != nil {
-			b.Fatalf("create summary: %v", err)
+		if err := writeSummaryJSON(summaryPath, results); err != nil {
+			b.Fatalf("write summary json: %v", err)
 		}
-		defer func() { _ = f.Close() }()
-		enc := json.NewEncoder(f)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(results); err != nil {
-			b.Fatalf("encode summary: %v", err)
+		if err := writeSummaryMarkdown(
+			filepath.Join(benchDir, "filter_sum_summary.md"),
+			results,
+			"Filter+sum pipeline (eager / lazy / eager_direct) — gopolars vs Python Polars",
+		); err != nil {
+			b.Fatalf("write summary markdown: %v", err)
 		}
-		b.Logf("filter+sum delta written to %s", summaryPath)
+		b.Logf("filter+sum delta written to %s (json+md)", summaryPath)
 	}
 
 	printSummaryTable(results)

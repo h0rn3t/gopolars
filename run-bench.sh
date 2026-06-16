@@ -101,4 +101,5 @@ ${ENV_PREFIX[@]+"${ENV_PREFIX[@]}"} go test ./bench/cross \
 set +x
 
 echo
-echo "==> summary JSON: bench/cross/filter_sum_summary.json"
+echo "==> summary JSON:  bench/cross/filter_sum_summary.json"
+echo "==> summary MD :   bench/cross/filter_sum_summary.md"
