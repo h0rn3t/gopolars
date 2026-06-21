@@ -3,10 +3,103 @@ package chunk
 import (
 	"fmt"
 	"math"
+	"runtime"
+	"sync"
 	"sync/atomic"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 )
+
+// parallelFillThreshold is the row count above which the element-wise float64
+// fill/drop kernels split work across GOMAXPROCS workers. Below it the
+// goroutine-coordination overhead outweighs the gain, so the sequential path
+// (a single shard) runs inline.
+const parallelFillThreshold = 1 << 13 // 8192 rows
+
+// forEachShard splits [0,n) into up to GOMAXPROCS disjoint contiguous ranges and
+// runs fn on each concurrently, blocking until all complete. For n at or below
+// parallelFillThreshold (or a single worker) it runs fn(0,n) inline.
+func forEachShard(n int, fn func(lo, hi int)) {
+	if n == 0 {
+		return
+	}
+	workers := runtime.GOMAXPROCS(0)
+	if n <= parallelFillThreshold || workers <= 1 {
+		fn(0, n)
+		return
+	}
+	if workers > n {
+		workers = n
+	}
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for w := 0; w < workers; w++ {
+		go func(lo, hi int) {
+			defer wg.Done()
+			fn(lo, hi)
+		}(w*n/workers, (w+1)*n/workers)
+	}
+	wg.Wait()
+}
+
+// shardBounds returns workers+1 boundaries splitting [0,n) into balanced disjoint
+// ranges, collapsing to a single shard at or below parallelFillThreshold.
+func shardBounds(n int) []int {
+	workers := runtime.GOMAXPROCS(0)
+	if n <= parallelFillThreshold || workers < 1 {
+		workers = 1
+	}
+	if workers > n {
+		workers = n
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	bounds := make([]int, workers+1)
+	for w := 0; w <= workers; w++ {
+		bounds[w] = w * n / workers
+	}
+	return bounds
+}
+
+// forEachBound runs fn(workerIndex, lo, hi) concurrently for each consecutive
+// pair in bounds (length workers+1), blocking until all complete. With a single
+// worker it runs inline.
+func forEachBound(bounds []int, fn func(w, lo, hi int)) {
+	workers := len(bounds) - 1
+	if workers <= 1 {
+		if workers == 1 {
+			fn(0, bounds[0], bounds[1])
+		}
+		return
+	}
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for w := 0; w < workers; w++ {
+		go func(w int) {
+			defer wg.Done()
+			fn(w, bounds[w], bounds[w+1])
+		}(w)
+	}
+	wg.Wait()
+}
+
+// hasFillableNaNFloat64 reports whether any non-null entry is NaN — exactly the
+// rows fill_nan replaces and drop_nans removes. It is read-only and sharded, so
+// the common "no NaN present" case costs one parallel scan rather than a full
+// allocate-and-copy.
+func hasFillableNaNFloat64(f64s []float64, nulls []bool) bool {
+	var found int32
+	forEachShard(len(f64s), func(lo, hi int) {
+		for i := lo; i < hi; i++ {
+			if math.IsNaN(f64s[i]) && (nulls == nil || !nulls[i]) {
+				atomic.StoreInt32(&found, 1)
+				return
+			}
+		}
+	})
+	return atomic.LoadInt32(&found) != 0
+}
 
 // stringifyBoxed renders a boxed value for use in a composite group key. Used
 // only for non-primitive dtypes (Decimal/List/Struct) that have no typed
@@ -82,15 +175,26 @@ func (c *Column) FillNullFloat64(fill float64) (*Column, bool) {
 	if !ok {
 		return nil, false
 	}
+	// No nulls to fill: the result equals the input, so share its value buffer
+	// instead of allocating and copying a fresh 8N-byte one. Copy-on-write
+	// (MarkShared / CloneIfShared) keeps any future in-place mutator safe.
+	if c.NullCount() == 0 {
+		c.MarkShared()
+		out := NewFloat64(f64s, nil)
+		out.MarkShared()
+		return out, true
+	}
+	nulls := c.nulls // non-nil here: NullCount() > 0 implies a validity mask
 	out := make([]float64, c.n)
-	copy(out, f64s)
-	if c.nulls != nil {
-		for i, isNull := range c.nulls {
-			if isNull {
+	forEachShard(c.n, func(lo, hi int) {
+		for i := lo; i < hi; i++ {
+			if nulls[i] {
 				out[i] = fill
+			} else {
+				out[i] = f64s[i]
 			}
 		}
-	}
+	})
 	// All nulls have been filled, so the result has no null entries.
 	return NewFloat64(out, nil), true
 }
@@ -103,22 +207,37 @@ func (c *Column) FillNaNFloat64(fill float64) (*Column, bool) {
 	if !ok {
 		return nil, false
 	}
-	out := make([]float64, c.n)
-	copy(out, f64s)
 	nulls := c.nulls
-	for i := range out {
-		if nulls != nil && nulls[i] {
-			continue
-		}
-		if math.IsNaN(out[i]) {
-			out[i] = fill
-		}
+	// No non-null NaN present: the result equals the input, so share both buffers
+	// instead of copying. The validity mask is preserved (NaN is a value, not a
+	// null) by reusing c.nulls.
+	if !hasFillableNaNFloat64(f64s, nulls) {
+		c.MarkShared()
+		out := NewFloat64(f64s, nulls)
+		out.MarkShared()
+		return out, true
 	}
+	out := make([]float64, c.n)
 	var outNulls []bool
 	if nulls != nil {
 		outNulls = make([]bool, c.n)
-		copy(outNulls, nulls)
 	}
+	forEachShard(c.n, func(lo, hi int) {
+		for i := lo; i < hi; i++ {
+			v := f64s[i]
+			if nulls != nil {
+				outNulls[i] = nulls[i]
+				if nulls[i] {
+					out[i] = v // null slot: keep its payload, validity preserved
+					continue
+				}
+			}
+			if math.IsNaN(v) {
+				v = fill
+			}
+			out[i] = v
+		}
+	})
 	return NewFloat64(out, outNulls), true
 }
 
@@ -130,21 +249,61 @@ func (c *Column) DropNaNFloat64() (*Column, bool) {
 	if !ok {
 		return nil, false
 	}
-	out := make([]float64, 0, c.n)
+	nulls := c.nulls
+	// Nothing to drop (no non-null NaN): share the input buffers unchanged.
+	if !hasFillableNaNFloat64(f64s, nulls) {
+		c.MarkShared()
+		out := NewFloat64(f64s, nulls)
+		out.MarkShared()
+		return out, true
+	}
+	// Two-pass count -> scatter so survivors keep their original order under
+	// parallel execution: a row is kept unless it is a non-null NaN.
+	keep := func(i int) bool {
+		if nulls != nil && nulls[i] {
+			return true
+		}
+		return !math.IsNaN(f64s[i])
+	}
+	bounds := shardBounds(c.n)
+	workers := len(bounds) - 1
+	// Pass 1: per-shard survivor count.
+	counts := make([]int, workers)
+	forEachBound(bounds, func(w, lo, hi int) {
+		cnt := 0
+		for i := lo; i < hi; i++ {
+			if keep(i) {
+				cnt++
+			}
+		}
+		counts[w] = cnt
+	})
+	// Exclusive prefix offsets + total survivor count.
+	offsets := make([]int, workers)
+	total := 0
+	for w := 0; w < workers; w++ {
+		offsets[w] = total
+		total += counts[w]
+	}
+	out := make([]float64, total)
 	var outNulls []bool
-	if c.nulls != nil {
-		outNulls = make([]bool, 0, c.n)
+	if nulls != nil {
+		outNulls = make([]bool, total)
 	}
-	for i, v := range f64s {
-		isNull := c.nulls != nil && c.nulls[i]
-		if !isNull && math.IsNaN(v) {
-			continue
+	// Pass 2: each shard scatters its survivors into out[offset:] in order.
+	forEachBound(bounds, func(w, lo, hi int) {
+		pos := offsets[w]
+		for i := lo; i < hi; i++ {
+			if !keep(i) {
+				continue
+			}
+			out[pos] = f64s[i]
+			if outNulls != nil {
+				outNulls[pos] = nulls[i]
+			}
+			pos++
 		}
-		out = append(out, v)
-		if outNulls != nil {
-			outNulls = append(outNulls, isNull)
-		}
-	}
+	})
 	return NewFloat64(out, outNulls), true
 }
 
