@@ -27,11 +27,6 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 		return v, nil
 	case KindLit:
 		return e.Value(), nil
-	case KindAlias:
-		if e.target != nil {
-			return Eval(*e.target, row)
-		}
-		return nil, fmt.Errorf("alias target is nil")
 	case KindCast:
 		v, err := Eval(*e.Target(), row)
 		if err != nil {

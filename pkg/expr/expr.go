@@ -14,7 +14,6 @@ type Kind string
 const (
 	KindCol   Kind = "col"
 	KindLit   Kind = "lit"
-	KindAlias Kind = "alias"
 	KindCast  Kind = "cast"
 	KindBin   Kind = "bin"
 	KindUnary Kind = "unary"

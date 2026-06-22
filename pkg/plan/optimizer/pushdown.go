@@ -61,7 +61,7 @@ func referencedColumns(e expr.Expr) []string {
 		case expr.KindBin:
 			walk(*v.Left())
 			walk(*v.Right())
-		case expr.KindUnary, expr.KindCast, expr.KindAgg, expr.KindAlias:
+		case expr.KindUnary, expr.KindCast, expr.KindAgg:
 			if v.Target() != nil {
 				walk(*v.Target())
 			}

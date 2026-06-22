@@ -523,17 +523,24 @@ func readFirstToken(s string) (string, string) {
 	return first, strings.TrimSpace(s[idx+len(first):])
 }
 
-func splitClause(s string) (string, string) {
-	l := strings.ToLower(s)
-	markers := []string{" where ", " group by ", " having ", " order by ", " limit ", " offset "}
-	pos := -1
-	for _, marker := range markers {
-		if idx := strings.Index(l, marker); idx >= 0 {
-			if pos == -1 || idx < pos {
-				pos = idx
-			}
+// clauseMarkers are the trailing SQL clause keywords that terminate the
+// preceding segment (the SELECT list or the FROM table list).
+var clauseMarkers = []string{" where ", " group by ", " having ", " order by ", " limit ", " offset "}
+
+// earliestMarker returns the smallest index among clauseMarkers located by find
+// (e.g. strings.Index or topLevelIndexFold), or -1 if none are present.
+func earliestMarker(s string, find func(string, string) int) int {
+	best := -1
+	for _, m := range clauseMarkers {
+		if idx := find(s, m); idx >= 0 && (best == -1 || idx < best) {
+			best = idx
 		}
 	}
+	return best
+}
+
+func splitClause(s string) (string, string) {
+	pos := earliestMarker(strings.ToLower(s), strings.Index)
 	if pos == -1 {
 		return strings.TrimSpace(s), ""
 	}
@@ -544,15 +551,7 @@ func splitClause(s string) (string, string) {
 // table list with joins) and the remaining trailing clauses, splitting at the
 // first top-level clause keyword.
 func splitFromAndClauses(rest string) (string, string) {
-	markers := []string{" where ", " group by ", " having ", " order by ", " limit ", " offset "}
-	best := -1
-	for _, m := range markers {
-		if idx := topLevelIndexFold(rest, m); idx >= 0 {
-			if best == -1 || idx < best {
-				best = idx
-			}
-		}
-	}
+	best := earliestMarker(rest, topLevelIndexFold)
 	if best == -1 {
 		return strings.TrimSpace(rest), ""
 	}
