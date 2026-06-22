@@ -1,6 +1,7 @@
 package csv
 
 import (
+	"bufio"
 	"encoding/csv"
 	"fmt"
 	"os"
@@ -90,37 +91,103 @@ func Write(df frame.DataFrame, input WriteInput) error {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	w := csv.NewWriter(f)
+	bw := bufio.NewWriter(f)
+	w := csv.NewWriter(bw)
 	if input.Separator != 0 {
 		w.Comma = input.Separator
 	}
+	names := df.Columns()
 	if input.IncludeHeader {
-		if err := w.Write(df.Columns()); err != nil {
+		if err := w.Write(names); err != nil {
 			return err
 		}
 	}
-	for row := 0; row < df.Height(); row++ {
-		out := make([]string, 0, df.Width())
-		for _, name := range df.Columns() {
-			s, _ := df.Series(name)
-			v := s.Value(row)
-			if v == nil {
-				out = append(out, "")
-				continue
-			}
-			switch t := v.(type) {
-			case time.Time:
-				out = append(out, t.Format(time.RFC3339Nano))
-			default:
-				out = append(out, fmt.Sprintf("%v", t))
-			}
+	// Resolve each column's typed backing once (not once per cell) and build a
+	// type-specialized formatter, so the inner loop avoids per-cell Series
+	// lookups, interface boxing, and fmt.Sprintf reflection.
+	format := make([]func(i int) string, len(names))
+	for j, name := range names {
+		s, _ := df.Series(name)
+		format[j] = cellFormatter(s)
+	}
+	record := make([]string, len(names))
+	for row, h := 0, df.Height(); row < h; row++ {
+		for j := range format {
+			record[j] = format[j](row)
 		}
-		if err := w.Write(out); err != nil {
+		if err := w.Write(record); err != nil {
 			return err
 		}
 	}
 	w.Flush()
-	return w.Error()
+	if err := w.Error(); err != nil {
+		return err
+	}
+	return bw.Flush()
+}
+
+// cellFormatter returns a per-row string formatter for a single column, bound
+// once to the column's typed backing slice. Numeric/bool/string/time columns
+// format via strconv / time.Format (no fmt.Sprintf, no per-cell boxing); other
+// dtypes (e.g. Decimal) fall back to the boxed Value path, preserving the
+// previous output exactly. Null cells render as an empty field.
+func cellFormatter(s series.Series) func(i int) string {
+	col := s.Column()
+	nulls := col.Nulls()
+	null := func(i int) bool { return nulls != nil && nulls[i] }
+
+	if v, ok := col.Int64s(); ok {
+		return func(i int) string {
+			if null(i) {
+				return ""
+			}
+			return strconv.FormatInt(v[i], 10)
+		}
+	}
+	if v, ok := col.Float64s(); ok {
+		return func(i int) string {
+			if null(i) {
+				return ""
+			}
+			return strconv.FormatFloat(v[i], 'g', -1, 64)
+		}
+	}
+	if v, ok := col.Bools(); ok {
+		return func(i int) string {
+			if null(i) {
+				return ""
+			}
+			return strconv.FormatBool(v[i])
+		}
+	}
+	if v, ok := col.Strings(); ok {
+		return func(i int) string {
+			if null(i) {
+				return ""
+			}
+			return v[i]
+		}
+	}
+	if v, ok := col.Times(); ok {
+		return func(i int) string {
+			if null(i) {
+				return ""
+			}
+			return v[i].Format(time.RFC3339Nano)
+		}
+	}
+	// Boxed fallback (Decimal and any non-primitive dtype): identical to the
+	// previous row-at-a-time writer.
+	return func(i int) string {
+		v := s.Value(i)
+		if v == nil {
+			return ""
+		}
+		if t, ok := v.(time.Time); ok {
+			return t.Format(time.RFC3339Nano)
+		}
+		return fmt.Sprintf("%v", v)
+	}
 }
 
 func inferColumn(values []string, schema dtypes.Schema, name string) ([]any, dtypes.DataType) {

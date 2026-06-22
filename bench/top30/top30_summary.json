@@ -1,92 +1,38 @@
 [
   {
     "object": "DataFrame",
-    "op": "fill_null",
+    "op": "write_csv",
     "size": "1M",
     "elements": 1000000,
-    "go_ns_per_op": 2111667,
-    "python_sec_per_op": 0.0005049583000072744,
-    "ratio": 0.23912780756022348
+    "go_ns_per_op": 223967458,
+    "python_sec_per_op": 0.03063450420013396,
+    "ratio": 0.13678105057625808
   },
   {
     "object": "DataFrame",
-    "op": "fill_null",
+    "op": "write_csv",
     "size": "1M",
     "elements": 1000000,
-    "go_ns_per_op": 457472,
-    "python_sec_per_op": 0.0004004791999250301,
-    "ratio": 0.8754179489127861
+    "go_ns_per_op": 217644389,
+    "python_sec_per_op": 0.02933740000007674,
+    "ratio": 0.13479511295867472
   },
   {
     "object": "DataFrame",
-    "op": "fill_null",
+    "op": "write_parquet",
     "size": "1M",
     "elements": 1000000,
-    "go_ns_per_op": 387462,
-    "python_sec_per_op": 0.0003673166000226047,
-    "ratio": 0.9480067723353638
+    "go_ns_per_op": 229298917,
+    "python_sec_per_op": 0.034427433400560405,
+    "ratio": 0.15014215440258885
   },
   {
-    "object": "Expr",
-    "op": "fill_null",
+    "object": "DataFrame",
+    "op": "write_parquet",
     "size": "1M",
     "elements": 1000000,
-    "go_ns_per_op": 1437417,
-    "python_sec_per_op": 0.00023176659997261594,
-    "ratio": 0.16123824886766744
-  },
-  {
-    "object": "Expr",
-    "op": "fill_null",
-    "size": "1M",
-    "elements": 1000000,
-    "go_ns_per_op": 473975,
-    "python_sec_per_op": 0.0002698374999454245,
-    "ratio": 0.569307452809588
-  },
-  {
-    "object": "Expr",
-    "op": "fill_null",
-    "size": "1M",
-    "elements": 1000000,
-    "go_ns_per_op": 399251,
-    "python_sec_per_op": 0.00023382500003208407,
-    "ratio": 0.5856591468326543
-  },
-  {
-    "object": "Expr",
-    "op": "fill_nan",
-    "size": "1M",
-    "elements": 1000000,
-    "go_ns_per_op": 165667,
-    "python_sec_per_op": 0.0008932249999816122,
-    "ratio": 5.391689352626728
-  },
-  {
-    "object": "Expr",
-    "op": "fill_nan",
-    "size": "1M",
-    "elements": 1000000,
-    "go_ns_per_op": 88036,
-    "python_sec_per_op": 0.0008746958999836351,
-    "ratio": 9.935661547362843
-  },
-  {
-    "object": "Expr",
-    "op": "fill_nan",
-    "size": "1M",
-    "elements": 1000000,
-    "go_ns_per_op": 80830,
-    "python_sec_per_op": 0.0008951791000072262,
-    "ratio": 11.074837312968283
-  },
-  {
-    "object": "Expr",
-    "op": "fill_nan",
-    "size": "1M",
-    "elements": 1000000,
-    "go_ns_per_op": 78115,
-    "python_sec_per_op": 0.0009155833000477287,
-    "ratio": 11.720966524326043
+    "go_ns_per_op": 231606694,
+    "python_sec_per_op": 0.03247689169947989,
+    "ratio": 0.14022432227058124
   }
 ]

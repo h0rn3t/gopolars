@@ -1,11 +1,5 @@
 object,operation,size,go_ns_per_op,python_ms_per_op,ratio,status
-DataFrame,fill_null,1M,2111667,0.504958,0.2391,ok
-DataFrame,fill_null,1M,457472,0.400479,0.8754,ok
-DataFrame,fill_null,1M,387462,0.367317,0.9480,ok
-Expr,fill_null,1M,1437417,0.231767,0.1612,ok
-Expr,fill_null,1M,473975,0.269837,0.5693,ok
-Expr,fill_null,1M,399251,0.233825,0.5857,ok
-Expr,fill_nan,1M,165667,0.893225,5.3917,slow
-Expr,fill_nan,1M,88036,0.874696,9.9357,slow
-Expr,fill_nan,1M,80830,0.895179,11.0748,slow
-Expr,fill_nan,1M,78115,0.915583,11.7210,slow
+DataFrame,write_csv,1M,223967458,30.634504,0.1368,ok
+DataFrame,write_csv,1M,217644389,29.337400,0.1348,ok
+DataFrame,write_parquet,1M,229298917,34.427433,0.1501,ok
+DataFrame,write_parquet,1M,231606694,32.476892,0.1402,ok
