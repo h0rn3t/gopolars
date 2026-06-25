@@ -35,11 +35,4 @@ func TestV09WaveBMediumConformance(t *testing.T) {
 	if (<-lf.SinkBatches(ctx, 1)).Error != nil {
 		t.Fatalf("sink_batches conformance failed")
 	}
-	sqlCtx := polars.NewSQLContext()
-	if err := sqlCtx.RegisterGlobals(map[string]polars.DataFrame{"t": df}); err != nil {
-		t.Fatalf("register_globals conformance failed: %v", err)
-	}
-	if _, err := sqlCtx.ExecuteGlobal(ctx, "SELECT v FROM t"); err != nil {
-		t.Fatalf("execute_global conformance failed: %v", err)
-	}
 }

@@ -1,14 +1,14 @@
 {
   "version": "v1.0",
   "full_matrix": {
-    "implemented_methods": 675,
-    "total_methods": 680,
+    "implemented_methods": 668,
+    "total_methods": 673,
     "remaining_methods": 5,
-    "coverage": 0.9926470588235294
+    "coverage": 0.9925705794947994
   },
   "release_scope": {
-    "implemented_methods": 675,
-    "total_methods": 675,
+    "implemented_methods": 668,
+    "total_methods": 668,
     "remaining_methods": 0,
     "coverage": 1.0
   },
@@ -41,14 +41,6 @@
       "release_scope": {
         "implemented_methods": 222,
         "total_methods": 222,
-        "remaining_methods": 0,
-        "coverage": 1.0
-      }
-    },
-    "SQLContext": {
-      "release_scope": {
-        "implemented_methods": 7,
-        "total_methods": 7,
         "remaining_methods": 0,
         "coverage": 1.0
       }

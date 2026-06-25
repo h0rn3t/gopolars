@@ -136,7 +136,7 @@ func (g GroupBy) evalAgg(aggExpr expr.Expr, idxs []int) (any, error) {
 		}
 		return int64(len(seen)), nil
 	case "count_distinct":
-		// SQL COUNT(DISTINCT col): distinct non-null values.
+		// COUNT(DISTINCT col): distinct non-null values.
 		target := aggExpr.Target()
 		if target == nil {
 			return nil, fmt.Errorf("count_distinct target is nil")

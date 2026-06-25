@@ -2,11 +2,11 @@ package expr
 
 import "fmt"
 
-// This file holds expression builders added to support the SQL engine's scalar
-// function and predicate surface (see pkg/sql). They follow the same op-string
-// convention as the builders in expr.go and are evaluated in eval.go.
+// This file holds expression builders for the scalar string, datetime, and
+// numeric operations. They follow the same op-string convention as the builders
+// in expr.go and are evaluated in eval.go.
 
-// StrLike builds a SQL LIKE match. The pattern uses SQL wildcards: '%' matches
+// StrLike builds a LIKE-style match. The pattern uses wildcards: '%' matches
 // any run of characters and '_' matches a single character.
 func (e Expr) StrLike(pattern string) Expr {
 	return Expr{kind: KindUnary, op: "str_like:" + pattern, target: &e}
@@ -17,8 +17,8 @@ func (e Expr) StrConcat(other Expr) Expr {
 	return bin("str_concat", e, other)
 }
 
-// StrSubstr extracts a substring. start is 1-based (SQL semantics); length is the
-// number of characters to take.
+// StrSubstr extracts a substring. start is 1-based; length is the number of
+// characters to take.
 func (e Expr) StrSubstr(start int, length int) Expr {
 	return Expr{kind: KindUnary, op: fmt.Sprintf("str_substr:%d:%d", start, length), target: &e}
 }

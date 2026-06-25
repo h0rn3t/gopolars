@@ -22,9 +22,8 @@ every known divergence is asserted against gopolars' real behavior or skipped).
 | datatypes | 22 | 13 | 32 | 32 | 0 | 0 |
 | operations | 110 | 68 | 173 | 173 | 0 | 0 |
 | lazyframe | 24 | 8 | 19 | 19 | 0 | 0 |
-| sql | 32 | 6 | 20 | 20 | 0 | 0 |
 | toplevel | 3 | 3 | 17 | 17 | 0 | 0 |
-| **TOTAL** | **265** | **161** | **578** | **578** | **0** | **0** |
+| **TOTAL** | **233** | **155** | **558** | **558** | **0** | **0** |
 
 > The parity suite now contains **no skip tests** — every test asserts real
 > Python-matching behavior. Gap-documenting `t.Skip` placeholders were removed
@@ -226,8 +225,6 @@ Discrepancies found during porting are documented here with references to test f
 | 51 | operations | merge_sorted_test.go | `merge_sorted` global ordering | Globally sorted merge | May not preserve global sort order (membership asserted, not order) | DISCREPANCY |
 | 52 | lazyframe | collect_schema_test.go | `collect_schema` after lazy `select` | Schema narrows to selected columns | Reports source schema (Select not folded into preview); collected data is still narrowed | DISCREPANCY |
 | 53 | lazyframe | optimizations_test.go | CSE / sort-collapse / pushdown-ordering / engine-selection / cache-warming introspection | Observable via plan rewrites | No optimizer-introspection API; results-only verified | GAP (no test) |
-| 54 | sql | filter_test.go | Compound boolean WHERE (`a >= 2 AND a <= 3`) | Supported | Supported (sql-funcs merge, PR #6); compound AND/OR + BETWEEN-style ranges work | FIXED (sql-funcs) |
-| 55 | sql | unsupported_test.go | DISTINCT, CAST, CASE WHEN, scalar string fns (UPPER/...), arithmetic projections, IN predicates, bare aggregates | Supported | Supported (sql-funcs merge, PR #6); tests now assert the working behavior. Also: `ORDER BY` may reference a source column the projection drops (planner carry-through fix). **Still GAP:** JOIN (the self-join form), set ops via SQL, subqueries, SQL-level window fns, regex/temporal/trig/bitwise fns, string_agg, rank, UNNEST, QUALIFY, FETCH, DISTINCT ON | PARTIAL |
 | 56 | dataframe | upsample_test.go | `DataFrame.upsample` | Builds regular time grid, null-fills gaps | Builds grid + null-fills (matches) | FIXED (F13) |
 | 57 | dataframe | (ToFrame) | `Series.to_frame` on all-null typed series | Preserves dtype | Preserves dtype (matches) | FIXED (F14) |
 | 58 | operations | arithmetic_test.go | String `+` concatenation | Concatenates element-wise | Concatenates (matches) | FIXED (F17) |

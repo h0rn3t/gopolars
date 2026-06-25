@@ -140,20 +140,6 @@
     "LazyFrame/inspect": {
       "r_min": 1.0
     },
-    "LazyFrame/sql": {
-      "r_min": 0.0,
-      "out_of_scope": true,
-      "justification": "Harness artifact: Polars evaluates a trivial cached lazy plan while gopolars runs the full SQL pipeline; not like-for-like. Excluded (r_min=0)."
-    },
-    "SQLContext/execute": {
-      "r_min": 1.0
-    },
-    "SQLContext/register": {
-      "r_min": 1.0
-    },
-    "SQLContext/tables": {
-      "r_min": 1.0
-    },
     "Series/drop_nans": {
       "r_min": 0.0586,
       "justification": "Polars runs this op multi-threaded over chunked Arrow; gopolars now parallelizes the predicate eval and the per-column gather, but floors at the measured 1M ratio. Ratchet upward as the path improves."

@@ -19,7 +19,6 @@ window.GOPOLARS_I18N = {
     "nav.expr": "Expr",
     "nav.groupby": "GroupBy",
     "nav.io": "IO",
-    "nav.sql": "SQL",
     "nav.joins": "Joins",
     "nav.dtypes": "Типи даних",
     "nav.parity": "Parity",
@@ -27,7 +26,7 @@ window.GOPOLARS_I18N = {
     "hero.badge": "pkg/polars · v0.6+",
     "hero.title": "DataFrame API для Go",
     "hero.lead":
-      "<strong>gopolars</strong> — колонкова бібліотека з eager/lazy виконанням, SQL-планувальником та IO для CSV, JSON, Parquet і IPC. Публічний API зосередений у пакеті <code>github.com/h0rn3t/gopolars/pkg/polars</code>.",
+      "<strong>gopolars</strong> — колонкова бібліотека з eager/lazy виконанням та IO для CSV, JSON, Parquet і IPC. Публічний API зосередений у пакеті <code>github.com/h0rn3t/gopolars/pkg/polars</code>.",
     "hero.cta.start": "Швидкий старт",
     "hero.cta.repo": "Репозиторій",
     "hero.stat.parity": "методів Polars parity",
@@ -82,18 +81,12 @@ window.GOPOLARS_I18N = {
     "groupby.lead":
       "<code>df.GroupBy(keys...).Agg(exprs...)</code> — eager; lazy через <code>LazyFrame.GroupBy</code>.",
     "io.title": "IO",
-    "io.lead": "Фасад <code>NewIO()</code> — читання, scan і SQL на джерелах.",
+    "io.lead": "Фасад <code>NewIO()</code> — читання і scan на джерелах.",
     "io.table.eager": "Eager read",
     "io.table.lazy": "Lazy scan",
     "io.row.parquet": "partition datasets",
     "io.callout":
       "<strong>Object store:</strong> URI <code>s3://</code>, <code>gcs://</code>, <code>az://</code> через env-профіль кореневих шляхів (див. тести <code>object_store</code> у репозиторії).",
-    "sql.title": "SQL",
-    "sql.lead":
-      "<code>NewSQLContext()</code> — реєстрація таблиць і виконання SELECT з CTE, вікнами, set-ops.",
-    "sql.row.register": "Локальні таблиці",
-    "sql.row.execute": "Запит → LazyFrame",
-    "sql.row.catalog": "Каталог",
     "joins.title": "Joins",
     "joins.lead": "Режими через <code>JoinInput.Type</code>:",
     "dtypes.title": "Типи даних",
@@ -135,7 +128,6 @@ window.GOPOLARS_I18N = {
     "nav.expr": "Expr",
     "nav.groupby": "GroupBy",
     "nav.io": "IO",
-    "nav.sql": "SQL",
     "nav.joins": "Joins",
     "nav.dtypes": "Data types",
     "nav.parity": "Parity",
@@ -143,7 +135,7 @@ window.GOPOLARS_I18N = {
     "hero.badge": "pkg/polars · v0.6+",
     "hero.title": "DataFrame API for Go",
     "hero.lead":
-      "<strong>gopolars</strong> is a columnar library with eager/lazy execution, a SQL planner, and IO for CSV, JSON, Parquet, and IPC. The public API lives in <code>github.com/h0rn3t/gopolars/pkg/polars</code>.",
+      "<strong>gopolars</strong> is a columnar library with eager/lazy execution and IO for CSV, JSON, Parquet, and IPC. The public API lives in <code>github.com/h0rn3t/gopolars/pkg/polars</code>.",
     "hero.cta.start": "Quick start",
     "hero.cta.repo": "Repository",
     "hero.stat.parity": "Polars parity methods",
@@ -198,18 +190,12 @@ window.GOPOLARS_I18N = {
     "groupby.lead":
       "<code>df.GroupBy(keys...).Agg(exprs...)</code> — eager; lazy via <code>LazyFrame.GroupBy</code>.",
     "io.title": "IO",
-    "io.lead": "<code>NewIO()</code> facade — reads, scans, and SQL over sources.",
+    "io.lead": "<code>NewIO()</code> facade — reads and scans over sources.",
     "io.table.eager": "Eager read",
     "io.table.lazy": "Lazy scan",
     "io.row.parquet": "partition datasets",
     "io.callout":
       "<strong>Object store:</strong> <code>s3://</code>, <code>gcs://</code>, <code>az://</code> URIs via env-configured root paths (see <code>object_store</code> tests in the repo).",
-    "sql.title": "SQL",
-    "sql.lead":
-      "<code>NewSQLContext()</code> — register tables and run SELECT with CTEs, windows, and set ops.",
-    "sql.row.register": "Local tables",
-    "sql.row.execute": "Query → LazyFrame",
-    "sql.row.catalog": "Catalog",
     "joins.title": "Joins",
     "joins.lead": "Modes via <code>JoinInput.Type</code>:",
     "dtypes.title": "Data types",

@@ -1,7 +1,6 @@
 package polars
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,7 +23,6 @@ type IO interface {
 	ReadParquet(input ReadParquetInput) (DataFrame, error)
 	ReadIPC(input ReadIPCInput) (DataFrame, error)
 	ReadJSON(input ReadJSONInput) (DataFrame, error)
-	SQL(ctx context.Context, query string) (LazyFrame, error)
 }
 
 type ioFacade struct{}
@@ -125,16 +123,6 @@ func (f ioFacade) ReadJSON(input ReadJSONInput) (DataFrame, error) {
 		NDJSON: input.NDJSON,
 		Schema: input.Schema,
 	}))
-}
-
-func (f ioFacade) SQL(ctx context.Context, query string) (LazyFrame, error) {
-	return ParseSQL(ParseSQLInput{
-		Context: ctx,
-		Query:   query,
-		Source:  frame.DataFrame{},
-		Engine:  exec.New(),
-		Table:   "df",
-	})
 }
 
 func resolveObjectStorePath(path string) (string, error) {

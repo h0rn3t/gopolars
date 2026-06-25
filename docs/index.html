@@ -69,7 +69,6 @@
         <div class="nav-group">
           <div class="nav-group-title" data-i18n="nav.integrations">Інтеграції</div>
           <a href="#io" data-i18n="nav.io">IO</a>
-          <a href="#sql" data-i18n="nav.sql">SQL</a>
           <a href="#joins" data-i18n="nav.joins">Joins</a>
           <a href="#dtypes" data-i18n="nav.dtypes">Типи даних</a>
         </div>
@@ -99,7 +98,7 @@
         </div>
         <h2 data-i18n="hero.title">DataFrame API для Go</h2>
         <p data-i18n="hero.lead">
-          <strong>gopolars</strong> — колонкова бібліотека з eager/lazy виконанням, SQL-планувальником
+          <strong>gopolars</strong> — колонкова бібліотека з eager/lazy виконанням
           та IO для CSV, JSON, Parquet і IPC. Публічний API зосередений у пакеті
           <code>github.com/h0rn3t/gopolars/pkg/polars</code>.
         </p>
@@ -358,7 +357,7 @@ polars.When(
 
       <section id="io">
         <h3 data-i18n="io.title">IO</h3>
-        <p class="lead" data-i18n="io.lead">Фасад <code>NewIO()</code> — читання, scan і SQL на джерелах.</p>
+        <p class="lead" data-i18n="io.lead">Фасад <code>NewIO()</code> — читання і scan на джерелах.</p>
         <table class="api-table">
           <thead>
             <tr>
@@ -385,40 +384,6 @@ polars.When(
           <strong>Object store:</strong> URI <code>s3://</code>, <code>gcs://</code>, <code>az://</code> через
           env-профіль кореневих шляхів (див. тести <code>object_store</code> у репозиторії).
         </div>
-      </section>
-
-      <section id="sql">
-        <h3 data-i18n="sql.title">SQL</h3>
-        <p class="lead" data-i18n="sql.lead"><code>NewSQLContext()</code> — реєстрація таблиць і виконання SELECT з CTE, вікнами, set-ops.</p>
-        <pre class="code-block"><code class="language-go">ctx := polars.NewSQLContext()
-_ = ctx.Register("orders", df)
-
-lf, err := ctx.Execute(context.Background(), `
-    WITH top AS (
-        SELECT region, sum(amount) AS total
-        FROM orders
-        GROUP BY region
-    )
-    SELECT * FROM top WHERE total > 1000
-`)
-out, _ := lf.Collect(context.Background())</code></pre>
-        <table class="api-table">
-          <thead><tr><th>SQLContext</th><th></th></tr></thead>
-          <tbody>
-            <tr data-search="Register RegisterMany">
-              <td><code>Register</code> / <code>RegisterMany</code></td>
-              <td data-i18n="sql.row.register">Локальні таблиці</td>
-            </tr>
-            <tr data-search="Execute ExecuteGlobal">
-              <td><code>Execute</code> / <code>ExecuteGlobal</code></td>
-              <td data-i18n="sql.row.execute">Запит → LazyFrame</td>
-            </tr>
-            <tr data-search="Tables Unregister">
-              <td><code>Tables</code> / <code>Unregister</code></td>
-              <td data-i18n="sql.row.catalog">Каталог</td>
-            </tr>
-          </tbody>
-        </table>
       </section>
 
       <section id="joins">

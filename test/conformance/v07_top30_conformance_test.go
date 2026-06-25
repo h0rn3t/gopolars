@@ -36,7 +36,7 @@ func TestTop30DataFrameAndExprConformanceV07(t *testing.T) {
 	}
 }
 
-func TestTop30LazyAndSQLContextConformanceV07(t *testing.T) {
+func TestTop30LazyAndSeriesConformanceV07(t *testing.T) {
 	ctx := context.Background()
 	df, _ := polars.NewDataFrame(polars.NewDataFrameInput{
 		Columns: []frame.SeriesInput{
@@ -52,29 +52,6 @@ func TestTop30LazyAndSQLContextConformanceV07(t *testing.T) {
 	lf := df.Lazy().JoinWhere(polars.Col("v").Gt(polars.Lit(int64(10))))
 	if (<-lf.CollectAsync(ctx)).Error != nil {
 		t.Fatalf("collect_async conformance failed")
-	}
-	sqlLazy, err := lf.SQL(ctx, "SELECT id FROM t WHERE v >= 20", "t")
-	if err != nil {
-		t.Fatalf("lazy sql conformance failed: %v", err)
-	}
-	out, err := sqlLazy.Collect(ctx)
-	if err != nil || out.Height() != 2 {
-		t.Fatalf("lazy sql output mismatch")
-	}
-	sqlCtx := polars.NewSQLContext()
-	if err := sqlCtx.Register("t", df); err != nil {
-		t.Fatalf("register conformance failed: %v", err)
-	}
-	if err := sqlCtx.RegisterMany(map[string]polars.DataFrame{"t2": df}); err != nil {
-		t.Fatalf("register_many conformance failed: %v", err)
-	}
-	lf2, err := sqlCtx.Execute(ctx, "SELECT id FROM t WHERE id >= 2")
-	if err != nil {
-		t.Fatalf("sqlcontext execute conformance failed: %v", err)
-	}
-	out2, err := lf2.Collect(ctx)
-	if err != nil || out2.Height() != 2 {
-		t.Fatalf("sqlcontext output mismatch")
 	}
 
 	s, err := polars.NewSeries(polars.NewSeriesInput{

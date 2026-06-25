@@ -90,7 +90,7 @@ func TestV07ExprTop30Methods(t *testing.T) {
 	}
 }
 
-func TestV07LazyTop30MethodsAndSQLContext(t *testing.T) {
+func TestV07LazyTop30Methods(t *testing.T) {
 	ctx := context.Background()
 	df, _ := polars.NewDataFrame(polars.NewDataFrameInput{
 		Columns: []frame.SeriesInput{
@@ -126,14 +126,6 @@ func TestV07LazyTop30MethodsAndSQLContext(t *testing.T) {
 	if profOut.Height() == 0 || profile["duration_ms"] == nil {
 		t.Fatalf("invalid profile output")
 	}
-	sqlLF, err := lf.SQL(ctx, "SELECT id FROM t WHERE v > 20", "t")
-	if err != nil {
-		t.Fatalf("lazy sql failed: %v", err)
-	}
-	sqlOut, err := sqlLF.Collect(ctx)
-	if err != nil || sqlOut.Height() == 0 {
-		t.Fatalf("lazy sql collect failed")
-	}
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "out.ndjson")
 	if err := lf.SinkNDJSON(ctx, polars.WriteJSONInput{Path: path}); err != nil {
@@ -141,29 +133,6 @@ func TestV07LazyTop30MethodsAndSQLContext(t *testing.T) {
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("ndjson file not written")
-	}
-	sqlCtx := polars.NewSQLContext()
-	if err := sqlCtx.Register("t", df); err != nil {
-		t.Fatalf("sqlcontext register failed: %v", err)
-	}
-	if err := sqlCtx.RegisterMany(map[string]polars.DataFrame{"t2": df}); err != nil {
-		t.Fatalf("sqlcontext register_many failed: %v", err)
-	}
-	if len(sqlCtx.Tables()) != 2 {
-		t.Fatalf("sqlcontext tables mismatch")
-	}
-	ctxLF, err := sqlCtx.Execute(ctx, "SELECT id FROM t WHERE v >= 30")
-	if err != nil {
-		t.Fatalf("sqlcontext execute failed: %v", err)
-	}
-	ctxOut, err := ctxLF.Collect(ctx)
-	if err != nil || ctxOut.Height() != 2 {
-		t.Fatalf("sqlcontext collect mismatch")
-	}
-	sqlCtx.Unregister("t")
-	sqlCtx.Unregister("t2")
-	if len(sqlCtx.Tables()) != 0 {
-		t.Fatalf("sqlcontext unregister failed")
 	}
 }
 

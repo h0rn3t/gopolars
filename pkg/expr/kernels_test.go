@@ -23,7 +23,7 @@ func evalKernel(t *testing.T, e Expr, row kernelRow) any {
 	return v
 }
 
-func TestSQLKernelEndsWith(t *testing.T) {
+func TestKernelEndsWith(t *testing.T) {
 	row := kernelRow{"s": "johnson", "null": nil}
 	if v := evalKernel(t, Col("s").EndsWith(Lit("son")), row); v != true {
 		t.Fatalf("ends_with: got %v, want true", v)
@@ -36,7 +36,7 @@ func TestSQLKernelEndsWith(t *testing.T) {
 	}
 }
 
-func TestSQLKernelStrPos(t *testing.T) {
+func TestKernelStrPos(t *testing.T) {
 	row := kernelRow{"s": "héllo world", "null": nil}
 	if v := evalKernel(t, Col("s").StrPos(Lit("world")), row); v != int64(7) {
 		t.Fatalf("str_pos: got %v, want 7 (rune-based)", v)
@@ -49,7 +49,7 @@ func TestSQLKernelStrPos(t *testing.T) {
 	}
 }
 
-func TestSQLKernelLeftRight(t *testing.T) {
+func TestKernelLeftRight(t *testing.T) {
 	row := kernelRow{"s": "abcdef", "null": nil}
 	if v := evalKernel(t, Col("s").StrLeft(Lit(int64(3))), row); v != "abc" {
 		t.Fatalf("left: got %v, want abc", v)
@@ -71,7 +71,7 @@ func TestSQLKernelLeftRight(t *testing.T) {
 	}
 }
 
-func TestSQLKernelRegexpLikeAndAtan2(t *testing.T) {
+func TestKernelRegexpLikeAndAtan2(t *testing.T) {
 	row := kernelRow{"s": "abc123", "y": 1.0, "x": 1.0, "null": nil}
 	if v := evalKernel(t, Col("s").RegexpLike(Lit(`^[a-z]+\d+$`)), row); v != true {
 		t.Fatalf("regexp_like: got %v, want true", v)
@@ -88,7 +88,7 @@ func TestSQLKernelRegexpLikeAndAtan2(t *testing.T) {
 	}
 }
 
-func TestSQLKernelConcatWS(t *testing.T) {
+func TestKernelConcatWS(t *testing.T) {
 	row := kernelRow{"a": "x", "b": "y", "null": nil}
 	if v := evalKernel(t, Col("a").StrConcatWS("-", Col("b")), row); v != "x-y" {
 		t.Fatalf("concat_ws: got %v, want x-y", v)
@@ -104,7 +104,7 @@ func TestSQLKernelConcatWS(t *testing.T) {
 	}
 }
 
-func TestSQLKernelTrimReverseTitleCharLen(t *testing.T) {
+func TestKernelTrimReverseTitleCharLen(t *testing.T) {
 	row := kernelRow{"s": "  hi  ", "w": "héllo wörld", "null": nil}
 	if v := evalKernel(t, Col("s").StrLTrim(), row); v != "hi  " {
 		t.Fatalf("ltrim: got %q", v)
@@ -128,7 +128,7 @@ func TestSQLKernelTrimReverseTitleCharLen(t *testing.T) {
 	}
 }
 
-func TestSQLKernelPad(t *testing.T) {
+func TestKernelPad(t *testing.T) {
 	row := kernelRow{"s": "hi", "long": "abcdef", "null": nil}
 	if v := evalKernel(t, Col("s").StrPadStart(Lit(int64(5)), Lit("xy")), row); v != "xyxhi" {
 		t.Fatalf("lpad: got %q, want xyxhi", v)
@@ -144,7 +144,7 @@ func TestSQLKernelPad(t *testing.T) {
 	}
 }
 
-func TestSQLKernelSplitPart(t *testing.T) {
+func TestKernelSplitPart(t *testing.T) {
 	row := kernelRow{"s": "a@b@c", "null": nil}
 	if v := evalKernel(t, Col("s").StrSplitPart(Lit("@"), Lit(int64(2))), row); v != "b" {
 		t.Fatalf("split_part: got %q, want b", v)
@@ -160,7 +160,7 @@ func TestSQLKernelSplitPart(t *testing.T) {
 	}
 }
 
-func TestSQLKernelOrdinalDay(t *testing.T) {
+func TestKernelOrdinalDay(t *testing.T) {
 	row := kernelRow{"d": time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC), "null": nil}
 	if v := evalKernel(t, Col("d").DtOrdinalDay(), row); v != int64(32) {
 		t.Fatalf("ordinal_day: got %v, want 32", v)

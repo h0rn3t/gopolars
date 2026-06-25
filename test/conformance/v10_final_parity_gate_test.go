@@ -53,7 +53,7 @@ func TestV10FinalParityGate(t *testing.T) {
 		t.Fatalf("release-scope coverage below 1.0: got %.6f", report.ReleaseScope.Coverage)
 	}
 
-	for _, name := range []string{"DataFrame", "LazyFrame", "Expr", "Series", "SQLContext"} {
+	for _, name := range []string{"DataFrame", "LazyFrame", "Expr", "Series"} {
 		object, ok := report.Objects[name]
 		if !ok {
 			t.Fatalf("missing object coverage for %s", name)

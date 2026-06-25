@@ -77,8 +77,6 @@ type DataFrame interface {
 	Shift(periods int) (DataFrame, error)
 	Show(maxRows int) string
 	ShrinkToFit() DataFrame
-	SQL(ctx context.Context, query string) (LazyFrame, error)
-	Sql(ctx context.Context, query string) (LazyFrame, error)
 	Style() string
 	Upsample(by string, every time.Duration) (DataFrame, error)
 	Head(n int) DataFrame
@@ -246,7 +244,6 @@ type LazyFrame interface {
 	Profile(ctx context.Context) (DataFrame, map[string]any, error)
 	JoinWhere(predicate Expr) LazyFrame
 	SinkNDJSON(ctx context.Context, input WriteJSONInput) error
-	SQL(ctx context.Context, query string, table string) (LazyFrame, error)
 	Collect(ctx context.Context) (DataFrame, error)
 	CollectStreaming(ctx context.Context, chunkSize int) (DataFrame, error)
 	SinkCSV(ctx context.Context, input WriteCSVInput) error
@@ -502,14 +499,4 @@ type LazyGroupBy interface {
 type AsyncCollectResult struct {
 	DataFrame DataFrame
 	Error     error
-}
-
-type SQLContext interface {
-	Register(name string, df DataFrame) error
-	RegisterMany(tables map[string]DataFrame) error
-	Execute(ctx context.Context, query string) (LazyFrame, error)
-	ExecuteGlobal(ctx context.Context, query string) (LazyFrame, error)
-	RegisterGlobals(tables map[string]DataFrame) error
-	Tables() []string
-	Unregister(name string)
 }

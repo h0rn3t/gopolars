@@ -247,25 +247,6 @@ func TestIOReadParquetColumnProjection(t *testing.T) {
 	}
 }
 
-// TestIOSQLReturnsLazyFrame verifies IO.SQL returns a non-nil LazyFrame.
-func TestIOSQLReturnsLazyFrame(t *testing.T) {
-	io := NewIO()
-	// Use a query that the underlying parser will accept; we don't care about
-	// the columns, only that the wrapper dispatches and returns a non-nil LF.
-	lf, err := io.SQL(context.Background(), "SELECT 1 AS x")
-	if err != nil {
-		// The parser may reject this on its own; either way, the call should
-		// return a non-nil LF or a non-nil err, never a nil LF + nil err.
-		if lf != nil {
-			t.Errorf("io.SQL returned non-nil LazyFrame with err: %v", err)
-		}
-		return
-	}
-	if lf == nil {
-		t.Fatalf("io.SQL returned nil LazyFrame with no error")
-	}
-}
-
 // writeRawFile writes a string to a file path, used by tests that need
 // hand-crafted CSV/JSON input.
 func writeRawFile(t *testing.T, path, content string) error {

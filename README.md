@@ -45,7 +45,7 @@ First tagged release: **[v0.1.0](https://github.com/h0rn3t/gopolars/releases/tag
 API is versioned with SemVer; while `< v1.0.0` it may still evolve between minor versions (see the
 versioning and migration notes under [`docs/`](docs/)).
 
-The project has driven its internal parity waves up to the **v1.0 tracking matrix** ([`docs/parity/v1_0_coverage.json`](docs/parity/v1_0_coverage.json)) and now covers a broad core for Go-native analytics pipelines, including advanced joins, reshape operations, temporal windows, the SQL DDL and table-function surface, and performance diagnostics.\
+The project has driven its internal parity waves up to the **v1.0 tracking matrix** ([`docs/parity/v1_0_coverage.json`](docs/parity/v1_0_coverage.json)) and now covers a broad core for Go-native analytics pipelines, including advanced joins, reshape operations, temporal windows, and performance diagnostics.\
 It is production-usable for many DataFrame workloads, but it is **not yet a full drop-in replacement** for Python Polars.
 
 - ✅ Strong DataFrame/LazyFrame core for real analytics workloads
@@ -72,27 +72,6 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
   - struct: `struct_field`, `struct` packing
   - window / analytics: `over`, `rank`, `cum_*`, `rolling_*`, `ewm_mean`, `diff`, `shift`, `pct_change`, `interpolate`, `fill_null`/`fill_nan`
   - reshape: `explode`, `flatten` (struct flattening)
-
-### SQL and Query Planning
-
-- SQL parsing and planning for `SELECT` pipelines
-- Session DDL via `SQLContext`: `CREATE TABLE <name> AS <select>`, `DROP TABLE [IF EXISTS]`, `TRUNCATE TABLE`, `SHOW TABLES`, `EXPLAIN <select>`
-- Table functions in `FROM`/`JOIN`: `read_csv('path')`, `read_parquet('path')`, `read_json('path')`, `read_ipc('path')` (with aliases, usable in CTEs and subqueries)
-- Joins: `INNER`, `LEFT`, `RIGHT`, `FULL [OUTER]`, `CROSS` (and comma cross joins), with table aliases and qualified columns
-- Boolean predicate logic (`AND`/`OR`/`NOT`) with correct precedence in `WHERE`/`HAVING`/`ON`
-- `CASE WHEN … THEN … ELSE … END`, `IS [NOT] NULL`, `IN`/`BETWEEN`/`LIKE`, `CAST(x AS t)` / `x::t`
-- Scalar functions:
-  - string: `UPPER`, `LOWER`, `LENGTH`/`CHAR_LENGTH`, `OCTET_LENGTH`, `BIT_LENGTH`, `SUBSTR`, `LEFT`, `RIGHT`, `TRIM`/`LTRIM`/`RTRIM`, `CONCAT`, `CONCAT_WS`, `REPLACE`, `REVERSE`, `INITCAP`, `LPAD`/`RPAD`, `SPLIT_PART`, `STRPOS`/`POSITION`, `STARTS_WITH`/`ENDS_WITH`, `REGEXP_LIKE`
-  - math: `ABS`, `ROUND`, `CEIL`, `FLOOR`, `POWER`, `SQRT`, `CBRT`, `MOD`, `EXP`, `LN`, `LOG` (1/2-arg), `LOG2`, `LOG10`, `LOG1P`, `SIGN`, `PI()`, `DEGREES`/`RADIANS`, `SIN`/`COS`/`TAN`/`COT`, `ASIN`/`ACOS`/`ATAN`/`ATAN2`
-  - temporal: `YEAR`/`MONTH`/`DAY`/`HOUR`/`MINUTE`/`SECOND`, `DATE_PART('part', d)` / `EXTRACT(part FROM d)`, `DAYOFWEEK`, `DAYOFYEAR`/`ORDINAL_DAY`
-  - conditional: `COALESCE`, `NULLIF`, `IFNULL`, `IF(cond, a, b)`, `GREATEST`/`LEAST`
-- Aggregates: `SUM`/`MIN`/`MAX`/`AVG`/`COUNT`/`COUNT(DISTINCT col)`/`N_UNIQUE`/`STDDEV`/`VARIANCE`/`MEDIAN`/`FIRST`/`LAST`, with `GROUP BY`/`HAVING`, `ORDER BY`, `SELECT DISTINCT`, `LIMIT`/`OFFSET`
-- Window functions: `SUM`/`MEAN`/`MIN`/`MAX`/`COUNT`, `ROW_NUMBER`, `RANK`/`DENSE_RANK`, `LAG`/`LEAD` (offset + default), `FIRST_VALUE`/`LAST_VALUE` with `PARTITION BY` and `ORDER BY`
-- CTE support (`WITH ... AS (...)`)
-- Subqueries in `FROM`
-- Set operations: `UNION`, `INTERSECT`, `EXCEPT`
-- Logical optimization passes including pushdown and adaptive planning rules
-- Out of scope (clear error): DML (`INSERT`/`UPDATE`/`DELETE`), `ALTER TABLE`, correlated subqueries — matching Polars SQL
 
 ### IO and Interoperability
 
@@ -160,23 +139,19 @@ out, err := polars.ReadDatabase(ctx, polars.ReadDatabaseInput{
 | Lazy execution, scans, pushdown                                   | ✅ ready        |
 | Series public API                                                 | ✅ ready        |
 | Nested transforms (explode/flatten + list/struct expr)            | ✅ ready        |
-| SQL base + CTE + window expressions                               | ✅ ready        |
-| SQL joins, boolean/CASE/IN/BETWEEN/LIKE, scalar fns, DISTINCT/OFFSET, CAST | ✅ ready |
 | GroupBy, temporal windows and joins                               | ✅ ready        |
 | Streaming collect                                                 | ✅ ready        |
 | CSV/JSON/Parquet/IPC IO                                           | ✅ ready        |
 | Arrow interoperability                                            | ✅ ready        |
 | Cloud-style partitioned dataset scans                             | ✅ ready        |
 | Explain/telemetry schema v2 and perf markers                      | ✅ ready        |
-| Full Python Polars API parity (680-method tracked matrix)         | ✅ ~99.3% (675/680) |
-| SQL DDL + table functions in FROM/JOIN                            | ✅ ready        |
-| Long-tail SQL function-catalog parity with Python Polars          | 🚧 in progress |
+| Full Python Polars API parity (673-method tracked matrix)         | ✅ ~99.3% (668/673) |
 | Performance parity on all workloads                               | 🚧 in progress |
 | Ecosystem parity (all namespaces, plugins, advanced UDF patterns) | 🚧 in progress |
 
 ## Python Polars vs gopolars function matrix
 
-**Full-matrix totals (680 tracked Python Polars methods on DataFrame, LazyFrame, Expr, Series, SQLContext):** **675 implemented**, **5** intentionally remaining (`DataFrame.__setitem__` plus four documented Series non-goals). Coverage **≈99.3%**.
+**Full-matrix totals (673 tracked Python Polars methods on DataFrame, LazyFrame, Expr, Series):** **668 implemented**, **5** intentionally remaining (`DataFrame.__setitem__` plus four documented Series non-goals). Coverage **≈99.3%**.
 
 ### Coverage by object (full matrix)
 
@@ -186,8 +161,7 @@ out, err := polars.ReadDatabase(ctx, polars.ReadDatabaseInput{
 | LazyFrame  | 89          | 89               |
 | Expr       | 217         | 217              |
 | Series     | 222         | 226              |
-| SQLContext | 7           | 7                |
-| **Total**  | **675**     | **680**          |
+| **Total**  | **668**     | **673**          |
 
 ### Remaining rows by priority (full matrix)
 
@@ -204,22 +178,19 @@ To position `gopolars` as a practical replacement for Python Polars in most team
 1. **Broader API parity**
    - Semantic edge cases and error contracts vs Python Polars (the tracked matrix is largely covered; remaining gaps are documented in the matrix)
    - Deeper namespace behavior where Python has richer edge-case semantics
-2. **Deeper SQL parity**
-   - Wider SQL surface and compatibility with advanced analytical query patterns
-   - Stronger parity guarantees across planner and execution semantics
-3. **Performance and scale hardening**
+2. **Performance and scale hardening**
    - More optimization rules and workload-adaptive planning
    - Larger benchmark corpus and stricter regression budgets
-4. **Cloud and lakehouse robustness**
+3. **Cloud and lakehouse robustness**
    - Expanded object-store behavior and dataset semantics at scale
    - More integration coverage for partitioned and heterogeneous datasets
-5. **Compatibility and migration experience**
+4. **Compatibility and migration experience**
    - Continued stabilization of deprecation/migration workflows
    - Clear release evidence for every potentially breaking alignment change
 
 ## Roadmap focus
 
-- **Near term:** expand SQL/catalog surface, align remaining semantic edge cases on the covered API surface, and harden performance budgets on larger datasets.
+- **Near term:** align remaining semantic edge cases on the covered API surface, and harden performance budgets on larger datasets.
 - **Mid term:** improve planner/runtime adaptability for mixed temporal + join + reshape workloads.
 - **Final parity push:** close long-tail semantic differences and publish repeatable parity evidence for release readiness.
 
@@ -427,22 +398,14 @@ python3 bench/gen_comparison_table.py --benchmem bench/top30/benchmem.txt \
 > `null_count` at 1 M rows: Python Polars uses an O(1) cached counter; gopolars scans the validity mask on every call — a single-line fix tracked as a near-term optimization.  
 > `is_null`/`is_not_null` at 1 M rows: Python delegates to a Rust SIMD bitcount; gopolars copies and inverts the validity mask — also tracked.
 
-### LazyFrame & SQLContext
+### LazyFrame
 
 | operation | size | Go time | Go B/op | allocs/op | Py time | speedup |
 |-----------|------|---------|---------|-----------|---------|---------|
 | `LazyFrame.collect` | 1 K | 124 ns | 304 B | 4 | 3.3 µs | **Go ×27** |
 | `LazyFrame.collect` | 1 M | 101 ns | 304 B | 4 | 4.2 µs | **Go ×42** |
-| `LazyFrame.sql` | 1 K | 31.2 µs | 50.2 KB | 82 | 11.2 µs | Py ×2.8 |
-| `LazyFrame.sql` | 1 M | 7.93 ms | 37.5 MB | 169 | 11.5 µs | Py ×675 |
 | `LazyFrame.inspect` | 1 K | 28 ns | 96 B | 1 | 1.1 µs | **Go ×40** |
 | `LazyFrame.inspect` | 1 M | 20 ns | 96 B | 1 | 24.9 µs | **Go ×1 245** |
-| `SQLContext.execute` | 1 K | 1.7 µs | 3.7 KB | 31 | 6.2 µs | **Go ×3.6** |
-| `SQLContext.execute` | 1 M | 1.4 µs | 3.7 KB | 31 | 6.7 µs | **Go ×4.8** |
-| `SQLContext.register` | 1 K | 184 ns | 800 B | 3 | 2.2 µs | **Go ×12.9** |
-| `SQLContext.register` | 1 M | 160 ns | 800 B | 3 | 2.9 µs | **Go ×17.9** |
-| `SQLContext.tables` | 1 K | 251 ns | 816 B | 4 | 1.9 µs | **Go ×7.6** |
-| `SQLContext.tables` | 1 M | 274 ns | 816 B | 4 | 2.1 µs | **Go ×7.6** |
 
 > `LazyFrame.collect`/`inspect` on a no-op plan are near-zero-cost (pointer return + 304/96 B fixed metadata); Python Polars pays a Rust→Python dispatch + GIL overhead on every call regardless of plan complexity.
 
@@ -498,14 +461,14 @@ python3 bench/gen_comparison_table.py --benchmem bench/top30/benchmem.txt \
 | area | observation |
 |------|-------------|
 | **Small datasets (≤ 10 K rows)** | gopolars matches or beats Python Polars on most operations — Python's Rust→Python overhead dominates at small sizes |
-| **Large datasets (≥ 1 M rows)** | Python Polars is 5–500× faster on compute-heavy operations (`sort`, `rank`, `rolling_*`, `is_null` at scale) that use Rust SIMD/parallelism internally; gopolars is faster on plan-and-dispatch operations (`collect`, `inspect`, `SQLContext.*`) |
+| **Large datasets (≥ 1 M rows)** | Python Polars is 5–500× faster on compute-heavy operations (`sort`, `rank`, `rolling_*`, `is_null` at scale) that use Rust SIMD/parallelism internally; gopolars is faster on plan-and-dispatch operations (`collect`, `inspect`) |
 | **group_by (small)** | **Go ×12.7** at 1 K rows — hash aggregation over typed slice with no boxing |
 | **filter (small)** | **Go ×8.9** at 1 K rows — batch predicate mask via `evalbatch` + typed gather, no per-row boxing |
 | **filter+sum fused** | `eager-direct` up to **×10.7** faster than Python Polars at 1 K rows; competes at 10 M rows |
 | **Memory — eager path** | Allocates proportionally to surviving rows: 12 MB/op at 1 M rows with 50% selectivity |
 | **Memory — fused paths** | Lazy and eager-direct stay near-constant regardless of selectivity (bitmap + single-pass reduce, ~133–141 KB at 1 M rows) |
 | **Rolling windows** | gopolars uses O(n·w) scalar loops allocating ~895 MB at 1 M rows with window=100; Python Polars uses Rust SIMD O(n) — 10–42× gap; SIMD sliding-window kernels are on the roadmap |
-| **Metadata ops** | `LazyFrame.collect` (no-op plan), `inspect`, `SQLContext.register/tables` are **Go ×8–1 245×** — near-zero allocation (96–816 B) per call regardless of DataFrame size |
+| **Metadata ops** | `LazyFrame.collect` (no-op plan) and `inspect` are **Go ×8–1 245×** — near-zero allocation (96–816 B) per call regardless of DataFrame size |
 | **`select` / `with_columns` at 1 M rows** | Python Polars is 53–440× faster — it performs a zero-copy column re-reference; gopolars currently re-evaluates the expression plan and copies column metadata |
 
 ## Testing
