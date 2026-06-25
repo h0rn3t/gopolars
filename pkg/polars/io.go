@@ -1,6 +1,7 @@
 package polars
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,6 +24,7 @@ type IO interface {
 	ReadParquet(input ReadParquetInput) (DataFrame, error)
 	ReadIPC(input ReadIPCInput) (DataFrame, error)
 	ReadJSON(input ReadJSONInput) (DataFrame, error)
+	SQL(ctx context.Context, query string) (LazyFrame, error)
 }
 
 type ioFacade struct{}
