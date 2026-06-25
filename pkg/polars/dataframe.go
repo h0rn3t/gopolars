@@ -580,14 +580,6 @@ func (d *df) ShrinkToFit() DataFrame {
 	return d.Clone()
 }
 
-func (d *df) SQL(ctx context.Context, query string) (LazyFrame, error) {
-	return SQLFromDataFrame(ctx, d, query, "self")
-}
-
-func (d *df) Sql(ctx context.Context, query string) (LazyFrame, error) {
-	return d.SQL(ctx, query)
-}
-
 func (d *df) Style() string {
 	return d.ToInitRepr()
 }

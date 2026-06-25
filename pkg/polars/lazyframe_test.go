@@ -219,51 +219,5 @@ func TestLazySinkToUnwritablePathReturnsError(t *testing.T) {
 	}
 }
 
-// TestParseSQLRequiresTable verifies the table argument is honored.
-func TestParseSQLRequiresTable(t *testing.T) {
-	df := newLFFrame(t)
-	src := unwrapFrame(t, df)
-	// Empty query → parse error.
-	if _, err := ParseSQL(ParseSQLInput{Query: "", Source: src}); err == nil {
-		t.Fatalf("ParseSQL with empty query returned nil error, want non-nil")
-	}
-	// Missing table is also an error (parsed.Table == "" → "table is required").
-	lf, err := ParseSQL(ParseSQLInput{
-		Query:  "SELECT 1 AS x",
-		Source: src,
-		Table:  "",
-	})
-	if err == nil && lf == nil {
-		t.Fatalf("ParseSQL with no table returned nil LF and no err, want one or the other")
-	}
-}
-
-// TestSQLFromDataFrameFromEagerDF exercises the SQLFromDataFrame path.
-func TestSQLFromDataFrameFromEagerDF(t *testing.T) {
-	df := newLFFrame(t)
-	lf, err := SQLFromDataFrame(context.Background(), df, "SELECT * FROM t", "t")
-	if err != nil {
-		t.Fatalf("SQLFromDataFrame: %v", err)
-	}
-	out, err := lf.Collect(context.Background())
-	if err != nil {
-		t.Fatalf("Collect: %v", err)
-	}
-	if out.Height() != df.Height() {
-		t.Errorf("result height = %d, want %d", out.Height(), df.Height())
-	}
-}
-
-// unwrapFrame returns the underlying frame.DataFrame that powers a *df
-// wrapper. Used by ParseSQL tests that need the internal type.
-func unwrapFrame(t *testing.T, in DataFrame) frame.DataFrame {
-	t.Helper()
-	d, ok := in.(*df)
-	if !ok {
-		t.Fatalf("DataFrame is not *df")
-	}
-	return d.value
-}
-
 // avoid "imported and not used" if dtypes becomes unused.
 var _ = dtypes.Int64

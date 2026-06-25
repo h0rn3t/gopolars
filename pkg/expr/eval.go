@@ -550,7 +550,7 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				if err1 != nil || err2 != nil {
 					return nil, fmt.Errorf("invalid str_substr configuration")
 				}
-				return sqlSubstr(s, start, length), nil
+				return substrKernel(s, start, length), nil
 			}
 			if strings.HasPrefix(e.Op(), "round_dp:") {
 				if v == nil {
@@ -578,7 +578,7 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				}
 				return m[key], nil
 			}
-			if out, handled, err := evalSQLUnary(e.Op(), v); handled {
+			if out, handled, err := evalExtraUnary(e.Op(), v); handled {
 				return out, err
 			}
 			return nil, fmt.Errorf("unsupported unary op %s", e.Op())
@@ -597,7 +597,7 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			out, _, err := evalSQLTern(e.Op(), target, left, right)
+			out, _, err := evalExtraTern(e.Op(), target, left, right)
 			return out, err
 		}
 		if e.Op() == "clip" {
@@ -991,7 +991,7 @@ func evalBin(op string, left any, right any) (any, error) {
 	case "search_sorted":
 		return left, nil
 	default:
-		if out, handled, err := evalSQLBin(op, left, right); handled {
+		if out, handled, err := evalExtraBin(op, left, right); handled {
 			return out, err
 		}
 		return nil, fmt.Errorf("unsupported binary op %s", op)
@@ -1217,7 +1217,7 @@ func cmpStrings(op string, l string, r string) bool {
 	return false
 }
 
-// compileLikePattern converts a SQL LIKE pattern into an anchored regular
+// compileLikePattern converts a LIKE pattern into an anchored regular
 // expression. '%' matches any run of characters, '_' matches exactly one, and
 // every other character (including regex metacharacters) is matched literally.
 func compileLikePattern(pattern string) (*regexp.Regexp, error) {
@@ -1237,9 +1237,9 @@ func compileLikePattern(pattern string) (*regexp.Regexp, error) {
 	return regexp.Compile(b.String())
 }
 
-// sqlSubstr implements SQL SUBSTRING semantics: start is 1-based and length is
+// substrKernel implements SUBSTRING semantics: start is 1-based and length is
 // the number of characters to take. Out-of-range requests clamp to the string.
-func sqlSubstr(s string, start int, length int) string {
+func substrKernel(s string, start int, length int) string {
 	runes := []rune(s)
 	if start < 1 {
 		start = 1

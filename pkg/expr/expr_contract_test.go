@@ -118,7 +118,7 @@ func TestNamespaceBuilders(t *testing.T) {
 	}
 }
 
-// TestAggregationConstructors covers the SQL-catalog aggregation constructors,
+// TestAggregationConstructors covers the aggregation constructors,
 // which the group-by layer dispatches on by Kind/Op.
 func TestAggregationConstructors(t *testing.T) {
 	t.Parallel()

@@ -585,14 +585,6 @@ func (l *lf) SinkNDJSON(ctx context.Context, input WriteJSONInput) error {
 	return df.WriteJSON(input)
 }
 
-func (l *lf) SQL(ctx context.Context, query string, table string) (LazyFrame, error) {
-	df, err := l.Collect(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return SQLFromDataFrame(ctx, df, query, table)
-}
-
 func (l *lf) Collect(ctx context.Context) (DataFrame, error) {
 	source, nodes, err := l.resolveSource()
 	if err != nil {

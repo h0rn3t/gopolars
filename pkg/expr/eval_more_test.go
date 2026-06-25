@@ -216,7 +216,7 @@ func TestRoundToSigFigs(t *testing.T) {
 	}
 }
 
-// TestCompileLikePattern covers the SQL LIKE -> regexp translation: '%' (any
+// TestCompileLikePattern covers the LIKE -> regexp translation: '%' (any
 // run), '_' (one char), and literal escaping of metacharacters.
 func TestCompileLikePattern(t *testing.T) {
 	t.Parallel()
@@ -247,9 +247,9 @@ func TestCompileLikePattern(t *testing.T) {
 	}
 }
 
-// TestSQLSubstr covers SUBSTRING semantics: 1-based start, length clamp, and the
+// TestSubstrKernel covers SUBSTRING semantics: 1-based start, length clamp, and the
 // out-of-range / non-positive-length edge cases.
-func TestSQLSubstr(t *testing.T) {
+func TestSubstrKernel(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -267,8 +267,8 @@ func TestSQLSubstr(t *testing.T) {
 		{"héllo", 1, 2, "hé"},  // rune-aware
 	}
 	for _, tc := range cases {
-		if got := sqlSubstr(tc.s, tc.start, tc.length); got != tc.want {
-			t.Errorf("sqlSubstr(%q,%d,%d) = %q, want %q", tc.s, tc.start, tc.length, got, tc.want)
+		if got := substrKernel(tc.s, tc.start, tc.length); got != tc.want {
+			t.Errorf("substrKernel(%q,%d,%d) = %q, want %q", tc.s, tc.start, tc.length, got, tc.want)
 		}
 	}
 }

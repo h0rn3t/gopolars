@@ -273,8 +273,8 @@ func TestEvalNumericTernary(t *testing.T) {
 	}
 }
 
-// TestEvalSQLStringKernels covers the SQL-motivated string builders end to end.
-func TestEvalSQLStringKernels(t *testing.T) {
+// TestEvalStringKernels covers the string builders end to end.
+func TestEvalStringKernels(t *testing.T) {
 	t.Parallel()
 
 	row := mapRow{"s": "hello world", "a": "foo", "b": "bar", "pad": "ab", "csv": "x,y,z"}
@@ -317,8 +317,8 @@ func TestEvalSQLStringKernels(t *testing.T) {
 	}
 }
 
-// TestEvalSQLDatetimeKernels covers the SQL datetime accessors.
-func TestEvalSQLDatetimeKernels(t *testing.T) {
+// TestEvalDatetimeKernels covers the datetime accessors.
+func TestEvalDatetimeKernels(t *testing.T) {
 	t.Parallel()
 
 	ts := time.Date(2026, 3, 1, 14, 25, 36, 0, time.UTC)

@@ -111,26 +111,6 @@ func TestDataFrameShowAndWriters(t *testing.T) {
 	}
 }
 
-// TestDataFrameSQL covers the SQL entry point on a DataFrame.
-func TestDataFrameSQL(t *testing.T) {
-	t.Parallel()
-
-	d := lazyCovFrame(t)
-	ctx := context.Background()
-
-	lz, err := d.SQL(ctx, "SELECT id FROM self WHERE id > 1")
-	if err != nil {
-		t.Fatalf("SQL: %v", err)
-	}
-	out, err := lz.Collect(ctx)
-	if err != nil {
-		t.Fatalf("SQL collect: %v", err)
-	}
-	if out.Height() != 3 {
-		t.Errorf("SQL height = %d, want 3 (id 2,3,4)", out.Height())
-	}
-}
-
 // TestLazyFrameCollectStreaming covers the streaming collect entry point.
 func TestLazyFrameCollectStreaming(t *testing.T) {
 	t.Parallel()

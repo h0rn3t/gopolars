@@ -292,7 +292,7 @@ func BenchmarkTop30(b *testing.B) {
 	}
 
 	// LazyFrame operations
-	lazyOps := []string{"collect", "sql", "inspect"}
+	lazyOps := []string{"collect", "inspect"}
 	for _, op := range lazyOps {
 		for _, n := range sizes {
 			b.Run("LazyFrame/"+op+"/size_"+humanize(n), func(b *testing.B) {
@@ -324,51 +324,6 @@ func BenchmarkTop30(b *testing.B) {
 				mu.Lock()
 				results = append(results, summaryEntry{
 					Object:         "LazyFrame",
-					Op:             op,
-					Size:           humanize(n),
-					Elements:       n,
-					GoNsPerOp:      goNsPerOp,
-					PythonSecPerOp: pythonSecPerOp,
-					Ratio:          pythonSecPerOp / (float64(goNsPerOp) / 1e9),
-				})
-				mu.Unlock()
-			})
-		}
-	}
-
-	// SQLContext operations
-	sqlOps := []string{"execute", "register", "tables"}
-	for _, op := range sqlOps {
-		for _, n := range sizes {
-			b.Run("SQLContext/"+op+"/size_"+humanize(n), func(b *testing.B) {
-				runtime.GC()
-				df, err := makeDataFrame(n)
-				if err != nil {
-					b.Fatalf("make dataframe: %v", err)
-				}
-				tmpFile := writeTempArrow(b, n)
-
-				pyRes, err := runPythonHarness(op, "SQLContext", tmpFile, 10)
-				if err != nil {
-					b.Skipf("python harness: %v", err)
-					return
-				}
-				pythonSecPerOp := pyRes.ElapsedSec / float64(pyRes.Iters)
-				b.ReportMetric(pythonSecPerOp, "python_sec/op")
-
-				b.ResetTimer()
-				start := time.Now()
-				for i := 0; i < b.N; i++ {
-					if err := benchSQLContext(ctx, df, op); err != nil {
-						b.Fatalf("SQLContext/%s: %v", op, err)
-					}
-				}
-				b.StopTimer()
-				goNsPerOp := time.Since(start).Nanoseconds() / int64(b.N)
-
-				mu.Lock()
-				results = append(results, summaryEntry{
-					Object:         "SQLContext",
 					Op:             op,
 					Size:           humanize(n),
 					Elements:       n,
@@ -496,38 +451,8 @@ func benchLazyFrame(ctx context.Context, df polars.DataFrame, op string) error {
 	switch op {
 	case "collect":
 		_, err = lf.Collect(ctx)
-	case "sql":
-		var sqlLF polars.LazyFrame
-		sqlLF, err = lf.SQL(ctx, "SELECT g, v FROM self WHERE v > 0", "self")
-		if err == nil {
-			_, err = sqlLF.Collect(ctx)
-		}
 	case "inspect":
 		_ = lf.Inspect()
-	}
-	return err
-}
-
-func benchSQLContext(ctx context.Context, df polars.DataFrame, op string) error {
-	var err error
-	sqlCtx := polars.NewSQLContext()
-	switch op {
-	case "execute":
-		if err = sqlCtx.Register("t", df); err != nil {
-			return err
-		}
-		var lf polars.LazyFrame
-		lf, err = sqlCtx.Execute(ctx, "SELECT * FROM t")
-		if err == nil {
-			_, err = lf.Collect(ctx)
-		}
-	case "register":
-		err = sqlCtx.Register("t", df)
-	case "tables":
-		if err = sqlCtx.Register("t", df); err != nil {
-			return err
-		}
-		_ = sqlCtx.Tables()
 	}
 	return err
 }
@@ -601,7 +526,7 @@ func writeReports(b *testing.B, results []summaryEntry) {
 		}
 	}()
 	writeStr(mf, "# Top30 Benchmark Results\n\n")
-	objects := []string{"DataFrame", "Expr", "Series", "LazyFrame", "SQLContext"}
+	objects := []string{"DataFrame", "Expr", "Series", "LazyFrame"}
 	for _, obj := range objects {
 		writeStr(mf, fmt.Sprintf("## %s\n\n", obj))
 		writeStr(mf, "| operation | size | go_ns/op | python_ms/op | ratio |\n")

@@ -1,7 +1,6 @@
 package conformance
 
 import (
-	"context"
 	"testing"
 
 	"github.com/h0rn3t/gopolars/pkg/frame"
@@ -17,12 +16,6 @@ func TestV09WaveDComputeConformance(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("init failed: %v", err)
-	}
-	if _, err := df.SQL(context.Background(), "SELECT x FROM self"); err != nil {
-		t.Fatalf("df sql conformance failed: %v", err)
-	}
-	if _, err := df.Sql(context.Background(), "SELECT x FROM self"); err != nil {
-		t.Fatalf("df sql alias conformance failed: %v", err)
 	}
 	if _, err := df.ToDummies("g"); err != nil {
 		t.Fatalf("to_dummies conformance failed: %v", err)

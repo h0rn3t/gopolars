@@ -1,7 +1,6 @@
 package polars
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 
@@ -81,22 +80,6 @@ func TestDataFrameUnstack(t *testing.T) {
 	}
 	if len(parts) != 2 {
 		t.Fatalf("Unstack produced %d partitions, want 2", len(parts))
-	}
-}
-
-// TestDataFrameSqlAlias covers the lowercase Sql alias.
-func TestDataFrameSqlAlias(t *testing.T) {
-	t.Parallel()
-
-	d := lazyCovFrame(t)
-	ctx := context.Background()
-	lz, err := d.Sql(ctx, "SELECT id FROM self")
-	if err != nil {
-		t.Fatalf("Sql: %v", err)
-	}
-	out, err := lz.Collect(ctx)
-	if err != nil || out.Width() != 1 {
-		t.Fatalf("Sql collect width=%d err=%v", out.Width(), err)
 	}
 }
 

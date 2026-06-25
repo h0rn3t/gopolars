@@ -1,7 +1,6 @@
 package unit
 
 import (
-	"context"
 	"math"
 	"testing"
 	"time"
@@ -65,11 +64,8 @@ func TestV09WaveDComputeAndDataFrameLowMethods(t *testing.T) {
 	if _, err := df.Shift(1); err != nil || df.Show(2) == "" || df.ShrinkToFit().Height() != df.Height() {
 		t.Fatalf("shift/show/shrink failed")
 	}
-	if _, err := df.SQL(context.Background(), "SELECT * FROM self"); err != nil {
-		t.Fatalf("sql failed: %v", err)
-	}
-	if _, err := df.Sql(context.Background(), "SELECT * FROM self"); err != nil || df.Style() == "" {
-		t.Fatalf("sql/style alias failed")
+	if df.Style() == "" {
+		t.Fatalf("style failed")
 	}
 	if len(df.Std()) == 0 || len(df.Sum()) == 0 {
 		t.Fatalf("std/sum failed")

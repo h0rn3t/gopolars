@@ -20,8 +20,8 @@ func TestV10FullMatrixRemainderProfile(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	fm := report.FullMatrix
-	if fm.TotalMethods != 680 {
-		t.Fatalf("full_matrix total: got %d want 680", fm.TotalMethods)
+	if fm.TotalMethods != 673 {
+		t.Fatalf("full_matrix total: got %d want 673", fm.TotalMethods)
 	}
 	if fm.ImplementedMethods+fm.RemainingMethods != fm.TotalMethods {
 		t.Fatalf("full_matrix implemented+remaining != total: %d+%d vs %d",

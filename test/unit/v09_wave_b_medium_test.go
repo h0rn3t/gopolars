@@ -10,7 +10,7 @@ import (
 	"github.com/h0rn3t/gopolars/pkg/polars"
 )
 
-func TestV09WaveBDataFrameSeriesLazyExprSQL(t *testing.T) {
+func TestV09WaveBDataFrameSeriesLazyExpr(t *testing.T) {
 	df, err := polars.NewDataFrame(polars.NewDataFrameInput{
 		Columns: []frame.SeriesInput{
 			{Name: "g", Values: []any{"a", "a", "b", "b"}},
@@ -93,18 +93,5 @@ func TestV09WaveBDataFrameSeriesLazyExprSQL(t *testing.T) {
 	}
 	if (<-lf2.SinkBatches(ctx, 2)).Error != nil {
 		t.Fatalf("sink_batches failed")
-	}
-
-	sqlCtx := polars.NewSQLContext()
-	if err := sqlCtx.RegisterGlobals(map[string]polars.DataFrame{"t": df}); err != nil {
-		t.Fatalf("register_globals failed: %v", err)
-	}
-	lf3, err := sqlCtx.ExecuteGlobal(ctx, "SELECT g FROM t WHERE g = 'a'")
-	if err != nil {
-		t.Fatalf("execute_global failed: %v", err)
-	}
-	out3, err := lf3.Collect(ctx)
-	if err != nil || out3.Height() != 2 {
-		t.Fatalf("execute_global output mismatch")
 	}
 }

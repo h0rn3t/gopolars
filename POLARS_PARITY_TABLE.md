@@ -102,7 +102,6 @@
 | `shrink_to_fit` | `ShrinkToFit` | ✅ |
 | `slice` | `Slice` | ✅ |
 | `sort` | `Sort` | ✅ |
-| `sql` | `SQL / Sql` | ✅ |
 | `std` | `Std` | ✅ |
 | `style` | `Style` | ✅ |
 | `sum` | `Sum` | ✅ |
@@ -229,7 +228,6 @@
 | `sink_parquet` | `SinkParquet` | ✅ |
 | `slice` | `Slice` | ✅ |
 | `sort` | `Sort` | ✅ |
-| `sql` | `SQL / Sql` | ✅ |
 | `std` | `Std` | ✅ |
 | `sum` | `Sum` | ✅ |
 | `tail` | `Tail` | ✅ |
@@ -448,7 +446,6 @@
 | `skew` | `Skew` | ✅ |
 | `slice` | `Slice` | ✅ |
 | `sort` | `Sort` | ✅ |
-| `sql` | `SQL / Sql` | ❌ |
 | `sqrt` | `Sqrt` | ✅ |
 | `std` | `Std` | ✅ |
 | `str` | `Str` | ✅ |

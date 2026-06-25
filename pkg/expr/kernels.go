@@ -10,19 +10,19 @@ import (
 	"unicode/utf8"
 )
 
-// Aggregation constructors for the SQL catalog (group-by reductions, like
-// Sum/Min/Max/Mean/Count/NUnique above in expr.go).
+// Aggregation constructors (group-by reductions, like Sum/Min/Max/Mean/Count/
+// NUnique above in expr.go).
 func Std(e Expr) Expr    { return Expr{kind: KindAgg, op: "std", target: &e} }
 func Var(e Expr) Expr    { return Expr{kind: KindAgg, op: "var", target: &e} }
 func Median(e Expr) Expr { return Expr{kind: KindAgg, op: "median", target: &e} }
 func First(e Expr) Expr  { return Expr{kind: KindAgg, op: "first", target: &e} }
 func Last(e Expr) Expr   { return Expr{kind: KindAgg, op: "last", target: &e} }
 
-// CountDistinct counts distinct non-null values (SQL COUNT(DISTINCT col)).
+// CountDistinct counts distinct non-null values (COUNT(DISTINCT col)).
 func CountDistinct(e Expr) Expr { return Expr{kind: KindAgg, op: "count_distinct", target: &e} }
 
-// Builder methods for SQL-motivated operations (see sql_ops.go for the earlier
-// set). NULL inputs propagate as NULL outputs in every kernel below.
+// Builder methods for string, datetime, and numeric operations (see ops.go for
+// the earlier set). NULL inputs propagate as NULL outputs in every kernel below.
 
 func (e Expr) EndsWith(suffix Expr) Expr { return bin("ends_with", e, suffix) }
 
@@ -51,7 +51,7 @@ func (e Expr) StrRTrim() Expr   { return Expr{kind: KindUnary, op: "str_rtrim", 
 func (e Expr) StrReverse() Expr { return Expr{kind: KindUnary, op: "str_reverse", target: &e} }
 
 // StrToTitle uppercases the first letter of each word and lowercases the rest
-// (SQL INITCAP).
+// (INITCAP).
 func (e Expr) StrToTitle() Expr { return Expr{kind: KindUnary, op: "str_to_title", target: &e} }
 
 // StrCharLen counts characters (runes), unlike StrLen which counts bytes.
@@ -76,9 +76,9 @@ func (e Expr) StrSplitPart(sep Expr, n Expr) Expr {
 	return Expr{kind: KindTern, op: "str_split_part", target: &e, left: &sep, right: &n}
 }
 
-// evalSQLUnary evaluates the SQL-motivated unary kernels. handled is false
-// when op is not one of them.
-func evalSQLUnary(op string, v any) (out any, handled bool, err error) {
+// evalExtraUnary evaluates the unary scalar kernels. handled is false when op is
+// not one of them.
+func evalExtraUnary(op string, v any) (out any, handled bool, err error) {
 	switch op {
 	case "str_ltrim":
 		if v == nil {
@@ -157,9 +157,9 @@ func evalSQLUnary(op string, v any) (out any, handled bool, err error) {
 	return nil, false, nil
 }
 
-// evalSQLBin evaluates the SQL-motivated binary kernels. handled is false when
-// op is not one of them.
-func evalSQLBin(op string, left any, right any) (out any, handled bool, err error) {
+// evalExtraBin evaluates the binary scalar kernels. handled is false when op is
+// not one of them.
+func evalExtraBin(op string, left any, right any) (out any, handled bool, err error) {
 	if sep, ok := strings.CutPrefix(op, "str_concat_ws:"); ok {
 		// NULL operands are skipped (CONCAT_WS semantics); both NULL stays NULL.
 		if left == nil && right == nil {
@@ -255,9 +255,9 @@ func evalSQLBin(op string, left any, right any) (out any, handled bool, err erro
 	return nil, false, nil
 }
 
-// evalSQLTern evaluates the SQL-motivated ternary kernels (already-evaluated
+// evalExtraTern evaluates the ternary scalar kernels (already-evaluated
 // operands). handled is false when op is not one of them.
-func evalSQLTern(op string, target any, left any, right any) (out any, handled bool, err error) {
+func evalExtraTern(op string, target any, left any, right any) (out any, handled bool, err error) {
 	switch op {
 	case "str_pad_start", "str_pad_end":
 		if target == nil {

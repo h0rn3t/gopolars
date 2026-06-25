@@ -53,9 +53,6 @@ func TestCoverageGapsPublicAPI(t *testing.T) {
 		FillNull(int64(0)).
 		DropNulls("v").
 		DropNaNs("v")
-	if _, err := io.SQL(ctx, "SELECT v FROM df"); err != nil {
-		t.Fatalf("sql lazy: %v", err)
-	}
 	if _, err := lf.Collect(ctx); err != nil {
 		t.Fatalf("lazy collect: %v", err)
 	}
