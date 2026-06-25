@@ -140,6 +140,87 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 		}
 		return chunk.NewTime(vals, nulls), nil
 
+	case *array.Date32:
+		vals := make([]time.Time, n)
+		for i := 0; i < n; i++ {
+			if !nulls[i] {
+				vals[i] = a.Value(i).ToTime()
+			}
+		}
+		return chunk.NewTime(vals, nulls), nil
+
+	case *array.Date64:
+		vals := make([]time.Time, n)
+		for i := 0; i < n; i++ {
+			if !nulls[i] {
+				vals[i] = a.Value(i).ToTime()
+			}
+		}
+		return chunk.NewTime(vals, nulls), nil
+
+	case *array.Time32:
+		unit := a.DataType().(*goarrow.Time32Type).Unit
+		vals := make([]time.Time, n)
+		for i := 0; i < n; i++ {
+			if !nulls[i] {
+				vals[i] = a.Value(i).ToTime(unit)
+			}
+		}
+		return chunk.NewTime(vals, nulls), nil
+
+	case *array.Time64:
+		unit := a.DataType().(*goarrow.Time64Type).Unit
+		vals := make([]time.Time, n)
+		for i := 0; i < n; i++ {
+			if !nulls[i] {
+				vals[i] = a.Value(i).ToTime(unit)
+			}
+		}
+		return chunk.NewTime(vals, nulls), nil
+
+	case *array.Binary:
+		boxed := make([]any, n)
+		for i := 0; i < n; i++ {
+			if !nulls[i] {
+				boxed[i] = append([]byte{}, a.Value(i)...)
+			}
+		}
+		return chunk.NewBoxed(dtypes.Binary, boxed, nulls), nil
+
+	case *array.LargeBinary:
+		boxed := make([]any, n)
+		for i := 0; i < n; i++ {
+			if !nulls[i] {
+				boxed[i] = append([]byte{}, a.Value(i)...)
+			}
+		}
+		return chunk.NewBoxed(dtypes.Binary, boxed, nulls), nil
+
+	case *array.MonthDayNanoInterval:
+		boxed := make([]any, n)
+		for i := 0; i < n; i++ {
+			if !nulls[i] {
+				boxed[i] = intervalToDuration(a.Value(i))
+			}
+		}
+		return chunk.NewBoxed(dtypes.Duration, boxed, nulls), nil
+
+	case *array.Decimal128:
+		dt := a.DataType().(*goarrow.Decimal128Type)
+		boxed := make([]any, n)
+		for i := 0; i < n; i++ {
+			if !nulls[i] {
+				boxed[i] = dtypes.DecimalValue(a.Value(i).ToString(dt.Scale))
+			}
+		}
+		return chunk.NewBoxed(dtypes.Decimal, boxed, nulls), nil
+
+	case *array.List, *array.LargeList, *array.FixedSizeList:
+		return nestedToColumn(arr, n, dtypes.List), nil
+
+	case *array.Struct:
+		return nestedToColumn(arr, n, dtypes.Struct), nil
+
 	default:
 		// Unsupported Arrow type: box into []any. Clone string/[]byte values so
 		// the boxed column does not alias a C-owned Arrow buffer that is freed on
@@ -237,6 +318,27 @@ func columnToArrowArray(s series.Series, alloc memory.Allocator) (goarrow.Array,
 			}
 		}
 		return b.NewArray(), dt, nil
+	}
+
+	if dt := s.DataType(); dt == dtypes.List || dt == dtypes.Struct {
+		values := make([]any, n)
+		for i := 0; i < n; i++ {
+			values[i] = s.Value(i)
+		}
+		return nestedColumnToArrow(values, col.Nulls(), alloc)
+	}
+
+	if s.DataType() == dtypes.Binary {
+		b := array.NewBinaryBuilder(alloc, goarrow.BinaryTypes.Binary)
+		b.Reserve(n)
+		for i := 0; i < n; i++ {
+			if v, ok := s.Value(i).([]byte); ok {
+				b.Append(v)
+			} else {
+				b.AppendNull()
+			}
+		}
+		return b.NewArray(), goarrow.BinaryTypes.Binary, nil
 	}
 
 	// Boxed fallback: build a string array from Value(i).

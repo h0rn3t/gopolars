@@ -7,6 +7,8 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"regexp"
+	"strings"
 
 	goarrow "github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -26,12 +28,15 @@ func execSQL(ctx context.Context, query string, tables map[string]frame.DataFram
 	if err != nil {
 		return frame.DataFrame{}, fmt.Errorf("open duckdb: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return frame.DataFrame{}, fmt.Errorf("duckdb conn: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
+	if err := registerUDFs(conn); err != nil {
+		return frame.DataFrame{}, err
+	}
 
 	var result frame.DataFrame
 	rawErr := conn.Raw(func(dc any) error {
@@ -48,7 +53,19 @@ func execSQL(ctx context.Context, query string, tables map[string]frame.DataFram
 				return fmt.Errorf("register table %q: %w", name, err)
 			}
 		}
-		res, err := ar.QueryContext(ctx, query)
+		// polars returns the resulting table for a DML statement (DELETE/TRUNCATE/
+		// UPDATE/INSERT); DuckDB returns a row count. Since each frame is
+		// materialized into a real, mutable table, run the DML and then read the
+		// affected table back so the result matches polars. (RETURNING-bearing
+		// statements keep DuckDB's native semantics.)
+		runQuery := query
+		if target, ok := dmlTarget(query); ok {
+			if err := execStmt(ctx, ar, query); err != nil {
+				return err
+			}
+			runQuery = fmt.Sprintf(`SELECT * FROM "%s"`, target)
+		}
+		res, err := ar.QueryContext(ctx, runQuery)
 		if err != nil {
 			return err
 		}
@@ -64,6 +81,23 @@ func execSQL(ctx context.Context, query string, tables map[string]frame.DataFram
 		return frame.DataFrame{}, rawErr
 	}
 	return result, nil
+}
+
+// dmlReTarget extracts the target table of a leading DML statement
+// (DELETE FROM / UPDATE / INSERT INTO / TRUNCATE [TABLE]).
+var dmlReTarget = regexp.MustCompile(`(?is)^\s*(?:DELETE\s+FROM|UPDATE|INSERT\s+INTO|TRUNCATE(?:\s+TABLE)?)\s+"?([A-Za-z_][A-Za-z0-9_]*)"?`)
+
+// dmlTarget reports whether query is a (non-RETURNING) DML statement and, if so,
+// the table it mutates. RETURNING statements keep DuckDB's native result.
+func dmlTarget(query string) (string, bool) {
+	if strings.Contains(strings.ToUpper(query), "RETURNING") {
+		return "", false
+	}
+	m := dmlReTarget.FindStringSubmatch(query)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
 }
 
 // execStmt runs a statement that produces no rows and releases its reader.
@@ -84,7 +118,7 @@ func registerTable(ctx context.Context, ar *duckdb.Arrow, name string, f frame.D
 		return err
 	}
 	defer rec.Release()
-	reader, err := array.NewRecordReader(rec.Schema(), []goarrow.Record{rec})
+	reader, err := array.NewRecordReader(rec.Schema(), []goarrow.RecordBatch{rec})
 	if err != nil {
 		return err
 	}
@@ -102,7 +136,7 @@ func registerTable(ctx context.Context, ar *duckdb.Arrow, name string, f frame.D
 func readResult(res array.RecordReader) (frame.DataFrame, error) {
 	var frames []frame.DataFrame
 	for res.Next() {
-		norm, err := normalizeRecord(res.Record())
+		norm, err := normalizeRecord(res.RecordBatch())
 		if err != nil {
 			return frame.DataFrame{}, err
 		}
@@ -120,7 +154,7 @@ func readResult(res array.RecordReader) (frame.DataFrame, error) {
 	case 0:
 		// Empty result: build a 0-row frame carrying the result schema.
 		rb := array.NewRecordBuilder(memory.DefaultAllocator, res.Schema())
-		empty := rb.NewRecord()
+		empty := rb.NewRecordBatch()
 		norm, err := normalizeRecord(empty)
 		empty.Release()
 		rb.Release()
@@ -139,10 +173,25 @@ func readResult(res array.RecordReader) (frame.DataFrame, error) {
 
 // nativeArrow reports whether the gopolars Arrow converter already represents
 // the array's type directly.
+// List/Struct are passed through untouched: the gopolars Arrow bridge converts
+// them (and normalizes any narrow numeric leaves) into boxed List/Struct columns.
 func nativeArrow(a goarrow.Array) bool {
 	switch a.(type) {
 	case *array.Float64, *array.Int64, *array.Boolean, *array.String, *array.LargeString, *array.Timestamp:
 		return true
+	case *array.Date32, *array.Date64, *array.Time32, *array.Time64, *array.Binary, *array.LargeBinary:
+		return true
+	case *array.MonthDayNanoInterval:
+		return true
+	case *array.List, *array.LargeList, *array.FixedSizeList, *array.Struct:
+		return true
+	case *array.Decimal128:
+		// Preserve an explicit DECIMAL/NUMERIC cast as a gopolars Decimal column, but
+		// widen HUGEINT and integer aggregates (SUM/COUNT...) to int64/float64. DuckDB
+		// surfaces those as Decimal128(precision=38, scale=0), which is byte-identical
+		// to an explicit ::numeric(p,0) only when p==38; a user precision is < 38.
+		dt := a.DataType().(*goarrow.Decimal128Type)
+		return dt.Precision != 38 || dt.Scale != 0
 	}
 	return false
 }
@@ -151,7 +200,7 @@ func nativeArrow(a goarrow.Array) bool {
 // represent natively (narrow ints, unsigned ints, float32, Decimal128/HUGEINT)
 // into Int64/Float64. Truly unsupported types (e.g. list/struct) return an error.
 // Returns a record the caller must Release.
-func normalizeRecord(rec goarrow.Record) (goarrow.Record, error) {
+func normalizeRecord(rec goarrow.RecordBatch) (goarrow.RecordBatch, error) {
 	needs := false
 	for i := 0; i < int(rec.NumCols()); i++ {
 		if !nativeArrow(rec.Column(i)) {
@@ -186,7 +235,7 @@ func normalizeRecord(rec goarrow.Record) (goarrow.Record, error) {
 		}
 		fields[i] = field
 	}
-	out := array.NewRecord(goarrow.NewSchema(fields, nil), cols, rec.NumRows())
+	out := array.NewRecordBatch(goarrow.NewSchema(fields, nil), cols, rec.NumRows())
 	for _, c := range cols {
 		c.Release()
 	}

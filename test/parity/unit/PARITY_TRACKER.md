@@ -32,6 +32,70 @@ every known divergence is asserted against gopolars' real behavior or skipped).
 > missing features are kept as a documentation-only inventory in the "GAP" rows of
 > the Discrepancy Log below — they no longer correspond to executable skip tests.
 
+### SQL parity (DuckDB engine — built with `-tags "duckdb duckdb_arrow"`)
+
+The SQL surface is backed by an embedded DuckDB engine (opt-in build tag), so it
+is **not part of the pure-Go TOTAL above**. The py-polars `tests/unit/sql` suite
+(py-1.28.1, 22 files) is ported as a *compatibility-measurement corpus*: DuckDB's
+dialect differs from polars' native `polars-sql`, so divergences are pinned with
+`// DISCREPANCY:` and non-representable cases are `t.Skip`-ped as GAP — neither is
+a failure.
+
+| Category | PY Files | GO Files | GO Tests | MATCH/PASS | FAIL | GAP (SKIP) |
+|----------|----------|----------|----------|-----------|------|-----------|
+| sql (DuckDB) | 22 | 22 | 173 | 170 | 0 | 3 |
+
+Compatibility vs py-polars 1.28.1: **170 MATCH / 3 GAP (~98% of ported cases), 0 FAIL.**
+The UNNEST(col)-projection and UNNEST-table-function-error tests are now pinned to
+DuckDB's measured behavior (DuckDB does a standard lateral unnest that repeats the other
+columns, vs polars' explode+NULL-extend; and DuckDB rejects multi-arg UNNEST + WITH
+OFFSET while accepting the alias forms polars rejects).
+**Decimal is now supported**: explicit `::numeric/::decimal(p,s)` casts read back as a
+gopolars Decimal column. The bridge preserves a Decimal128 only when `precision < 38`
+or `scale > 0` (a user-specified type) and still widens DuckDB's HUGEINT / integer
+aggregates — `Decimal128(38,0)` — to int64 (the load-bearing path). Decimal *literals*
+(`23.0`) are DECIMAL in DuckDB but FLOAT in polars, so the two tests using them cast to
+DOUBLE (DISCREPANCY). DuckDB rounds scale-0 casts (512.5→513) where polars truncates.
+Also closed earlier: `::json`→`::STRUCT(...)`, malformed-blob errors.
+The final **3 GAPs are Python-only** (no Go/SQL analogue exists — these test Python
+language features, not the SQL dialect): `pl.sql_expr` (SQL-string→Expr builder API),
+`SQLContext.register_globals()`/context-manager (introspects Python `globals()`), and
+SQL over pandas/pyarrow/PyCapsule frame objects.
+Closed by dialect-adaptation/feature work (all pinned with `// DISCREPANCY`):
+read_csv (temp file), bit/hex blob literals (`'\xNN'::BLOB`), multi-array UNNEST
+(zipped `UNNEST()` in SELECT), DML DELETE/TRUNCATE (run + read-back), ALL/ANY
+(subquery form), struct.* EXCLUDE/RENAME + `->`/`->>` (DuckDB JSON text), plus new
+dtypes: **Binary** (`::blob`), **Duration** (INTERVAL → flattened time.Duration), and
+a registered **`normalize(text,form)` UDF** (golang.org/x/text → NFC/NFD/NFKC/NFKD,
+DuckDB ships only nfc_normalize). The final 8 GAPs are genuinely not reproducible:
+- **Python-only**: `register_globals`/context-manager, pandas/pyarrow/PyCapsule
+  interop, `pl.sql_expr`.
+- **DuckDB-dialect-can't**: UNNEST table-function alias diagnostics, `UNNEST(col)`
+  projection (polars explode/broadcast order), bit/hex literal *validation* (DuckDB
+  lexes `x'fg'` as identifier+string → no error), `::json`→Struct (DuckDB JSON is
+  VARCHAR), `#>`/`#>>` struct path operators (no such DuckDB operator).
+- **Type**: Decimal (the Decimal128→int64/float64 widening is load-bearing for
+  aggregate tests — preserving a Decimal dtype would regress them).
+Notable DuckDB-vs-polars divergences:
+- **Numeric**: integer `/` is true (float) division and `//` does not floor on
+  DOUBLE; float→int CAST rounds (polars truncates); `DIV()` is polars-only.
+- **Types**: gopolars normalizes every integer width → int64 and float width →
+  float64 (no Int8/UInt/Float32 dtype). **List/Struct now round-trip** through the
+  Arrow bridge (ARRAY_AGG, list literals, STRING_TO_ARRAY, struct dot-notation,
+  nested structs, GROUP BY struct field), and **Date/Time/Binary now read back**:
+  date32/time64 surface as Datetime (no Date/Time dtype — value MATCHes), Binary
+  via a boxed `dtypes.Binary` (`::blob`/`::bytea` CAST). Remaining type GAPs:
+  Decimal (load-bearing int64/float64 widening), INTERVAL→Duration.
+- **Functions**: DuckDB lacks `INITCAP` and the trig-degree fns (`SIND`…); polars
+  `^@` starts-with works; regex differs (`~` is full-match, partial via
+  `regexp_matches`; `RLIKE`/`REGEXP_LIKE` rejected).
+- **Set ops**: DuckDB supports `EXCEPT ALL` (polars rejects) but rejects
+  `EXCEPT BY NAME`.
+- **Joins**: DuckDB supports non-equi and comma joins (polars rejects) but rejects
+  qualified `LEFT SEMI`/`ANTI`.
+- **Errors**: messages differ throughout → tests assert the error *condition*, not
+  polars' message text.
+
 ### Fixes applied to production code
 
 These gopolars bugs/divergences surfaced by the parity tests were fixed in

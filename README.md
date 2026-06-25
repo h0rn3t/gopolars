@@ -119,6 +119,36 @@ out, err := polars.ReadDatabase(ctx, polars.ReadDatabaseInput{
   — the suite auto-discovers the bundled SQLite driver (CGO) and runs a real write→read round-trip;
   without it those tests skip.
 
+### SQL over in-memory frames (opt-in, DuckDB)
+
+Run SQL queries directly against in-memory DataFrames via an **embedded DuckDB
+engine**. This is **opt-in behind build tags** — the default build stays pure-Go
+(`CGO_ENABLED=0`):
+
+```bash
+go build -tags "duckdb duckdb_arrow" ./...   # links a bundled DuckDB static lib (CGO; ~+50 MB)
+```
+
+```go
+// single frame, addressable as `self`
+lf, _ := df.SQL(ctx, "SELECT g, sum(v) AS s FROM self GROUP BY g")
+
+// multi-table joins via a context
+ctx := polars.NewSQLContext()
+_ = ctx.Register("orders", orders)
+_ = ctx.Register("users", users)
+out, _ := ctx.Execute(c, "SELECT u.name, sum(o.amount) FROM orders o JOIN users u ON o.uid = u.id GROUP BY u.name")
+```
+
+- Without the `duckdb duckdb_arrow` tags, the SQL methods return a clear
+  "build with -tags duckdb" error and the binary stays pure-Go.
+- The dialect is **DuckDB's**, not polars' native `polars-sql`. Compatibility with
+  the py-polars SQL suite (1.28.1) is measured in `test/parity/unit/sql/`:
+  **140 MATCH / 33 GAP / 0 FAIL** across 22 ported files; divergences (e.g. integer
+  `/` is true division, no Date/Struct/List result dtypes) are documented inline.
+- Frames cross the boundary as Arrow (reusing `pkg/io/arrow`); SQL is an eager
+  step (`collect → DuckDB → DataFrame`), not fused into the lazy plan.
+
 ### Streaming, Diagnostics and Quality
 
 - Streaming collect with bounded-memory path and deterministic fallback

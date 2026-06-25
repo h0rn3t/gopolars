@@ -63,6 +63,10 @@ func inferAnyDataType(values []any) (dtypes.DataType, error) {
 			return dtypes.List, nil
 		case map[string]any:
 			return dtypes.Struct, nil
+		case []byte:
+			return dtypes.Binary, nil
+		case time.Duration:
+			return dtypes.Duration, nil
 		}
 	}
 	return "", fmt.Errorf("cannot infer data type")
