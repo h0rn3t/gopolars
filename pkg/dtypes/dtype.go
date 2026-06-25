@@ -15,4 +15,6 @@ const (
 	Enum        DataType = "enum"
 	List        DataType = "list"
 	Struct      DataType = "struct"
+	Binary      DataType = "binary"
+	Duration    DataType = "duration"
 )

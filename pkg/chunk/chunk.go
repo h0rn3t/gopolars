@@ -217,6 +217,32 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 			buf[i] = v
 		}
 		return &Column{dtype: dtype, n: n, boxed: buf, nulls: nulls, nullCount: unknownNullCount}, nil
+	case dtypes.Binary:
+		buf := make([]any, n)
+		for i, v := range values {
+			if v == nil {
+				nulls[i] = true
+				continue
+			}
+			if _, ok := v.([]byte); !ok {
+				return nil, fmt.Errorf("expected []byte at index %d", i)
+			}
+			buf[i] = v
+		}
+		return &Column{dtype: dtype, n: n, boxed: buf, nulls: nulls, nullCount: unknownNullCount}, nil
+	case dtypes.Duration:
+		buf := make([]any, n)
+		for i, v := range values {
+			if v == nil {
+				nulls[i] = true
+				continue
+			}
+			if _, ok := v.(time.Duration); !ok {
+				return nil, fmt.Errorf("expected time.Duration at index %d", i)
+			}
+			buf[i] = v
+		}
+		return &Column{dtype: dtype, n: n, boxed: buf, nulls: nulls, nullCount: unknownNullCount}, nil
 	default:
 		return nil, fmt.Errorf("unsupported data type %s", dtype)
 	}

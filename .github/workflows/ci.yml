@@ -53,14 +53,27 @@ jobs:
         with:
           # v1.x binaries are built with Go <1.26 and cannot lint go 1.26.1 modules.
           version: v2.12.2
-          args: --timeout=5m
+          # Lint the duckdb-tagged build view so the opt-in SQL engine
+          # (sql_duckdb.go / sql_udf.go) is covered too. Build tags are additive, so
+          # every pure-Go package is still linted; only the tiny !duckdb stub
+          # (sql_stub.go) drops out of this view. CGO is needed to typecheck the
+          # go-duckdb cgo files.
+          args: --timeout=5m --build-tags=duckdb,duckdb_arrow
         env:
           GOEXPERIMENT: ${{ matrix.goexperiment }}
+          CGO_ENABLED: '1'
 
-      - name: go test -race
+      - name: go test -race (full suite, incl. opt-in DuckDB SQL)
+        # Build tags are ADDITIVE, so this single step compiles and runs the WHOLE
+        # suite in one go — the pure-Go packages plus the opt-in DuckDB SQL engine
+        # and its py-polars parity corpus (CGO links a bundled DuckDB static lib).
+        # The pure-Go build (without the tags) is still verified by `go vet ./...`
+        # above, which keeps the opt-in guarantee that SQL never leaks into the
+        # default build.
         env:
           GOEXPERIMENT: ${{ matrix.goexperiment }}
-        run: go test -race ./...
+          CGO_ENABLED: '1'
+        run: go test -race -tags "duckdb duckdb_arrow" ./...
 
   coverage:
     name: Coverage

@@ -8,6 +8,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
 )
@@ -158,11 +159,11 @@ func TestToArrowTimeColumn(t *testing.T) {
 }
 
 // TestToArrowBoxedFallback covers the boxed string-fallback branch for a dtype
-// without a typed backing (struct), including the AppendNull path.
+// without a typed or nested Arrow backing (Decimal), including the AppendNull path.
 func TestToArrowBoxedFallback(t *testing.T) {
 	df, err := frame.FromAnyColumns(frame.FromAnyColumnsInput{Columns: []frame.SeriesInput{
 		{Name: "s", Values: []any{
-			map[string]any{"x": int64(1)},
+			dtypes.DecimalValue("1.5"),
 			nil,
 		}},
 	}})

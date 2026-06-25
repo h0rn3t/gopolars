@@ -2613,6 +2613,10 @@ func inferDataTypeFromValues(values []any, fallback dtypes.DataType) dtypes.Data
 			return dtypes.List
 		case map[string]any:
 			return dtypes.Struct
+		case []byte:
+			return dtypes.Binary
+		case time.Duration:
+			return dtypes.Duration
 		default:
 			return fallback
 		}
