@@ -10,10 +10,16 @@ package chunk
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 )
+
+// parallelGatherThreshold is the gather length at or above which SliceParallel
+// shards the value/validity copy across workers. Below it the goroutine setup
+// outweighs the gain, so the serial gatherTyped runs inline.
+const parallelGatherThreshold = 1 << 15 // 32768 rows
 
 // Column is a typed, single-column value buffer with a validity mask.
 //
@@ -336,6 +342,16 @@ func (c *Column) Slice(indices []int) *Column {
 	return gatherTyped(c, indices, false)
 }
 
+// SliceParallel is Slice with the value/validity gather split across `workers`
+// disjoint row-shards. The result is identical to Slice; sharding within the
+// column lets a single expensive gather (a pointer-heavy string column, whose
+// GC write barriers serialize through the global buffer) use every core instead
+// of one. Below parallelGatherThreshold (or with workers <= 1) it runs the
+// serial path inline.
+func (c *Column) SliceParallel(indices []int, workers int) *Column {
+	return gatherTypedParallel(c, indices, false, workers)
+}
+
 // indexInteger is the set of index integer widths the gather kernels accept.
 // int is the canonical row index; int32 halves the index memory for wide joins,
 // where the (leftIdx, rightIdx) pair buffers dominate the join's working set.
@@ -421,6 +437,93 @@ func gatherTyped[I indexInteger](c *Column, indices []I, allowNullFill bool) *Co
 		gatherSlice(out.boxed, c.boxed, indices, needNulls, out.nulls, c.nulls)
 	}
 	return out
+}
+
+// gatherTypedParallel is gatherTyped with the value/validity copy split across
+// `workers` disjoint output row-shards. The output column and its validity
+// slice are allocated once up front (so needNulls is decided exactly as in the
+// serial path); each worker then fills a contiguous [lo,hi) span with no shared
+// writes, so there is no locking and the result is byte-identical to the serial
+// gather. Falls back to the serial path below the threshold or with one worker.
+func gatherTypedParallel[I indexInteger](c *Column, indices []I, allowNullFill bool, workers int) *Column {
+	n := len(indices)
+	if workers <= 1 || n < parallelGatherThreshold {
+		return gatherTyped(c, indices, allowNullFill)
+	}
+
+	out := &Column{dtype: c.dtype, n: n, nullCount: unknownNullCount}
+	needNulls := c.NullCount() != 0
+	if allowNullFill && !needNulls {
+		for _, s := range indices {
+			if s < 0 {
+				needNulls = true
+				break
+			}
+		}
+	}
+	if needNulls {
+		out.nulls = make([]bool, n)
+	} else {
+		out.nullCount = 0
+	}
+	switch c.dtype {
+	case dtypes.Int64:
+		out.i64 = make([]int64, n)
+	case dtypes.Float64:
+		out.f64 = make([]float64, n)
+	case dtypes.String, dtypes.Categorical, dtypes.Enum:
+		out.str = make([]string, n)
+	case dtypes.Boolean:
+		out.bln = make([]bool, n)
+	case dtypes.Datetime:
+		out.tim = make([]time.Time, n)
+	default:
+		out.boxed = make([]any, n)
+	}
+
+	if workers > n {
+		workers = n
+	}
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for w := 0; w < workers; w++ {
+		lo, hi := w*n/workers, (w+1)*n/workers
+		go func(lo, hi int) {
+			defer wg.Done()
+			gatherRange(out, c, indices, lo, hi, needNulls)
+		}(lo, hi)
+	}
+	wg.Wait()
+	return out
+}
+
+// gatherRange fills out's [lo,hi) span from c at indices[lo:hi]. The output
+// slices are sub-sliced so gatherSlice's local destination index aligns with
+// indices[lo:hi]; the source buffers stay whole because indices hold absolute
+// source positions. nullsRange returns the matching out.nulls span (or nil).
+func gatherRange[I indexInteger](out, c *Column, indices []I, lo, hi int, needNulls bool) {
+	idx := indices[lo:hi]
+	switch c.dtype {
+	case dtypes.Int64:
+		gatherSlice(out.i64[lo:hi], c.i64, idx, needNulls, nullsRange(out.nulls, lo, hi), c.nulls)
+	case dtypes.Float64:
+		gatherSlice(out.f64[lo:hi], c.f64, idx, needNulls, nullsRange(out.nulls, lo, hi), c.nulls)
+	case dtypes.String, dtypes.Categorical, dtypes.Enum:
+		gatherSlice(out.str[lo:hi], c.str, idx, needNulls, nullsRange(out.nulls, lo, hi), c.nulls)
+	case dtypes.Boolean:
+		gatherSlice(out.bln[lo:hi], c.bln, idx, needNulls, nullsRange(out.nulls, lo, hi), c.nulls)
+	case dtypes.Datetime:
+		gatherSlice(out.tim[lo:hi], c.tim, idx, needNulls, nullsRange(out.nulls, lo, hi), c.nulls)
+	default:
+		gatherSlice(out.boxed[lo:hi], c.boxed, idx, needNulls, nullsRange(out.nulls, lo, hi), c.nulls)
+	}
+}
+
+func nullsRange(nulls []bool, lo, hi int) []bool {
+	if nulls == nil {
+		return nil
+	}
+	return nulls[lo:hi]
 }
 
 // View returns a Column over rows [start,end) that SHARES this column's backing

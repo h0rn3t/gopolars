@@ -3,7 +3,7 @@
   "reference_scale": "1M",
   "_doc": "Committed measured best ratios (python_time/go_time) at reference_scale, from the bench/top30 --python run after the filter/sort parallel-gather optimization. Refresh from the same run as top30_summary.json.",
   "ratios": {
-    "DataFrame/drop_nulls": 1.692825,
+    "DataFrame/drop_nulls": 0.39,
     "DataFrame/fill_null": 0.271172,
     "DataFrame/filter": 0.264633,
     "DataFrame/group_by": 1.100015,

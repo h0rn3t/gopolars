@@ -374,7 +374,7 @@ func benchDataFrame(ctx context.Context, df polars.DataFrame, op, outDir string)
 	case "fill_null":
 		_, err = df.FillNull(float64(0))
 	case "drop_nulls":
-		_ = df.DropNaNs("n")
+		_ = df.DropNulls("n")
 	case "clone":
 		_ = df.Clone()
 	case "drop":
