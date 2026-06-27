@@ -101,6 +101,13 @@ func (s Series) Slice(indexes []int) Series {
 	return Series{name: s.name, col: s.col.Slice(indexes)}
 }
 
+// SliceParallel is Slice with the gather sharded across workers; the result is
+// identical. Used for wide-frame materialization where each column's gather is
+// spread over every core in turn.
+func (s Series) SliceParallel(indexes []int, workers int) Series {
+	return Series{name: s.name, col: s.col.SliceParallel(indexes, workers)}
+}
+
 // Filter keeps rows where mask[i] is true.
 func (s Series) Filter(mask []bool) Series {
 	return Series{name: s.name, col: s.col.Filter(mask)}

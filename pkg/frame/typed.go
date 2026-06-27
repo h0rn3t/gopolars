@@ -78,15 +78,21 @@ func (d DataFrame) filterBatch(predicate expr.Expr) (DataFrame, bool, error) {
 	return df, true, err
 }
 
-// takeColumns gathers the rows at keep across every column, in column order.
-// When the gather is large and the frame has more than one column the per-column
-// Slice calls run concurrently — each column is independent and the output slots
-// are disjoint — so the otherwise-serial materialization tail of filter/drop/
-// sort/unique uses the idle cores left over after the (already parallel)
-// predicate evaluation. Columns are distributed round-robin across at most
-// GOMAXPROCS workers, bounded by the column count. Below the threshold, for a
-// single column, or with one CPU, it stays sequential to avoid goroutine
-// overhead — the regime where gopolars already beats Polars on small data.
+// takeColumns gathers the rows at keep across every column, in column order, so
+// the otherwise-serial materialization tail of filter/drop/sort/unique uses the
+// idle cores left over after the (already parallel) predicate evaluation. Below
+// the threshold, for a single column, or with one CPU it stays sequential to
+// avoid goroutine overhead — the regime where gopolars already beats Polars on
+// small data.
+//
+// Two parallel regimes split on column count vs worker count:
+//   - At least as many columns as workers: one column per worker (round-robin)
+//     already saturates every core, so each column gathers serially and the
+//     per-column goroutine fan-out is avoided.
+//   - Fewer columns than workers: round-robin would leave cores idle while the
+//     frame's most expensive column (a pointer-heavy string gather whose GC
+//     write barriers serialize) runs alone, so each column's gather is instead
+//     sharded across all workers in turn.
 func (d DataFrame) takeColumns(keep []int) []series.Series {
 	out := make([]series.Series, len(d.order))
 	workers := runtime.GOMAXPROCS(0)
@@ -96,20 +102,24 @@ func (d DataFrame) takeColumns(keep []int) []series.Series {
 		}
 		return out
 	}
-	if workers > len(d.order) {
-		workers = len(d.order)
+	if len(d.order) >= workers {
+		w := min(workers, len(d.order))
+		var wg sync.WaitGroup
+		wg.Add(w)
+		for k := range w {
+			go func(k int) {
+				defer wg.Done()
+				for i := k; i < len(d.order); i += w {
+					out[i] = d.cols[d.order[i]].Slice(keep)
+				}
+			}(k)
+		}
+		wg.Wait()
+		return out
 	}
-	var wg sync.WaitGroup
-	wg.Add(workers)
-	for w := 0; w < workers; w++ {
-		go func(w int) {
-			defer wg.Done()
-			for i := w; i < len(d.order); i += workers {
-				out[i] = d.cols[d.order[i]].Slice(keep)
-			}
-		}(w)
+	for i, name := range d.order {
+		out[i] = d.cols[name].SliceParallel(keep, workers)
 	}
-	wg.Wait()
 	return out
 }
 

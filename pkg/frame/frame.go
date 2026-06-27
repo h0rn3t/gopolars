@@ -1285,11 +1285,29 @@ func (d DataFrame) DropNaNs(columns ...string) DataFrame {
 }
 
 func (d DataFrame) DropNulls(columns ...string) DataFrame {
+	targets := d.dropTargets(columns)
+	// Single-column drop (the common case): build the surviving-row indices
+	// straight from that column's validity mask in one pass, skipping the
+	// dropped[]bool buffer and the second scan keepFromDropped would do.
+	if len(targets) == 1 {
+		if col := d.cols[targets[0]].Column(); col != nil {
+			if col.NullCount() == 0 {
+				return d // no nulls in scope: share the existing columns
+			}
+			keep := make([]int, 0, d.height-col.NullCount())
+			for row, isNull := range col.Nulls() {
+				if !isNull {
+					keep = append(keep, row)
+				}
+			}
+			return d.gatherRows(keep)
+		}
+	}
 	// A null-free column drops nothing, so it is skipped via the cached null
 	// count; columns with nulls contribute their validity mask to the drop set
 	// in a single column-at-a-time pass instead of a per-row IsNull probe.
 	var dropped []bool
-	for _, name := range d.dropTargets(columns) {
+	for _, name := range targets {
 		s := d.cols[name]
 		col := s.Column()
 		if col != nil {
