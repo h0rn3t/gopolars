@@ -348,6 +348,122 @@ func GroupIDs(cols []*Column, n int) (ids []int, firstRow []int) {
 	return ids, firstRow
 }
 
+// FirstRows returns the first-seen row index of each distinct key across the
+// given key columns, in encounter order — exactly the rows unique() keeps —
+// without allocating the length-N ids array GroupIDs builds. Null entries in a
+// key form a single group (all nulls compare equal), matching GroupIDs. Use this
+// for Unique/NUnique, which only need firstRow; keep GroupIDs for GroupBy, which
+// needs the per-row ids to bucket rows into groups.
+func FirstRows(cols []*Column, n int) []int {
+	if len(cols) == 1 {
+		if firstRow, ok := firstRowsSingle(cols[0], n); ok {
+			return firstRow
+		}
+	}
+	var firstRow []int
+	idMap := make(map[string]struct{})
+	var scratch []byte
+	for row := range n {
+		scratch = scratch[:0]
+		for _, c := range cols {
+			scratch = appendRowKey(scratch, c, row)
+		}
+		if _, ok := idMap[string(scratch)]; !ok {
+			idMap[string(scratch)] = struct{}{}
+			firstRow = append(firstRow, row)
+		}
+	}
+	return firstRow
+}
+
+// firstRowsSingle is the per-dtype typed fast path for a single key column,
+// mirroring groupIDsSingle but recording only the first-seen row per key. ok is
+// false for boxed dtypes, which fall back to the composite encoder.
+func firstRowsSingle(c *Column, n int) (firstRow []int, ok bool) {
+	nulls := c.nulls
+	nullSeen := false
+	assignNull := func(row int) {
+		if !nullSeen {
+			nullSeen = true
+			firstRow = append(firstRow, row)
+		}
+	}
+	switch c.dtype {
+	case dtypes.Int64:
+		m := make(map[int64]struct{})
+		for row := range n {
+			if nulls != nil && nulls[row] {
+				assignNull(row)
+				continue
+			}
+			v := c.i64[row]
+			if _, seen := m[v]; !seen {
+				m[v] = struct{}{}
+				firstRow = append(firstRow, row)
+			}
+		}
+	case dtypes.Float64:
+		m := make(map[uint64]struct{})
+		for row := range n {
+			if nulls != nil && nulls[row] {
+				assignNull(row)
+				continue
+			}
+			v := c.f64[row]
+			bits := math.Float64bits(v)
+			if math.IsNaN(v) {
+				bits = canonicalNaNBits
+			}
+			if _, seen := m[bits]; !seen {
+				m[bits] = struct{}{}
+				firstRow = append(firstRow, row)
+			}
+		}
+	case dtypes.String, dtypes.Categorical, dtypes.Enum:
+		m := make(map[string]struct{})
+		for row := range n {
+			if nulls != nil && nulls[row] {
+				assignNull(row)
+				continue
+			}
+			v := c.str[row]
+			if _, seen := m[v]; !seen {
+				m[v] = struct{}{}
+				firstRow = append(firstRow, row)
+			}
+		}
+	case dtypes.Boolean:
+		m := make(map[bool]struct{})
+		for row := range n {
+			if nulls != nil && nulls[row] {
+				assignNull(row)
+				continue
+			}
+			v := c.bln[row]
+			if _, seen := m[v]; !seen {
+				m[v] = struct{}{}
+				firstRow = append(firstRow, row)
+			}
+		}
+	case dtypes.Datetime:
+		m := make(map[int64]struct{})
+		for row := range n {
+			if nulls != nil && nulls[row] {
+				assignNull(row)
+				continue
+			}
+			v := c.tim[row].UnixNano()
+			if _, seen := m[v]; !seen {
+				m[v] = struct{}{}
+				firstRow = append(firstRow, row)
+			}
+		}
+	default:
+		return nil, false
+	}
+	return firstRow, true
+}
+
 // groupIDsSingle is the per-dtype typed fast path for a single key column. ok is
 // false for boxed dtypes, which fall back to the composite encoder.
 func groupIDsSingle(c *Column, n int) (ids []int, firstRow []int, ok bool) {

@@ -18,6 +18,7 @@ import (
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 	"github.com/h0rn3t/gopolars/pkg/expr"
 	"github.com/h0rn3t/gopolars/pkg/series"
+	"github.com/h0rn3t/gopolars/pkg/simd"
 )
 
 type DataFrame struct {
@@ -196,8 +197,7 @@ func (d DataFrame) NUnique(columns ...string) (int, error) {
 		}
 		keyColumns[j] = s.Column()
 	}
-	_, firstRow := chunk.GroupIDs(keyColumns, d.height)
-	return len(firstRow), nil
+	return len(d.firstRows(keyColumns)), nil
 }
 
 func (d DataFrame) ApproxNUnique(columns ...string) (int, error) {
@@ -1286,22 +1286,27 @@ func (d DataFrame) DropNaNs(columns ...string) DataFrame {
 
 func (d DataFrame) DropNulls(columns ...string) DataFrame {
 	targets := d.dropTargets(columns)
-	// Single-column drop (the common case): build the surviving-row indices
-	// straight from that column's validity mask in one pass, skipping the
-	// dropped[]bool buffer and the second scan keepFromDropped would do.
-	if len(targets) == 1 {
-		if col := d.cols[targets[0]].Column(); col != nil {
-			if col.NullCount() == 0 {
-				return d // no nulls in scope: share the existing columns
-			}
-			keep := make([]int, 0, d.height-col.NullCount())
-			for row, isNull := range col.Nulls() {
-				if !isNull {
-					keep = append(keep, row)
-				}
-			}
-			return d.gatherRows(keep)
+	// Typed fast path: build the keep mask as a bitmap from column validity and
+	// gather survivors through the shared bitmap gather (as Filter does), so no
+	// intermediate keep []int of survivor length is allocated. Requires every
+	// column to have a typed chunk (chunkColumns == nil otherwise).
+	if cols := d.chunkColumns(); cols != nil && len(targets) > 0 {
+		if !anyTargetNull(targets, cols) {
+			return d // no nulls in scope: share the existing columns
 		}
+		workers := runtime.GOMAXPROCS(0)
+		// Narrow parallel frame (columns < workers): one fused worker wave builds
+		// each shard's keep mask from validity and gathers every column of that
+		// shard, so the gather uses all cores (mirroring filterFused). The
+		// column-per-worker takeColumnsBitmap only saturates cores when columns >=
+		// workers, so without this a narrow drop would gather serially — slower
+		// than the prior SliceParallel index path despite using less memory.
+		if d.height >= parallelFilterThreshold && workers > 1 && len(d.order) < workers {
+			return d.dropNullsFused(targets, cols, workers)
+		}
+		mask := d.buildKeepMask(targets, cols)
+		df, _ := New(NewInput{Series: d.takeColumnsBitmap(mask)})
+		return df
 	}
 	// A null-free column drops nothing, so it is skipped via the cached null
 	// count; columns with nulls contribute their validity mask to the drop set
@@ -1340,6 +1345,91 @@ func (d DataFrame) DropNulls(columns ...string) DataFrame {
 	return d.gatherRows(keepFromDropped(dropped, d.height))
 }
 
+// anyTargetNull reports whether any target column has a null, using the cached
+// null count. When false, DropNulls shares the frame without gathering.
+func anyTargetNull(targets []string, cols map[string]*chunk.Column) bool {
+	for _, name := range targets {
+		if cols[name].NullCount() != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// buildKeepMask builds the full-frame keep bitmap (set bit = row survives) for a
+// DropNulls over the target columns: the complement of the union of the targets'
+// null masks. Only null rows are cleared, so the ~10%-null case does O(nulls)
+// clears, not O(rows) index appends.
+func (d DataFrame) buildKeepMask(targets []string, cols map[string]*chunk.Column) simd.Bitmap {
+	targetCols := make([]*chunk.Column, len(targets))
+	for i, name := range targets {
+		targetCols[i] = cols[name]
+	}
+	mask := simd.BitmapNew(d.height)
+	setKeepMaskShardLocal(mask, targetCols, 0, d.height)
+	return mask
+}
+
+// dropNullsFused is the narrow-frame (columns < workers) parallel DropNulls path:
+// one fused worker wave (chunk.FilterGatherColumns) builds each shard's keep mask
+// from column validity and gathers every column of that shard, so the gather runs
+// across all cores with no intermediate keep []int. Mirrors filterFused.
+func (d DataFrame) dropNullsFused(targets []string, cols map[string]*chunk.Column, workers int) DataFrame {
+	ordered := make([]*chunk.Column, len(d.order))
+	for i, name := range d.order {
+		ordered[i] = cols[name]
+	}
+	targetCols := make([]*chunk.Column, len(targets))
+	for i, name := range targets {
+		targetCols[i] = cols[name]
+	}
+	gathered, ok := chunk.FilterGatherColumns(ordered, d.height, workers, func(start, end int) (simd.Bitmap, bool) {
+		// Local shard mask indexed from 0; FilterGatherColumns copies it into the
+		// global bitmap at global[start>>6:]. start is word-aligned, so bit j maps
+		// to row start+j and the null clears use the shard-local offset.
+		local := simd.BitmapNew(end - start)
+		setKeepMaskShardLocal(local, targetCols, start, end)
+		return local, true
+	})
+	if !ok {
+		// No shard declines a validity mask, but fall back defensively.
+		mask := d.buildKeepMask(targets, cols)
+		df, _ := New(NewInput{Series: d.takeColumnsBitmap(mask)})
+		return df
+	}
+	out := make([]series.Series, len(d.order))
+	for i, name := range d.order {
+		out[i] = series.FromColumn(name, gathered[i])
+	}
+	df, _ := New(NewInput{Series: out})
+	return df
+}
+
+// setKeepMaskShardLocal fills a shard-local keep bitmap (bit 0 == row start) for
+// rows [start,end): all-ones then cleared where a target is null. Used by the
+// fused path, whose evalShard returns a mask indexed from 0 for its shard.
+func setKeepMaskShardLocal(local simd.Bitmap, targets []*chunk.Column, start, end int) {
+	n := end - start
+	fullWords := n >> 6
+	for i := 0; i < fullWords; i++ {
+		local[i] = ^uint64(0)
+	}
+	if rem := n & 63; rem != 0 {
+		local[fullWords] = uint64(1)<<uint(rem) - 1
+	}
+	for _, col := range targets {
+		if col.NullCount() == 0 {
+			continue
+		}
+		nulls := col.Nulls()
+		for j := 0; j < n; j++ {
+			if nulls[start+j] {
+				local[j>>6] &^= 1 << (uint(j) & 63)
+			}
+		}
+	}
+}
+
 func (d DataFrame) Unique(columns ...string) (DataFrame, error) {
 	keys := columns
 	if len(keys) == 0 {
@@ -1353,11 +1443,12 @@ func (d DataFrame) Unique(columns ...string) (DataFrame, error) {
 		}
 		keyColumns[j] = s.Column()
 	}
-	// firstRow holds the first-seen row index per distinct key, in encounter
-	// order — exactly the rows kept by unique() — with no per-row boxing. The
+	// keep holds the first-seen row index per distinct key, in encounter order —
+	// exactly the rows kept by unique() — via FirstRows, which (unlike GroupIDs)
+	// allocates no length-N ids array Unique would immediately discard. The
 	// per-column materialization rides the shared parallel gather (takeColumns),
 	// so a large unique() uses the idle cores instead of a serial column loop.
-	_, keep := chunk.GroupIDs(keyColumns, d.height)
+	keep := d.firstRows(keyColumns)
 	return New(NewInput{Series: d.takeColumns(keep)})
 }
 

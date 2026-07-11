@@ -5,6 +5,11 @@
 
 ### DataFrame
 
+> `unique` uses equivalent semantics on both engines: full-frame keep-first,
+> maintain-order on the key subset (Go `df.Unique("g")`; Python
+> `df.unique(subset=["g"], keep="first", maintain_order=True)`). The `join` row
+> times the `unique` dimension build plus the join.
+
 | operation | size | Go time | Py time | speedup | Go B/op | Go allocs/op |
 |-----------|------|---------|---------|---------|---------|--------------|
 | `filter` | 1K | 6.0 µs | 94.4 µs | **Go ×15.6** | 27.1 KB | 23 |
@@ -17,18 +22,18 @@
 | `sort` | 1M | 17.42 ms | 14.03 ms | Py ×1.2 | 62.0 MB | 179 |
 | `group_by` | 1K | 14.9 µs | 683.1 µs | **Go ×46.0** | 18.6 KB | 41 |
 | `group_by` | 1M | 1.83 ms | 1.58 ms | Py ×1.2 | 90.7 KB | 186 |
-| `join` | 1K | 88.5 µs | 315.3 µs | **Go ×3.6** | 225.4 KB | 727 |
-| `join` | 1M | 11.85 ms | 6.71 ms | Py ×1.8 | 101.4 MB | 1164 |
+| `join` | 1K | 91.6 µs | 376.5 µs | **Go ×4.1** | 225.4 KB | 727 |
+| `join` | 1M | 6.84 ms | 6.30 ms | Py ×1.1 | 101.4 MB | 1164 |
 | `head` | 1K | 464 ns | 633 ns | **Go ×1.4** | 1.6 KB | 10 |
 | `head` | 1M | 329 ns | 933 ns | **Go ×2.8** | 1.6 KB | 10 |
-| `tail` | 1K | 1.8 µs | 600 ns | Py ×3.0 | 7.0 KB | 18 |
-| `tail` | 1M | 1.0 µs | 662 ns | Py ×1.6 | 7.0 KB | 18 |
-| `unique` | 1K | 10.6 µs | 129.0 µs | **Go ×12.2** | 9.9 KB | 21 |
-| `unique` | 1M | 16.29 ms | 4.45 ms | Py ×3.7 | 7.6 MB | 21 |
+| `tail` | 1K | 474 ns | 591 ns | **Go ×1.2** | 1.3 KB | 9 |
+| `tail` | 1M | 343 ns | 629 ns | **Go ×1.8** | 1.3 KB | 9 |
+| `unique` | 1K | 8.6 µs | 193.4 µs | **Go ×22.4** | 9.9 KB | 21 |
+| `unique` | 1M | 1.03 ms | 5.16 ms | **Go ×5.0** | 1.6 MB | 480 |
 | `fill_null` | 1K | 2.2 µs | 146.7 µs | **Go ×65.4** | 10.0 KB | 10 |
 | `fill_null` | 1M | 425.3 µs | 1.29 ms | **Go ×3.0** | 8.6 MB | 35 |
-| `drop_nulls` | 1K | 10.4 µs | 94.4 µs | **Go ×9.1** | 50.6 KB | 17 |
-| `drop_nulls` | 1M | 2.59 ms | 1.64 ms | Py ×1.6 | 42.1 MB | 121 |
+| `drop_nulls` | 1K | 10.2 µs | 71.8 µs | **Go ×7.1** | 50.6 KB | 17 |
+| `drop_nulls` | 1M | 1.65 ms | 1.34 ms | Py ×1.2 | 37.2 MB | 66 |
 
 ### Expr
 
