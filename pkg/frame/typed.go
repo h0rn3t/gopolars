@@ -60,6 +60,9 @@ func (d DataFrame) chunkColumns() map[string]*chunk.Column {
 // It deliberately declines (falls back) whenever the predicate result carries a
 // null, because the row-wise Filter treats a null predicate as a hard error and
 // the fallback reproduces that behavior exactly.
+//
+// Survivors are gathered directly from the predicate Bitmap (no CompressIndices
+// []int keep list on the hot path).
 func (d DataFrame) filterBatch(predicate expr.Expr) (DataFrame, bool, error) {
 	plan, ok := evalbatch.Compile(predicate)
 	if !ok {
@@ -70,11 +73,53 @@ func (d DataFrame) filterBatch(predicate expr.Expr) (DataFrame, bool, error) {
 	if cols == nil {
 		return DataFrame{}, false, nil
 	}
-	keep, ok := d.filterKeep(plan, cols)
+	workers := runtime.GOMAXPROCS(0)
+	if d.height >= parallelFilterThreshold && workers > 1 && len(d.order) < workers {
+		return d.filterFused(plan, cols, workers)
+	}
+	mask, ok := d.filterMask(plan, cols)
 	if !ok {
 		return DataFrame{}, false, nil
 	}
-	df, err := New(NewInput{Series: d.takeColumns(keep)})
+	df, err := New(NewInput{Series: d.takeColumnsBitmap(mask)})
+	return df, true, err
+}
+
+// filterFused is the narrow-frame (columns < workers) parallel Filter path:
+// one fused worker wave evaluates the predicate per shard and then gathers
+// every column of that shard (chunk.FilterGatherColumns), instead of one mask
+// wave plus per-column gather waves.
+func (d DataFrame) filterFused(plan *evalbatch.Plan, cols map[string]*chunk.Column, workers int) (DataFrame, bool, error) {
+	ordered := make([]*chunk.Column, len(d.order))
+	for i, name := range d.order {
+		ordered[i] = d.cols[name].Column()
+	}
+	gathered, ok := chunk.FilterGatherColumns(ordered, d.height, workers, func(start, end int) (simd.Bitmap, bool) {
+		view := make(map[string]*chunk.Column, len(cols))
+		for name, c := range cols {
+			view[name] = c.View(start, end)
+		}
+		mask, nulls, err := plan.EvalBool(view, end-start)
+		if err != nil {
+			debugFallback("filter", err)
+			return nil, false
+		}
+		for _, isNull := range nulls {
+			if isNull {
+				debugFallback("filter", "null predicate result")
+				return nil, false
+			}
+		}
+		return mask, true
+	})
+	if !ok {
+		return DataFrame{}, false, nil
+	}
+	out := make([]series.Series, len(d.order))
+	for i, name := range d.order {
+		out[i] = series.FromColumn(name, gathered[i])
+	}
+	df, err := New(NewInput{Series: out})
 	return df, true, err
 }
 
@@ -123,17 +168,47 @@ func (d DataFrame) takeColumns(keep []int) []series.Series {
 	return out
 }
 
-// filterKeep evaluates plan over cols and returns the surviving row indices in
-// ascending order. ok is false when the caller must fall back to the row-wise
-// evaluator: an evaluation error, or a null predicate result (the row-wise
-// Filter drops null-predicate rows, matching Polars). At or above parallelFilterThreshold
+// takeColumnsBitmap gathers survivors from mask across every column. Narrow
+// parallel frames (columns < workers) never reach here — filterBatch routes
+// them through the fused wave — so only the sequential regime and the
+// column-per-worker wide regime remain.
+func (d DataFrame) takeColumnsBitmap(mask simd.Bitmap) []series.Series {
+	out := make([]series.Series, len(d.order))
+	workers := runtime.GOMAXPROCS(0)
+	survivors := simd.BitmapPopcount(mask, d.height)
+	if len(d.order) >= workers && workers > 1 && survivors >= parallelFilterThreshold {
+		w := min(workers, len(d.order))
+		var wg sync.WaitGroup
+		wg.Add(w)
+		for k := range w {
+			go func(k int) {
+				defer wg.Done()
+				for i := k; i < len(d.order); i += w {
+					name := d.order[i]
+					col := d.cols[name].Column().GatherBitmap(mask, d.height)
+					out[i] = series.FromColumn(name, col)
+				}
+			}(k)
+		}
+		wg.Wait()
+		return out
+	}
+	for i, name := range d.order {
+		col := d.cols[name].Column().GatherBitmap(mask, d.height)
+		out[i] = series.FromColumn(name, col)
+	}
+	return out
+}
+
+// filterMask evaluates plan over cols and returns the predicate Bitmap.
+// ok is false when the caller must fall back to the row-wise evaluator: an
+// evaluation error, or a null predicate result (the row-wise Filter drops
+// null-predicate rows, matching Polars). At or above parallelFilterThreshold
 // the predicate is evaluated across GOMAXPROCS workers over disjoint contiguous
-// row ranges; the surviving indices are stitched back in ascending range order
-// so the result is identical to a single-threaded evaluation.
-func (d DataFrame) filterKeep(plan *evalbatch.Plan, cols map[string]*chunk.Column) (keep []int, ok bool) {
+// row ranges; bits are stitched into one Bitmap identical to sequential eval.
+func (d DataFrame) filterMask(plan *evalbatch.Plan, cols map[string]*chunk.Column) (mask simd.Bitmap, ok bool) {
 	workers := runtime.GOMAXPROCS(0)
 	if d.height < parallelFilterThreshold || workers <= 1 {
-		// mask and nulls are read-only views into the evaluated predicate chunk.
 		mask, nulls, err := plan.EvalBool(cols, d.height)
 		if err != nil {
 			debugFallback("filter", err)
@@ -145,20 +220,15 @@ func (d DataFrame) filterKeep(plan *evalbatch.Plan, cols map[string]*chunk.Colum
 				return nil, false
 			}
 		}
-		return simd.CompressIndices(mask, d.height), true
+		return mask, true
 	}
-	return filterKeepParallel(plan, cols, d.height, workers)
+	return filterMaskParallel(plan, cols, d.height, workers)
 }
 
-// filterKeepParallel evaluates plan over height rows across `workers`
-// goroutines, each handling a contiguous, 64-bit-word-aligned row range via a
-// zero-copy chunk.View, and returns the surviving global row indices in
-// ascending order. Because every range starts on a word boundary, each worker's
-// local predicate Bitmap maps onto a disjoint span of words in a single shared
-// global Bitmap and is placed there with a plain word copy — no per-worker index
-// slice and no stitching allocation. The global Bitmap is compressed to indices
-// once, after the barrier.
-func filterKeepParallel(plan *evalbatch.Plan, cols map[string]*chunk.Column, height, workers int) ([]int, bool) {
+// filterMaskParallel evaluates plan over height rows across workers into one
+// shared global Bitmap. Ranges are word-aligned so each worker's local mask
+// copies into a disjoint word span with no locking.
+func filterMaskParallel(plan *evalbatch.Plan, cols map[string]*chunk.Column, height, workers int) (simd.Bitmap, bool) {
 	ranges := partitionRangesAligned(height, workers)
 	global := simd.BitmapNew(height)
 	type rangeResult struct {
@@ -186,9 +256,6 @@ func filterKeepParallel(plan *evalbatch.Plan, cols map[string]*chunk.Column, hei
 					return
 				}
 			}
-			// start is word-aligned, so window word k is global word start/64+k.
-			// Ranges are disjoint on word boundaries, so workers never share a
-			// destination word and this copy is race-free.
 			copy(global[start>>6:], mask)
 		}(i, rg[0], rg[1])
 	}
@@ -204,7 +271,7 @@ func filterKeepParallel(plan *evalbatch.Plan, cols map[string]*chunk.Column, hei
 			return nil, false
 		}
 	}
-	return simd.CompressIndices(global, height), true
+	return global, true
 }
 
 // partitionRanges splits [0,n) into up to `workers` contiguous [start,end)

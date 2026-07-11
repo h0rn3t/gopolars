@@ -1,11 +1,11 @@
 {
   "version": "v0.3",
   "reference_scale": "1M",
-  "_doc": "Committed measured best ratios (python_time/go_time) at reference_scale, from the bench/top30 --python run after the filter/sort parallel-gather optimization. Refresh from the same run as top30_summary.json.",
+  "_doc": "Committed measured best ratios (python_time/go_time) at reference_scale, from the bench/top30 --python run after the filter single-wave fused gather optimization. Refresh from the same run as top30_summary.json.",
   "ratios": {
     "DataFrame/drop_nulls": 0.39,
     "DataFrame/fill_null": 0.271172,
-    "DataFrame/filter": 0.264633,
+    "DataFrame/filter": 0.499,
     "DataFrame/group_by": 1.100015,
     "DataFrame/head": 0.885317,
     "DataFrame/join": 0.24751,

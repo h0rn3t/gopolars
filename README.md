@@ -368,7 +368,7 @@ python3 bench/gen_comparison_table.py --benchmem bench/top30/benchmem.txt \
 | operation | size | Go time | Go B/op | allocs/op | Py time | speedup |
 |-----------|------|---------|---------|-----------|---------|---------|
 | `filter` | 1 K | 6.0 µs | 27.1 KB | 23 | 94.4 µs | **Go ×15.6** |
-| `filter` | 1 M | 1.54 ms | 23.7 MB | 214 | 635.3 µs | Py ×2.4 |
+| `filter` | 1 M | 1.33 ms | 20.8 MB | 213 | 635.3 µs | Py ×2.1 |
 | `select` | 1 K | 601 ns | 1.5 KB | 10 | 42.3 µs | **Go ×70.4** |
 | `select` | 1 M | 475 ns | 1.5 KB | 10 | 48.2 µs | **Go ×101.4** |
 | `with_columns` | 1 K | 584 ns | 1.5 KB | 10 | 9.0 µs | **Go ×15.5** |
