@@ -14,8 +14,8 @@
       "justification": "Single-pass typed fill; floor tracks the measured 1M ratio."
     },
     "DataFrame/filter": {
-      "r_min": 0.172,
-      "justification": "Polars runs this op multi-threaded over chunked Arrow; gopolars now parallelizes the predicate eval and the per-column gather, but floors at the measured 1M ratio. Ratchet upward as the path improves."
+      "r_min": 0.324,
+      "justification": "Polars runs this op multi-threaded over chunked Arrow; gopolars fuses the predicate eval and the multi-column gather into one worker wave (no per-column spawn waves, no []int keep list), but the 20.8 MB output allocation plus GC scanning of []string headers keeps the 1M materialization behind Polars' byte-layout engine. Ratchet upward if the residual allocation/GC cost is ever attacked."
     },
     "DataFrame/group_by": {
       "r_min": 0.715,

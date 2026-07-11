@@ -3,7 +3,7 @@ goarch: arm64
 pkg: github.com/h0rn3t/gopolars/bench/top30
 cpu: Apple M4 Pro
 BenchmarkTop30/DataFrame/filter/size_1K-12         	  391107	      6041 ns/op	   27712 B/op	      23 allocs/op
-BenchmarkTop30/DataFrame/filter/size_1M-12         	    1552	   1717625 ns/op	24816708 B/op	     214 allocs/op
+BenchmarkTop30/DataFrame/filter/size_1M-12         	    1747	   1330159 ns/op	20811514 B/op	     213 allocs/op
 BenchmarkTop30/DataFrame/select/size_1K-12         	 3871203	       601.6 ns/op	    1584 B/op	      10 allocs/op
 BenchmarkTop30/DataFrame/select/size_1M-12         	 5044903	       490.7 ns/op	    1584 B/op	      10 allocs/op
 BenchmarkTop30/DataFrame/with_columns/size_1K-12   	 4041092	       584.0 ns/op	    1536 B/op	      10 allocs/op

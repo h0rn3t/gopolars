@@ -8,7 +8,7 @@
 | operation | size | Go time | Py time | speedup | Go B/op | Go allocs/op |
 |-----------|------|---------|---------|---------|---------|--------------|
 | `filter` | 1K | 6.0 µs | 94.4 µs | **Go ×15.6** | 27.1 KB | 23 |
-| `filter` | 1M | 1.54 ms | 635.3 µs | Py ×2.4 | 23.7 MB | 214 |
+| `filter` | 1M | 1.12 ms | 551.6 µs | Py ×2.0 | 20.8 MB | 116 |
 | `select` | 1K | 601 ns | 42.3 µs | **Go ×70.4** | 1.5 KB | 10 |
 | `select` | 1M | 475 ns | 48.2 µs | **Go ×101.4** | 1.5 KB | 10 |
 | `with_columns` | 1K | 584 ns | 9.0 µs | **Go ×15.5** | 1.5 KB | 10 |
