@@ -656,27 +656,10 @@ func (d *df) Head(n int) DataFrame {
 }
 
 func (d *df) Tail(n int) DataFrame {
-	if n >= d.value.Height() {
-		return d
-	}
-	if n <= 0 {
-		return d.Limit(0)
-	}
-	start := d.value.Height() - n
-	indexes := make([]int, 0, n)
-	for i := start; i < d.value.Height(); i++ {
-		indexes = append(indexes, i)
-	}
-	out := make([]series.Series, 0, len(d.value.Columns()))
-	for _, name := range d.value.Columns() {
-		s, _ := d.value.Series(name)
-		out = append(out, s.Slice(indexes))
-	}
-	next, err := frame.New(frame.NewInput{Series: out})
-	if err != nil {
-		return d.Limit(0)
-	}
-	return &df{value: next}
+	// Delegate to frame.Tail, which returns a zero-copy row view (viewRows) just
+	// like Head/Limit/Slice — no per-row index list, no per-column gather. Its
+	// n >= height and n <= 0 short-circuits match the prior facade behavior.
+	return &df{value: d.value.Tail(n)}
 }
 
 func (d *df) BottomK(k int, by string) (DataFrame, error) {

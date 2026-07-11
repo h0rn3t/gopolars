@@ -21,10 +21,17 @@ _DATAFRAME_OPS = {
     "with_columns": lambda df: df.with_columns(pl.col("v").alias("v2")),
     "sort": lambda df: df.sort("v"),
     "group_by": lambda df: df.group_by("g").agg(pl.col("v").sum()),
-    "join": lambda df: df.join(df.unique(subset=["i"]), on="i", how="inner"),
+    # Unique equivalence policy (see openspec change close-remaining-py-dataframe-gaps
+    # task 1.1): both engines dedup the FULL frame keep-first in maintain-order on
+    # the key subset. Go runs df.Unique("g") / df.Unique("i"); Python matches with
+    # subset=..., keep="first", maintain_order=True — NOT a narrowed select().unique(),
+    # which would compare an unordered 1-column op to Go's ordered full-frame op.
+    "join": lambda df: df.join(
+        df.unique(subset=["i"], keep="first", maintain_order=True), on="i", how="inner"
+    ),
     "head": lambda df: df.head(100),
     "tail": lambda df: df.tail(100),
-    "unique": lambda df: df.select("g").unique(),
+    "unique": lambda df: df.unique(subset=["g"], keep="first", maintain_order=True),
     "fill_null": lambda df: df.fill_null(0.0),
     "drop_nulls": lambda df: df.drop_nulls("n"),
     # Migration-surface methods (gopolars facade parity). iter_rows is wrapped in

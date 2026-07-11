@@ -365,6 +365,12 @@ python3 bench/gen_comparison_table.py --benchmem bench/top30/benchmem.txt \
 
 ### DataFrame operations
 
+> `unique` compares equivalent semantics on both engines: full-frame keep-first in
+> maintain-order on the key subset (Go `df.Unique("g")`; Python
+> `df.unique(subset=["g"], keep="first", maintain_order=True)`) — not a narrowed
+> `select("g").unique()`. The `join` row times the dimension build (`unique`) plus
+> the join, so its speedup improved alongside `unique`.
+
 | operation | size | Go time | Go B/op | allocs/op | Py time | speedup |
 |-----------|------|---------|---------|-----------|---------|---------|
 | `filter` | 1 K | 6.0 µs | 27.1 KB | 23 | 94.4 µs | **Go ×15.6** |
@@ -377,18 +383,18 @@ python3 bench/gen_comparison_table.py --benchmem bench/top30/benchmem.txt \
 | `sort` | 1 M | 17.42 ms | 62.0 MB | 179 | 14.03 ms | Py ×1.2 |
 | `group_by` | 1 K | 14.9 µs | 18.6 KB | 41 | 683.1 µs | **Go ×46.0** |
 | `group_by` | 1 M | 1.83 ms | 90.7 KB | 186 | 1.58 ms | Py ×1.2 |
-| `join` | 1 K | 88.5 µs | 225.4 KB | 727 | 315.3 µs | **Go ×3.6** |
-| `join` | 1 M | 11.85 ms | 101.4 MB | 1 164 | 6.71 ms | Py ×1.8 |
+| `join` | 1 K | 91.6 µs | 225.4 KB | 727 | 376.5 µs | **Go ×4.1** |
+| `join` | 1 M | 6.84 ms | 101.4 MB | 1 164 | 6.30 ms | Py ×1.1 |
 | `head` | 1 K | 464 ns | 1.6 KB | 10 | 633 ns | **Go ×1.4** |
 | `head` | 1 M | 329 ns | 1.6 KB | 10 | 933 ns | **Go ×2.8** |
-| `tail` | 1 K | 1.8 µs | 7.0 KB | 18 | 600 ns | Py ×3.0 |
-| `tail` | 1 M | 1.0 µs | 7.0 KB | 18 | 662 ns | Py ×1.6 |
-| `unique` | 1 K | 10.6 µs | 9.9 KB | 21 | 129.0 µs | **Go ×12.2** |
-| `unique` | 1 M | 16.29 ms | 7.6 MB | 21 | 4.45 ms | Py ×3.7 |
+| `tail` | 1 K | 474 ns | 1.3 KB | 9 | 591 ns | **Go ×1.2** |
+| `tail` | 1 M | 343 ns | 1.3 KB | 9 | 629 ns | **Go ×1.8** |
+| `unique` | 1 K | 8.6 µs | 9.9 KB | 21 | 193.4 µs | **Go ×22.4** |
+| `unique` | 1 M | 1.03 ms | 1.6 MB | 480 | 5.16 ms | **Go ×5.0** |
 | `fill_null` | 1 K | 2.2 µs | 10.0 KB | 10 | 146.7 µs | **Go ×65.4** |
 | `fill_null` | 1 M | 425.3 µs | 8.6 MB | 35 | 1.29 ms | **Go ×3.0** |
-| `drop_nulls` | 1 K | 10.4 µs | 50.6 KB | 17 | 94.4 µs | **Go ×9.1** |
-| `drop_nulls` | 1 M | 2.59 ms | 42.1 MB | 121 | 1.64 ms | Py ×1.6 |
+| `drop_nulls` | 1 K | 10.2 µs | 50.6 KB | 17 | 71.8 µs | **Go ×7.1** |
+| `drop_nulls` | 1 M | 1.65 ms | 37.2 MB | 66 | 1.34 ms | Py ×1.2 |
 
 ### Expr operations
 

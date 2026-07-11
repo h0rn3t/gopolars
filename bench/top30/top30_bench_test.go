@@ -360,6 +360,12 @@ func benchDataFrame(ctx context.Context, df polars.DataFrame, op, outDir string)
 		// 5-value "g" self-join, which cross-products to a non-completing size at
 		// 1M rows. Each left row matches at most one right row, so the output is
 		// O(rows) and completes at every size.
+		//
+		// NOTE: this headline case builds the dimension (df.Unique("i")) INSIDE the
+		// timed op, so the reported `join` time is Unique + Join, not pure join
+		// latency. The focused BenchmarkJoin1M (focused_bench_test.go) builds the
+		// dimension outside b.Loop and measures join-only; use that for apples-to-
+		// apples join latency. The Python harness mirrors this (unique inside join).
 		var dim polars.DataFrame
 		dim, err = df.Unique("i")
 		if err == nil {

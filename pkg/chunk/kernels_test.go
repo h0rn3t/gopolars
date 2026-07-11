@@ -162,6 +162,39 @@ func TestGroupIDsMultiKey(t *testing.T) {
 	}
 }
 
+// TestFirstRowsMatchesGroupIDs pins FirstRows to the firstRow slice GroupIDs
+// already produces, across the typed single-key fast paths, the null/NaN cases,
+// and the composite multi-key encoder — so the lean Unique path stays byte-for-
+// byte identical to the prior GroupIDs-based one.
+func TestFirstRowsMatchesGroupIDs(t *testing.T) {
+	cases := []struct {
+		name string
+		cols []*Column
+	}{
+		{"int64", []*Column{NewInt64([]int64{5, 7, 5, 7, 5}, nil)}},
+		{"int64-null", []*Column{NewInt64([]int64{5, 0, 5, 0, 7}, []bool{false, true, false, true, false})}},
+		{"float-nan-null", []*Column{NewFloat64([]float64{math.NaN(), 0, math.NaN(), 0}, []bool{false, true, false, true})}},
+		{"string", []*Column{NewString([]string{"a", "b", "a", "c", "b"}, nil)}},
+		{"bool", []*Column{NewBool([]bool{true, false, true, false}, nil)}},
+		{"multi-key", []*Column{NewString([]string{"x", "x", "y", "x"}, nil), NewInt64([]int64{1, 2, 1, 1}, nil)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			n := tc.cols[0].Len()
+			_, want := GroupIDs(tc.cols, n)
+			got := FirstRows(tc.cols, n)
+			if len(got) != len(want) {
+				t.Fatalf("len(FirstRows)=%d, want %d (%v vs %v)", len(got), len(want), got, want)
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("FirstRows[%d]=%d, want %d (%v vs %v)", i, got[i], want[i], got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestMarkSharedCloneIfShared(t *testing.T) {
 	c := NewInt64([]int64{1, 2, 3}, nil)
 	if c.IsShared() {
