@@ -47,6 +47,21 @@ This matters for CI: the GitHub runner has 4 vCPUs and the bench frame has 4
 columns, so before this boundary fix the runner exercised a different regime
 than the 12-core machine the budgets were seeded on.
 
+Note how much smaller the same fix is on that runner, measured by the nightly
+parity workflow at 1M rows (Go ns/op; main's numbers are 5 nightly runs, whose
+spread is ±1% for drop_nulls and 6.87–7.01 ms for filter ignoring one 8.03 ms
+outlier):
+
+| | main (median) | with the `<=` boundary |
+|---|---|---|
+| `DataFrame/filter` | 6.96 ms | 6.66 ms (−4%) |
+| `DataFrame/drop_nulls` | 11.75 ms | 10.56 ms (−9%) |
+
+Balancing core occupancy pays off ~4x less there than on the M4 Pro: the shared
+4-vCPU runner is memory-bandwidth-bound, so the string column's gather does not
+get faster by being spread over more workers. The residual gap to Python Polars
+on that machine is a property of the machine class, not of the regime.
+
 ### Measuring: use env `GOMAXPROCS`, not `-cpu`
 
 `go test -cpu=N` does **not** apply to the first `-count` iteration in a
