@@ -1295,13 +1295,15 @@ func (d DataFrame) DropNulls(columns ...string) DataFrame {
 			return d // no nulls in scope: share the existing columns
 		}
 		workers := runtime.GOMAXPROCS(0)
-		// Narrow parallel frame (columns < workers): one fused worker wave builds
+		// Narrow parallel frame (columns <= workers): one fused worker wave builds
 		// each shard's keep mask from validity and gathers every column of that
 		// shard, so the gather uses all cores (mirroring filterFused). The
-		// column-per-worker takeColumnsBitmap only saturates cores when columns >=
-		// workers, so without this a narrow drop would gather serially — slower
-		// than the prior SliceParallel index path despite using less memory.
-		if d.height >= parallelFilterThreshold && workers > 1 && len(d.order) < workers {
+		// column-per-worker takeColumnsBitmap balances only when columns clearly
+		// exceed workers: at columns == workers each worker gets one column and
+		// wall-time becomes the most expensive one. Measured at 1M rows,
+		// GOMAXPROCS=4, the 4-column bench frame: 4.22 ms column-per-worker vs
+		// 2.75 ms fused (BenchmarkDropNullsSparse).
+		if d.height >= parallelFilterThreshold && workers > 1 && len(d.order) <= workers {
 			return d.dropNullsFused(targets, cols, workers)
 		}
 		mask := d.buildKeepMask(targets, cols)
