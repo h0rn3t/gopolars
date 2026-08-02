@@ -20,15 +20,17 @@ func TestV10FullMatrixRemainderProfile(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	fm := report.FullMatrix
-	if fm.TotalMethods != 673 {
-		t.Fatalf("full_matrix total: got %d want 673", fm.TotalMethods)
+	// Обидві константи — виміряні проти Polars 1.41.2 генератором gen_parity_table.py
+	// (див. POLARS_PARITY_TABLE.md). Попередні 673/10 походили з курованої матриці,
+	// де клас звірявся з методами всього пакета, тож зараховував чуже.
+	if fm.TotalMethods != 670 {
+		t.Fatalf("full_matrix total: got %d want 670", fm.TotalMethods)
 	}
 	if fm.ImplementedMethods+fm.RemainingMethods != fm.TotalMethods {
 		t.Fatalf("full_matrix implemented+remaining != total: %d+%d vs %d",
 			fm.ImplementedMethods, fm.RemainingMethods, fm.TotalMethods)
 	}
-	// Після remainder-v2 та series-low-priority-apis залишок low-priority у full matrix ≤ 10.
-	if fm.RemainingMethods > 10 {
-		t.Fatalf("expected remainder <= 10, got %d", fm.RemainingMethods)
+	if fm.RemainingMethods > 11 {
+		t.Fatalf("expected remainder <= 11, got %d", fm.RemainingMethods)
 	}
 }

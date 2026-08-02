@@ -53,7 +53,7 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 - ✅ Stable IO surface (CSV/JSON/Parquet/IPC + scans + pushdown)
 - ✅ Opt-in SQL over in-memory frames via embedded DuckDB (`-tags duckdb,duckdb_arrow`)
 - ✅ **75%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
-- ✅ **668 / 673** tracked Python Polars methods implemented on the [full parity matrix](#python-polars-vs-gopolars-function-matrix) (5 rows intentionally out of scope: `DataFrame.__setitem__` + four Series non-goals — see matrix notes)
+- ✅ **659 / 670** public Python Polars methods implemented, measured against **Polars 1.41.2** ([full parity matrix](#python-polars-vs-gopolars-function-matrix)) — 11 named gaps, listed below
 
 ### What's new in v0.3.0
 
@@ -185,31 +185,40 @@ out, _ := ctx.Execute(c, "SELECT u.name, sum(o.amount) FROM orders o JOIN users 
 | Cloud-style partitioned dataset scans                             | ✅ ready        |
 | Explain/telemetry schema v2 and perf markers                      | ✅ ready        |
 | SQL over in-memory frames (opt-in DuckDB)                         | ✅ ready        |
-| Full Python Polars API parity (673-method tracked matrix)         | ✅ ~99.3% (668/673) |
+| Full Python Polars API parity (670 methods, Polars 1.41.2)        | ✅ ~98.4% (659/670) |
 | Performance parity on all workloads                               | 🚧 in progress |
 | Ecosystem parity (all namespaces, plugins, advanced UDF patterns) | 🚧 in progress |
 
 ## Python Polars vs gopolars function matrix
 
-**Full-matrix totals (673 tracked Python Polars methods on DataFrame, LazyFrame, Expr, Series):** **668 implemented**, **5** intentionally remaining (`DataFrame.__setitem__` plus four documented Series non-goals). Coverage **≈99.3%**.
+**Full-matrix totals (670 public Python Polars methods on `DataFrame`, `LazyFrame`, `Expr`, `Series`, measured against Polars 1.41.2):** **659 implemented**, **11** remaining. Coverage **≈98.4%**.
+
+The matrix is generated, not hand-maintained — see [`POLARS_PARITY_TABLE.md`](POLARS_PARITY_TABLE.md), produced by [`gen_parity_table.py`](gen_parity_table.py). Each Python class is checked against the corresponding Go type only (`DataFrame`/`LazyFrame`/`Series` against their interfaces in `pkg/polars/types.go`, `Expr` against methods with an `Expr` receiver in `pkg/expr`); a method is never credited to one class because another type happens to expose the same name. The matrix tracks method *presence*, not signature or semantics — those are covered by `test/parity` and `test/conformance`.
 
 ### Coverage by object (full matrix)
 
 | Object     | Implemented | Total in matrix |
 | ---------- | ----------- | ---------------- |
-| DataFrame  | 140         | 141              |
-| LazyFrame  | 89          | 89               |
-| Expr       | 217         | 217              |
-| Series     | 222         | 226              |
-| **Total**  | **668**     | **673**          |
+| DataFrame  | 136         | 137              |
+| LazyFrame  | 88          | 91               |
+| Expr       | 216         | 219              |
+| Series     | 219         | 223              |
+| **Total**  | **659**     | **670**          |
 
-### Remaining rows by priority (full matrix)
+### Remaining rows (full matrix)
 
-| Priority among not implemented | Count |
-| -------------------------------- | ----- |
-| high                             | 0     |
-| medium                           | 0     |
-| low                              | 5     |
+| Object    | Not implemented                         |
+| --------- | --------------------------------------- |
+| DataFrame | `gather`                                |
+| LazyFrame | `execute`, `fetch`, `gather`            |
+| Expr      | `is_empty`, `len`, `register_plugin`    |
+| Series    | `cumulative_eval`, `ext`, `plot`, `sql` |
+
+To regenerate the matrix against the Polars release you care about, run the generator with an interpreter that has `polars` installed — the version it measured is stamped into the table header:
+
+```bash
+python3 gen_parity_table.py
+```
 
 ## What is still needed to replace Python Polars
 

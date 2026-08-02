@@ -1,46 +1,48 @@
 {
   "version": "v1.0",
+  "polars_version": "1.41.2",
+  "source": "POLARS_PARITY_TABLE.md (gen_parity_table.py)",
   "full_matrix": {
-    "implemented_methods": 668,
-    "total_methods": 673,
-    "remaining_methods": 5,
-    "coverage": 0.9925705794947994
+    "implemented_methods": 659,
+    "total_methods": 670,
+    "remaining_methods": 11,
+    "coverage": 0.9835820895522388
   },
   "release_scope": {
-    "implemented_methods": 668,
-    "total_methods": 668,
+    "implemented_methods": 659,
+    "total_methods": 659,
     "remaining_methods": 0,
     "coverage": 1.0
   },
   "objects": {
     "DataFrame": {
       "release_scope": {
-        "implemented_methods": 140,
-        "total_methods": 140,
+        "implemented_methods": 136,
+        "total_methods": 136,
         "remaining_methods": 0,
         "coverage": 1.0
       }
     },
     "LazyFrame": {
       "release_scope": {
-        "implemented_methods": 89,
-        "total_methods": 89,
+        "implemented_methods": 88,
+        "total_methods": 88,
         "remaining_methods": 0,
         "coverage": 1.0
       }
     },
     "Expr": {
       "release_scope": {
-        "implemented_methods": 217,
-        "total_methods": 217,
+        "implemented_methods": 216,
+        "total_methods": 216,
         "remaining_methods": 0,
         "coverage": 1.0
       }
     },
     "Series": {
       "release_scope": {
-        "implemented_methods": 222,
-        "total_methods": 222,
+        "implemented_methods": 219,
+        "total_methods": 219,
         "remaining_methods": 0,
         "coverage": 1.0
       }
