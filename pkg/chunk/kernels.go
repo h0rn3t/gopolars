@@ -128,6 +128,65 @@ func (c *Column) NullCount() int {
 	return int(count)
 }
 
+// NullMask returns a freshly allocated per-row mask in which true marks a null
+// row. The result is owned by the caller and is itself never null-bearing.
+func (c *Column) NullMask() []bool {
+	if c == nil {
+		return nil
+	}
+	out := make([]bool, c.n)
+	// A null-free column leaves the all-false zero value untouched; only real
+	// validity needs the copy, which runs at memmove throughput.
+	if c.NullCount() != 0 {
+		copy(out, c.nulls)
+	}
+	return out
+}
+
+// NotNullMask returns a freshly allocated per-row mask in which true marks a
+// non-null row. The result is owned by the caller and is itself never
+// null-bearing.
+func (c *Column) NotNullMask() []bool {
+	if c == nil {
+		return nil
+	}
+	out := make([]bool, c.n)
+	if c.NullCount() == 0 {
+		fillTrue(out)
+		return out
+	}
+	// Mixed validity: negate element-wise. A byte-at-a-time loop is already
+	// optimal scalar code here (one cycle per row), so the only lever left is
+	// spreading the pass across cores; forEachShard collapses to an inline call
+	// below parallelFillThreshold.
+	//
+	// ponytail: still ~8x off a memmove of the same bytes, because Go will not
+	// vectorize a []bool negation. Bit-packed boolean storage is the upgrade
+	// path, and it would speed up every boolean kernel rather than this one.
+	nulls := c.nulls
+	forEachShard(c.n, func(lo, hi int) {
+		dst, src := out[lo:hi], nulls[lo:hi]
+		for i, isNull := range src {
+			dst[i] = !isNull
+		}
+	})
+	return out
+}
+
+// fillTrue sets every element of b to true using exponential copy doubling: it
+// seeds one true element, then doubles the filled prefix with copy (memmove)
+// until the whole slice is set. This runs at memmove throughput rather than a
+// per-byte store loop.
+func fillTrue(b []bool) {
+	if len(b) == 0 {
+		return
+	}
+	b[0] = true
+	for j := 1; j < len(b); j <<= 1 {
+		copy(b[j:], b[:j])
+	}
+}
+
 // MarkShared records that the column may be referenced by more than one frame.
 // A shared column is treated as immutable: any in-place mutator must clone it
 // first via CloneIfShared. MarkShared is idempotent.

@@ -27,7 +27,7 @@ go get github.com/h0rn3t/gopolars@latest
 Or pin the latest release:
 
 ```bash
-go get github.com/h0rn3t/gopolars@v0.4.0
+go get github.com/h0rn3t/gopolars@v0.4.1
 ```
 
 Import the public API package:
@@ -41,12 +41,12 @@ Requires **Go 1.26+**. Float64 min/max reductions use runtime-dispatched AVX2 on
 
 ## Current status
 
-Latest release: **[v0.4.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.4.0)**
-([changelog vs v0.3.0](https://github.com/h0rn3t/gopolars/compare/v0.3.0...v0.4.0)).
+Latest release: **[v0.4.1](https://github.com/h0rn3t/gopolars/releases/tag/v0.4.1)**
+([changelog vs v0.4.0](https://github.com/h0rn3t/gopolars/compare/v0.4.0...v0.4.1)).
 The public API is versioned with SemVer; while `< v1.0.0` it may still evolve between minor
-versions — see the [versioning policy](docs/versioning_policy.md) and the
-[v0.4.0 migration notes](docs/v0_4_migration.md), which cover one **breaking** change
-(`DataFrame.Clone` now shares column buffers).
+versions — see the [versioning policy](docs/versioning_policy.md). `v0.4.1` is a patch release
+and changes no public API; the [v0.4.0 migration notes](docs/v0_4_migration.md) still cover the
+one **breaking** change in the `v0.4` line (`DataFrame.Clone` now shares column buffers).
 
 The project has driven its internal parity waves up to the **v1.0 tracking matrix** ([`docs/parity/v1_0_coverage.json`](docs/parity/v1_0_coverage.json)) and now covers a broad core for Go-native analytics pipelines, including advanced joins, reshape operations, temporal windows, opt-in DuckDB SQL, and performance diagnostics.\
 It is production-usable for many DataFrame workloads, but it is **not yet a full drop-in replacement** for Python Polars.
@@ -56,6 +56,23 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 - ✅ Opt-in SQL over in-memory frames via embedded DuckDB (`-tags duckdb,duckdb_arrow`)
 - ✅ **75%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
 - ✅ **659 / 670** public Python Polars methods implemented, measured against **Polars 1.41.2** ([full parity matrix](#python-polars-vs-gopolars-function-matrix)) — 11 named gaps, listed below
+
+### What's new in v0.4.1
+
+Patch release — performance and internals only, no public API change.
+
+- **Null-free columns no longer allocate a validity mask.** Constructing a column with no nulls
+  (`NewDataFrame` from `[]any`, and every typed constructor) skipped straight past an invariant the
+  engine already relied on: `Gather`/`Slice` produced nil-validity columns and every reader guards
+  for nil, yet construction still materialized an n-byte all-false slice. It now stays nil until a
+  null exists, which also makes the column's first `NullCount()` free instead of a full scan
+- **`Series.IsNull` / `Series.IsNotNull` are 30–67% faster** at 1 M rows and allocate half as much
+  (1968 KiB → 984 KiB). The validity negation behind `is_not_null` moved onto the sharded kernel
+  path, so a column that actually carries nulls went 307.8 µs → 101.2 µs
+
+Measured through the public `NewDataFrame` path with `benchstat` (n=8, p=0.000) on the hardware
+listed under [Benchmark](#benchmark-gopolars-vs-python-polars). The parity tables below are still
+the `v0.4.0` measurement run and do not yet reflect these numbers.
 
 ### What's new in v0.4.0
 

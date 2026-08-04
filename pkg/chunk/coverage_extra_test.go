@@ -66,8 +66,10 @@ func TestFromAnyAllDtypes(t *testing.T) {
 // TestNormalizeNulls covers all three branches: nil, length mismatch, and a
 // matching-length passthrough.
 func TestNormalizeNulls(t *testing.T) {
-	if got := normalizeNulls(nil, 3); len(got) != 3 {
-		t.Errorf("nil → len %d, want 3", len(got))
+	// nil stays nil: "no nulls" is represented by the absent mask, not by an
+	// all-false one, so a constructed column allocates no validity bytes.
+	if got := normalizeNulls(nil, 3); got != nil {
+		t.Errorf("nil → %v, want nil", got)
 	}
 	// Mismatched length → padded copy.
 	if got := normalizeNulls([]bool{true}, 3); len(got) != 3 || !got[0] || got[1] {

@@ -1,7 +1,8 @@
 // Package chunk provides gopolars' canonical typed column storage.
 //
 // A Column holds a dense, typed value buffer plus a validity mask (one bool
-// per row, true == null) instead of the legacy boxed []any representation.
+// per row, true == null; nil when no row is null) instead of the legacy boxed
+// []any representation.
 // Primitive dtypes (Int64, Float64, String, Boolean, Datetime, and the
 // string-backed Categorical/Enum) use typed slices so kernels can operate on
 // []float64 / []int64 without per-element interface boxing. Unsupported
@@ -24,7 +25,9 @@ const parallelGatherThreshold = 1 << 15 // 32768 rows
 // Column is a typed, single-column value buffer with a validity mask.
 //
 // Exactly one typed backing slice is populated for a given dtype; boxed holds
-// values for dtypes without a typed mapping. nulls has length n (true == null).
+// values for dtypes without a typed mapping. nulls is either nil, meaning no
+// row is null, or exactly n long (true == null); readers must handle the nil
+// case, which IsNull and NullCount already do.
 //
 // A Column is treated as immutable once it may be shared by more than one
 // frame (see MarkShared / zero-copy projection). Slicing, gathering, filtering,
@@ -59,11 +62,18 @@ type Column struct {
 // (mirrors Arrow's kUnknownNullCount).
 const unknownNullCount = -1
 
-// normalizeNulls returns a validity slice of length n. A nil input means no
-// nulls. The returned slice is owned by the Column.
+// normalizeNulls returns the validity slice a Column should carry for n rows.
+//
+// A nil input means "no nulls" and stays nil rather than being materialized as
+// an all-false slice: Gather and Slice already hand back nil-validity columns
+// for null-free sources, so every reader is written to treat nil as no-nulls,
+// and allocating n bytes that carry no information cost every constructed
+// column an extra pass over its own length. A short or over-long input is
+// copied into an exactly-n-length slice. The returned slice is owned by the
+// Column.
 func normalizeNulls(nulls []bool, n int) []bool {
 	if nulls == nil {
-		return make([]bool, n)
+		return nil
 	}
 	if len(nulls) != n {
 		out := make([]bool, n)
@@ -110,12 +120,18 @@ func NewBoxed(dtype dtypes.DataType, values []any, nulls []bool) *Column {
 // one-time ingest cost paid by series.New.
 func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 	n := len(values)
-	nulls := make([]bool, n)
+	// Allocated on the first nil entry only. An all-nil-free input (the common
+	// ingest) keeps nil validity, which costs n fewer bytes and makes the column's
+	// first NullCount() scan free instead of a full pass over n all-false bytes.
+	var nulls []bool
 	switch dtype {
 	case dtypes.Int64:
 		buf := make([]int64, n)
 		for i, v := range values {
 			if v == nil {
+				if nulls == nil {
+					nulls = make([]bool, n)
+				}
 				nulls[i] = true
 				continue
 			}
@@ -130,6 +146,9 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]float64, n)
 		for i, v := range values {
 			if v == nil {
+				if nulls == nil {
+					nulls = make([]bool, n)
+				}
 				nulls[i] = true
 				continue
 			}
@@ -144,6 +163,9 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]string, n)
 		for i, v := range values {
 			if v == nil {
+				if nulls == nil {
+					nulls = make([]bool, n)
+				}
 				nulls[i] = true
 				continue
 			}
@@ -158,6 +180,9 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]bool, n)
 		for i, v := range values {
 			if v == nil {
+				if nulls == nil {
+					nulls = make([]bool, n)
+				}
 				nulls[i] = true
 				continue
 			}
@@ -172,6 +197,9 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]time.Time, n)
 		for i, v := range values {
 			if v == nil {
+				if nulls == nil {
+					nulls = make([]bool, n)
+				}
 				nulls[i] = true
 				continue
 			}
@@ -186,6 +214,9 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]any, n)
 		for i, v := range values {
 			if v == nil {
+				if nulls == nil {
+					nulls = make([]bool, n)
+				}
 				nulls[i] = true
 				continue
 			}
@@ -201,6 +232,9 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]any, n)
 		for i, v := range values {
 			if v == nil {
+				if nulls == nil {
+					nulls = make([]bool, n)
+				}
 				nulls[i] = true
 				continue
 			}
@@ -214,6 +248,9 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]any, n)
 		for i, v := range values {
 			if v == nil {
+				if nulls == nil {
+					nulls = make([]bool, n)
+				}
 				nulls[i] = true
 				continue
 			}
@@ -227,6 +264,9 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]any, n)
 		for i, v := range values {
 			if v == nil {
+				if nulls == nil {
+					nulls = make([]bool, n)
+				}
 				nulls[i] = true
 				continue
 			}
@@ -240,6 +280,9 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]any, n)
 		for i, v := range values {
 			if v == nil {
+				if nulls == nil {
+					nulls = make([]bool, n)
+				}
 				nulls[i] = true
 				continue
 			}
