@@ -215,3 +215,69 @@ func TestMarkSharedCloneIfShared(t *testing.T) {
 		t.Errorf("clone should not inherit shared flag")
 	}
 }
+
+// TestNullMasks checks NullMask/NotNullMask are exact complements across the
+// null-free fast path, mixed validity, and a size above parallelFillThreshold
+// that exercises the sharded negation.
+func TestNullMasks(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		n       int
+		nullAt  func(i int) bool
+		withCol bool
+	}{
+		{name: "null-free nil validity", n: 5, nullAt: func(int) bool { return false }},
+		{name: "every row null", n: 5, nullAt: func(int) bool { return true }, withCol: true},
+		{name: "mixed validity", n: 9, nullAt: func(i int) bool { return i%3 == 0 }, withCol: true},
+		// Above parallelFillThreshold (8192), and deliberately not a multiple of
+		// the worker count so the shard boundaries land mid-slice.
+		{name: "sharded mixed validity", n: parallelFillThreshold*2 + 7, nullAt: func(i int) bool { return i%7 == 0 }, withCol: true},
+		{name: "sharded null-free", n: parallelFillThreshold*2 + 7, nullAt: func(int) bool { return false }},
+		{name: "empty", n: 0, nullAt: func(int) bool { return false }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			vals := make([]int64, tc.n)
+			var nulls []bool
+			if tc.withCol {
+				nulls = make([]bool, tc.n)
+				for i := range nulls {
+					nulls[i] = tc.nullAt(i)
+				}
+			}
+			c := NewInt64(vals, nulls)
+
+			isNull, notNull := c.NullMask(), c.NotNullMask()
+			if len(isNull) != tc.n || len(notNull) != tc.n {
+				t.Fatalf("mask lengths = %d/%d, want %d", len(isNull), len(notNull), tc.n)
+			}
+			for i := range tc.n {
+				if want := tc.nullAt(i); isNull[i] != want {
+					t.Fatalf("NullMask[%d] = %v, want %v", i, isNull[i], want)
+				}
+				// The two masks must be exact complements, and both must agree
+				// with the per-row IsNull accessor.
+				if isNull[i] == notNull[i] {
+					t.Fatalf("masks agree at %d (%v); want complements", i, isNull[i])
+				}
+				if isNull[i] != c.IsNull(i) {
+					t.Fatalf("NullMask[%d] = %v, IsNull = %v", i, isNull[i], c.IsNull(i))
+				}
+			}
+		})
+	}
+}
+
+// TestNullMasksNilColumn covers the nil-receiver guard.
+func TestNullMasksNilColumn(t *testing.T) {
+	t.Parallel()
+	var c *Column
+	if got := c.NullMask(); got != nil {
+		t.Errorf("nil NullMask = %v, want nil", got)
+	}
+	if got := c.NotNullMask(); got != nil {
+		t.Errorf("nil NotNullMask = %v, want nil", got)
+	}
+}

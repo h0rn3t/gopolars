@@ -79,48 +79,16 @@ func (s seriesFacade) NullCount() int {
 	return 0
 }
 
+// IsNull and IsNotNull delegate to the chunk kernels: chunk.Column owns validity
+// and can shard the pass. Both tolerate a nil column (a zero-value series has
+// length 0, so the mask is empty), and the result mask is itself never null, so
+// it is built with nil validity.
 func (s seriesFacade) IsNull() Series {
-	n := s.value.Len()
-	out := make([]bool, n)
-	// Only a column with real nulls needs the validity copy; a null-free column
-	// (NullCount cached at 0) leaves the all-false zero value untouched.
-	if c := s.value.Column(); c != nil && c.NullCount() != 0 {
-		copy(out, c.Nulls())
-	}
-	// The result mask itself is never null.
-	return seriesFacade{value: iseries.FromBool(s.value.Name(), out, nil)}
+	return seriesFacade{value: iseries.FromBool(s.value.Name(), s.value.Column().NullMask(), nil)}
 }
 
 func (s seriesFacade) IsNotNull() Series {
-	n := s.value.Len()
-	out := make([]bool, n)
-	if c := s.value.Column(); c != nil && c.NullCount() != 0 {
-		// Mixed validity: invert the validity mask element-wise.
-		nulls := c.Nulls()
-		for i := range n {
-			out[i] = !nulls[i]
-		}
-		return seriesFacade{value: iseries.FromBool(s.value.Name(), out, nil)}
-	}
-	// Null-free (or no backing column): every row is non-null. Fill all-true at
-	// memmove throughput via copy doubling so is_not_null matches is_null's fast
-	// path instead of running ~7x slower on a per-element store loop.
-	fillTrue(out)
-	return seriesFacade{value: iseries.FromBool(s.value.Name(), out, nil)}
-}
-
-// fillTrue sets every element of b to true using exponential copy doubling: it
-// seeds one true element, then doubles the filled prefix with copy (memmove)
-// until the whole slice is set. This runs at memmove throughput rather than a
-// per-byte store loop.
-func fillTrue(b []bool) {
-	if len(b) == 0 {
-		return
-	}
-	b[0] = true
-	for j := 1; j < len(b); j <<= 1 {
-		copy(b[j:], b[:j])
-	}
+	return seriesFacade{value: iseries.FromBool(s.value.Name(), s.value.Column().NotNullMask(), nil)}
 }
 
 func (s seriesFacade) FillNull(value any) (Series, error) {
