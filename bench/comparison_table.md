@@ -5,84 +5,79 @@
 
 ### DataFrame
 
-> `unique` uses equivalent semantics on both engines: full-frame keep-first,
-> maintain-order on the key subset (Go `df.Unique("g")`; Python
-> `df.unique(subset=["g"], keep="first", maintain_order=True)`). The `join` row
-> times the `unique` dimension build plus the join.
-
 | operation | size | Go time | Py time | speedup | Go B/op | Go allocs/op |
 |-----------|------|---------|---------|---------|---------|--------------|
-| `filter` | 1K | 6.0 µs | 94.4 µs | **Go ×15.6** | 27.1 KB | 23 |
-| `filter` | 1M | 1.12 ms | 551.6 µs | Py ×2.0 | 20.8 MB | 116 |
-| `select` | 1K | 601 ns | 42.3 µs | **Go ×70.4** | 1.5 KB | 10 |
-| `select` | 1M | 475 ns | 48.2 µs | **Go ×101.4** | 1.5 KB | 10 |
-| `with_columns` | 1K | 584 ns | 9.0 µs | **Go ×15.5** | 1.5 KB | 10 |
-| `with_columns` | 1M | 470 ns | 8.8 µs | **Go ×18.7** | 1.5 KB | 10 |
-| `sort` | 1K | 23.4 µs | 173.4 µs | **Go ×7.4** | 66.6 KB | 19 |
-| `sort` | 1M | 17.42 ms | 14.03 ms | Py ×1.2 | 62.0 MB | 179 |
-| `group_by` | 1K | 14.9 µs | 683.1 µs | **Go ×46.0** | 18.6 KB | 41 |
-| `group_by` | 1M | 1.83 ms | 1.58 ms | Py ×1.2 | 90.7 KB | 186 |
-| `join` | 1K | 91.6 µs | 376.5 µs | **Go ×4.1** | 225.4 KB | 727 |
-| `join` | 1M | 6.84 ms | 6.30 ms | Py ×1.1 | 101.4 MB | 1164 |
-| `head` | 1K | 464 ns | 633 ns | **Go ×1.4** | 1.6 KB | 10 |
-| `head` | 1M | 329 ns | 933 ns | **Go ×2.8** | 1.6 KB | 10 |
-| `tail` | 1K | 474 ns | 591 ns | **Go ×1.2** | 1.3 KB | 9 |
-| `tail` | 1M | 343 ns | 629 ns | **Go ×1.8** | 1.3 KB | 9 |
-| `unique` | 1K | 8.6 µs | 193.4 µs | **Go ×22.4** | 9.9 KB | 21 |
-| `unique` | 1M | 1.03 ms | 5.16 ms | **Go ×5.0** | 1.6 MB | 480 |
-| `fill_null` | 1K | 2.2 µs | 146.7 µs | **Go ×65.4** | 10.0 KB | 10 |
-| `fill_null` | 1M | 425.3 µs | 1.29 ms | **Go ×3.0** | 8.6 MB | 35 |
-| `drop_nulls` | 1K | 10.2 µs | 71.8 µs | **Go ×7.1** | 50.6 KB | 17 |
-| `drop_nulls` | 1M | 1.65 ms | 1.34 ms | Py ×1.2 | 37.2 MB | 66 |
+| `filter` | 1K | 5.8 µs | 109.8 µs | **Go ×18.9** | 23.1 KB | 22 |
+| `filter` | 1M | 1.09 ms | 589.5 µs | Py ×1.8 | 19.8 MB | 116 |
+| `select` | 1K | 588 ns | 30.9 µs | **Go ×52.5** | 1.5 KB | 10 |
+| `select` | 1M | 464 ns | 33.1 µs | **Go ×71.3** | 1.5 KB | 10 |
+| `with_columns` | 1K | 568 ns | 8.4 µs | **Go ×14.8** | 1.5 KB | 10 |
+| `with_columns` | 1M | 449 ns | 9.1 µs | **Go ×20.2** | 1.5 KB | 10 |
+| `sort` | 1K | 24.2 µs | 201.3 µs | **Go ×8.3** | 66.6 KB | 19 |
+| `sort` | 1M | 15.89 ms | 11.27 ms | Py ×1.4 | 62.0 MB | 153 |
+| `group_by` | 1K | 14.9 µs | 706.5 µs | **Go ×47.5** | 18.6 KB | 41 |
+| `group_by` | 1M | 1.48 ms | 1.63 ms | **Go ×1.1** | 90.7 KB | 186 |
+| `join` | 1K | 89.2 µs | 341.5 µs | **Go ×3.8** | 217.4 KB | 727 |
+| `join` | 1M | 6.93 ms | 5.94 ms | Py ×1.2 | 95.2 MB | 1590 |
+| `head` | 1K | 466 ns | 620 ns | **Go ×1.3** | 1.6 KB | 10 |
+| `head` | 1M | 326 ns | 624 ns | **Go ×1.9** | 1.6 KB | 10 |
+| `tail` | 1K | 466 ns | 612 ns | **Go ×1.3** | 1.6 KB | 10 |
+| `tail` | 1M | 327 ns | 658 ns | **Go ×2.0** | 1.6 KB | 10 |
+| `unique` | 1K | 8.8 µs | 146.3 µs | **Go ×16.6** | 1.9 KB | 21 |
+| `unique` | 1M | 992.2 µs | 4.35 ms | **Go ×4.4** | 70.6 KB | 147 |
+| `fill_null` | 1K | 2.5 µs | 116.0 µs | **Go ×46.1** | 10.0 KB | 10 |
+| `fill_null` | 1M | 412.0 µs | 718.1 µs | **Go ×1.7** | 8.6 MB | 35 |
+| `drop_nulls` | 1K | 10.4 µs | 58.7 µs | **Go ×5.6** | 42.7 KB | 17 |
+| `drop_nulls` | 1M | 1.63 ms | 1.31 ms | Py ×1.2 | 35.4 MB | 64 |
 
 ### Expr
 
 | operation | size | Go time | Py time | speedup | Go B/op | Go allocs/op |
 |-----------|------|---------|---------|---------|---------|--------------|
-| `cum_sum` | 1K | 2.6 µs | 13.2 µs | **Go ×5.1** | 10.7 KB | 14 |
-| `cum_sum` | 1M | 782.0 µs | 3.18 ms | **Go ×4.1** | 8.6 MB | 14 |
-| `rank` | 1K | 17.2 µs | 49.2 µs | **Go ×2.9** | 34.7 KB | 17 |
-| `rank` | 1M | 20.71 ms | 14.85 ms | Py ×1.4 | 31.5 MB | 17 |
-| `over` | 1K | 16.0 µs | 289.6 µs | **Go ×18.1** | 28.2 KB | 26 |
-| `over` | 1M | 18.21 ms | 10.86 ms | Py ×1.7 | 24.8 MB | 26 |
-| `fill_null` | 1K | 3.0 µs | 39.0 µs | **Go ×13.1** | 10.9 KB | 16 |
-| `fill_null` | 1M | 388.4 µs | 759.3 µs | **Go ×2.0** | 8.6 MB | 41 |
-| `fill_nan` | 1K | 1.2 µs | 79.4 µs | **Go ×66.4** | 1.9 KB | 15 |
-| `fill_nan` | 1M | 75.7 µs | 894.3 µs | **Go ×11.8** | 2.6 KB | 40 |
-| `rolling_mean` | 1K | 6.5 µs | 18.5 µs | **Go ×2.8** | 10.7 KB | 16 |
-| `rolling_mean` | 1M | 4.77 ms | 9.23 ms | **Go ×1.9** | 8.6 MB | 16 |
-| `rolling_sum` | 1K | 6.7 µs | 18.1 µs | **Go ×2.7** | 10.7 KB | 16 |
-| `rolling_sum` | 1M | 4.74 ms | 9.09 ms | **Go ×1.9** | 8.6 MB | 16 |
-| `rolling_min` | 1K | 4.8 µs | 15.5 µs | **Go ×3.2** | 11.5 KB | 17 |
-| `rolling_min` | 1M | 8.17 ms | 12.24 ms | **Go ×1.5** | 8.9 MB | 28 |
-| `rolling_max` | 1K | 5.1 µs | 15.3 µs | **Go ×3.0** | 11.5 KB | 17 |
-| `rolling_max` | 1M | 8.06 ms | 12.26 ms | **Go ×1.5** | 8.9 MB | 28 |
+| `cum_sum` | 1K | 2.6 µs | 13.1 µs | **Go ×5.1** | 10.7 KB | 14 |
+| `cum_sum` | 1M | 779.3 µs | 2.94 ms | **Go ×3.8** | 8.6 MB | 14 |
+| `rank` | 1K | 18.4 µs | 67.2 µs | **Go ×3.7** | 34.7 KB | 17 |
+| `rank` | 1M | 14.08 ms | 13.71 ms | Py ×1.0 | 31.5 MB | 47 |
+| `over` | 1K | 14.9 µs | 315.8 µs | **Go ×21.1** | 28.2 KB | 28 |
+| `over` | 1M | 4.66 ms | 9.53 ms | **Go ×2.0** | 25.2 MB | 137 |
+| `fill_null` | 1K | 3.2 µs | 40.1 µs | **Go ×12.6** | 10.9 KB | 16 |
+| `fill_null` | 1M | 402.3 µs | 675.0 µs | **Go ×1.7** | 8.6 MB | 41 |
+| `fill_nan` | 1K | 1.2 µs | 73.1 µs | **Go ×60.7** | 1.9 KB | 15 |
+| `fill_nan` | 1M | 75.5 µs | 871.1 µs | **Go ×11.5** | 2.6 KB | 40 |
+| `rolling_mean` | 1K | 6.4 µs | 18.3 µs | **Go ×2.8** | 10.7 KB | 16 |
+| `rolling_mean` | 1M | 4.51 ms | 9.22 ms | **Go ×2.0** | 8.6 MB | 16 |
+| `rolling_sum` | 1K | 6.6 µs | 20.0 µs | **Go ×3.0** | 10.7 KB | 16 |
+| `rolling_sum` | 1M | 4.39 ms | 9.05 ms | **Go ×2.1** | 8.6 MB | 16 |
+| `rolling_min` | 1K | 4.9 µs | 15.2 µs | **Go ×3.1** | 11.5 KB | 17 |
+| `rolling_min` | 1M | 8.11 ms | 12.05 ms | **Go ×1.5** | 8.9 MB | 28 |
+| `rolling_max` | 1K | 5.3 µs | 14.7 µs | **Go ×2.8** | 11.5 KB | 17 |
+| `rolling_max` | 1M | 8.12 ms | 12.15 ms | **Go ×1.5** | 8.9 MB | 28 |
 
 ### Series
 
 | operation | size | Go time | Py time | speedup | Go B/op | Go allocs/op |
 |-----------|------|---------|---------|---------|---------|--------------|
-| `null_count` | 1K | 2 ns | 475 ns | **Go ×237.5** | — | 0 |
-| `null_count` | 1M | 2 ns | 662 ns | **Go ×331.3** | — | 0 |
-| `drop_nans` | 1K | 410 ns | 12.4 µs | **Go ×30.2** | 300 B | 4 |
-| `drop_nans` | 1M | 85.5 µs | 100.8 µs | **Go ×1.2** | 988 B | 29 |
-| `to_list` | 1K | 9.5 µs | 9.8 µs | **Go ×1.0** | 23.8 KB | 1001 |
-| `to_list` | 1M | 7.36 ms | 14.14 ms | **Go ×1.9** | 22.9 MB | 1000001 |
-| `is_null` | 1K | 395 ns | 11.5 µs | **Go ×29.2** | 2.2 KB | 4 |
-| `is_null` | 1M | 42.0 µs | 11.8 µs | Py ×3.6 | 1.9 MB | 4 |
-| `is_not_null` | 1K | 391 ns | 11.7 µs | **Go ×30.0** | 2.2 KB | 4 |
-| `is_not_null` | 1M | 53.9 µs | 13.8 µs | Py ×3.9 | 1.9 MB | 4 |
-| `fill_nan` | 1K | 396 ns | 84.3 µs | **Go ×213.0** | 300 B | 4 |
-| `fill_nan` | 1M | 74.3 µs | 793.3 µs | **Go ×10.7** | 988 B | 29 |
+| `null_count` | 1K | 2 ns | 487 ns | **Go ×243.8** | — | 0 |
+| `null_count` | 1M | 2 ns | 550 ns | **Go ×275.0** | — | 0 |
+| `drop_nans` | 1K | 394 ns | 12.3 µs | **Go ×31.2** | 300 B | 4 |
+| `drop_nans` | 1M | 73.7 µs | 99.7 µs | **Go ×1.4** | 988 B | 29 |
+| `to_list` | 1K | 9.7 µs | 10.4 µs | **Go ×1.1** | 23.8 KB | 1001 |
+| `to_list` | 1M | 7.42 ms | 13.26 ms | **Go ×1.8** | 22.9 MB | 1000001 |
+| `is_null` | 1K | 414 ns | 11.5 µs | **Go ×27.8** | 2.2 KB | 4 |
+| `is_null` | 1M | 45.1 µs | 11.8 µs | Py ×3.8 | 1.9 MB | 4 |
+| `is_not_null` | 1K | 409 ns | 11.5 µs | **Go ×28.1** | 2.2 KB | 4 |
+| `is_not_null` | 1M | 68.7 µs | 13.6 µs | Py ×5.0 | 1.9 MB | 4 |
+| `fill_nan` | 1K | 393 ns | 95.9 µs | **Go ×244.0** | 300 B | 4 |
+| `fill_nan` | 1M | 73.9 µs | 852.7 µs | **Go ×11.5** | 988 B | 29 |
 
 ### LazyFrame
 
 | operation | size | Go time | Py time | speedup | Go B/op | Go allocs/op |
 |-----------|------|---------|---------|---------|---------|--------------|
-| `collect` | 1K | 83 ns | 4.1 µs | **Go ×49.2** | 192 B | 2 |
-| `collect` | 1M | 70 ns | 4.1 µs | **Go ×58.9** | 192 B | 2 |
-| `inspect` | 1K | 31 ns | 1.1 µs | **Go ×37.0** | 112 B | 1 |
-| `inspect` | 1M | 21 ns | 1.1 µs | **Go ×53.0** | 112 B | 1 |
+| `collect` | 1K | 86 ns | 4.0 µs | **Go ×47.0** | 192 B | 2 |
+| `collect` | 1M | 69 ns | 4.8 µs | **Go ×70.1** | 192 B | 2 |
+| `inspect` | 1K | 31 ns | 1.2 µs | **Go ×38.3** | 112 B | 1 |
+| `inspect` | 1M | 20 ns | 1.1 µs | **Go ×56.9** | 112 B | 1 |
 
 ### SQLContext
 

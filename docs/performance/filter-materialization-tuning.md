@@ -13,6 +13,64 @@ remains per call, measured on Apple M4 Pro (12 cores, Go 1.26):
 | GC cycles driven by the ~20 MB/op result allocation | ~300 µs | **yes — `GOGC` / `GOMEMLIMIT`** |
 | predicate eval + gather kernels (bandwidth-bound) | ~450 µs | no (already at bandwidth) |
 
+## Which parallel regime runs (columns vs `GOMAXPROCS`)
+
+The batch path has two parallel regimes, and which one runs depends on the
+column count relative to `GOMAXPROCS`:
+
+- `len(columns) <= GOMAXPROCS` → the fused wave: workers split **rows**, each
+  worker gathers its row range across every column.
+- `len(columns) > GOMAXPROCS` → `takeColumnsBitmap`: one **column** per worker,
+  round-robin.
+
+The round-robin regime balances only when columns clearly outnumber workers.
+At `columns == GOMAXPROCS` every worker gets exactly one column, so wall-time
+becomes the most expensive column (a `String` gather costs ~2.4x an `Int64` one
+— 16-byte headers plus GC write barriers) while the rest idle. Measured on the
+4-column bench frame at 1M rows, `GOMAXPROCS=4` (median of 6 × 1 s):
+
+| | one column per worker | fused wave |
+|---|---|---|
+| `BenchmarkFilterHalf` | 2.22 ms | **1.87 ms** |
+| `BenchmarkDropNullsSparse` | 4.22 ms | **2.75 ms** |
+
+Hence the boundary is `<=`, not `<`. It does not extend further: at
+`GOMAXPROCS=4`, filter over 6 columns is 2.51 ms fused vs 3.29 ms round-robin
+(fused wins), over 8 columns 3.43 vs 3.66 ms (noise), and over 12 columns
+5.50 vs 4.79 ms — **fused loses**, because each worker then holds `columns`
+input plus `columns` output streams and prefetch collapses. At
+`columns == GOMAXPROCS == 12` the two regimes tie for filter (3.9 vs 3.7 ms,
+within run-to-run spread) and the fused wave wins for drop_nulls
+(4.97 vs 6.34 ms), so the `<=` boundary is safe on a 12-core machine too.
+
+This matters for CI: the GitHub runner has 4 vCPUs and the bench frame has 4
+columns, so before this boundary fix the runner exercised a different regime
+than the 12-core machine the budgets were seeded on.
+
+Note how much smaller the same fix is on that runner, measured by the nightly
+parity workflow at 1M rows (Go ns/op; main's numbers are 5 nightly runs, whose
+spread is ±1% for drop_nulls and 6.87–7.01 ms for filter ignoring one 8.03 ms
+outlier):
+
+| | main (median) | with the `<=` boundary |
+|---|---|---|
+| `DataFrame/filter` | 6.96 ms | 6.66 ms (−4%) |
+| `DataFrame/drop_nulls` | 11.75 ms | 10.56 ms (−9%) |
+
+Balancing core occupancy pays off ~4x less there than on the M4 Pro: the shared
+4-vCPU runner is memory-bandwidth-bound, so the string column's gather does not
+get faster by being spread over more workers. The residual gap to Python Polars
+on that machine is a property of the machine class, not of the regime.
+
+### Measuring: use env `GOMAXPROCS`, not `-cpu`
+
+`go test -cpu=N` does **not** apply to the first `-count` iteration in a
+process: that run still uses the previous `GOMAXPROCS`, which silently measures
+the wrong regime. Control parallelism with the environment variable
+(`GOMAXPROCS=4 go test -bench=...`) and use `allocs/op` as the regime check —
+on the 4-column frame filter reports 114 allocs/op with 12 shards versus 58–60
+with 4.
+
 ## GOGC / GOMEMLIMIT
 
 Filter's output is unavoidable garbage from the collector's point of view:

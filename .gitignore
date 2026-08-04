@@ -7,6 +7,8 @@ coverage.out
 research/
 .claude/
 .opencode/
+.cursor/
+graphify-out/
 
 # Build/test artifacts
 *.test

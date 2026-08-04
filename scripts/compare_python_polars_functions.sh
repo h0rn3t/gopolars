@@ -50,7 +50,7 @@ import sys
 parquet_path = pathlib.Path(sys.argv[1]).resolve()
 csv_out = pathlib.Path(sys.argv[2]).resolve()
 md_out = pathlib.Path(sys.argv[3]).resolve()
-matrix_path = pathlib.Path("docs/parity/python_polars_full_matrix.md").resolve()
+matrix_path = pathlib.Path("POLARS_PARITY_TABLE.md").resolve()
 registry_path = matrix_path.with_name("python_polars_method_registry.json").resolve()
 
 import json
@@ -86,31 +86,34 @@ def render_ascii_table(headers, rows):
 if registry_path.exists():
     rows = json.loads(registry_path.read_text(encoding="utf-8"))["rows"]
 else:
+    # Формат, який видає gen_parity_table.py:
+    #   ## DataFrame
+    #   | `approx_n_unique` | `ApproxNUnique` | ✅ |
+    #   | `gather`          | —               | ❌ |
     matrix_text = matrix_path.read_text(encoding="utf-8")
     sections = ["DataFrame", "LazyFrame", "Expr", "Series", "SQLContext"]
     rows = []
     for obj in sections:
-        section_match = re.search(rf"## {obj} \(\d+ методов\)\n([\s\S]*?)(?:\n## |\Z)", matrix_text)
+        section_match = re.search(rf"^## {obj}$\n([\s\S]*?)(?:\n## |\Z)", matrix_text, re.M)
         if not section_match:
             continue
         block = section_match.group(1)
         for line in block.splitlines():
-            m = re.match(
-                r"\| `([^`]+)` \| ([^|]+) \| (реализовано|не реализовано) \| (—|high|medium|low) \|",
-                line.strip(),
-            )
+            m = re.match(r"\| `([^`]+)` \| (?:`([^`]+)`|—) \| (✅|❌) \|", line.strip())
             if not m:
                 continue
-            method, equivalent, status, priority = m.groups()
+            method, equivalent, mark = m.groups()
             rows.append(
                 {
                     "object": obj,
                     "method": method,
-                    "equivalent": equivalent.strip(),
-                    "gopolars_status": status,
-                    "priority": priority,
+                    "equivalent": equivalent or "—",
+                    "gopolars_status": "реализовано" if mark == "✅" else "не реализовано",
+                    "priority": "—",
                 }
             )
+    if not rows:
+        raise SystemExit(f"не розібрано жодного рядка з {matrix_path}")
 
 df = pl.read_parquet(str(parquet_path))
 lf = df.lazy()

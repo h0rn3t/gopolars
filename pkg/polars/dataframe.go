@@ -444,12 +444,23 @@ func (d *df) Rolling(by string, value string, window time.Duration, output strin
 	return d.RollingMean(RollingMeanInput{By: by, Value: value, Window: window, Output: output})
 }
 
+// Row returns the row at index as a name-keyed map. It reads only that row's
+// cell from each column, so its cost scales with the column count and not with
+// the frame height.
 func (d *df) Row(index int) (map[string]any, error) {
 	if index < 0 || index >= d.Height() {
 		return nil, fmt.Errorf("row out of bounds")
 	}
-	rows := d.ToDicts()
-	return rows[index], nil
+	names := d.Columns()
+	out := make(map[string]any, len(names))
+	for _, name := range names {
+		s, ok := d.value.Series(name)
+		if !ok {
+			return nil, fmt.Errorf("column %s not found", name)
+		}
+		out[name] = s.Value(index)
+	}
+	return out, nil
 }
 
 func (d *df) Rows() []map[string]any {
@@ -1132,13 +1143,18 @@ func (d *df) Drop(columns ...string) (DataFrame, error) {
 	for _, c := range columns {
 		dropSet[c] = struct{}{}
 	}
+	// Dropping a column changes no value in the retained ones, so they are shared
+	// by pointer rather than copied: O(columns), not O(rows).
 	out := make([]series.Series, 0, d.value.Width())
 	for _, name := range d.value.Columns() {
 		if _, shouldDrop := dropSet[name]; shouldDrop {
 			continue
 		}
 		s, _ := d.value.Series(name)
-		out = append(out, s.Clone())
+		if c := s.Column(); c != nil {
+			c.MarkShared()
+		}
+		out = append(out, s)
 	}
 	return fromFrame(frame.New(frame.NewInput{Series: out}))
 }
@@ -1147,6 +1163,8 @@ func (d *df) Rename(mapping map[string]string) (DataFrame, error) {
 	if len(mapping) == 0 {
 		return d, nil
 	}
+	// Renaming touches no value: renamed and untouched columns alike share the
+	// source's buffers by pointer, so the cost is O(columns).
 	out := make([]series.Series, 0, d.value.Width())
 	for _, name := range d.value.Columns() {
 		s, _ := d.value.Series(name)
@@ -1154,7 +1172,10 @@ func (d *df) Rename(mapping map[string]string) (DataFrame, error) {
 			out = append(out, s.Rename(nextName))
 			continue
 		}
-		out = append(out, s.Clone())
+		if c := s.Column(); c != nil {
+			c.MarkShared()
+		}
+		out = append(out, s)
 	}
 	return fromFrame(frame.New(frame.NewInput{Series: out}))
 }

@@ -1,13 +1,21 @@
-# Таблиця відповідності gopolars ↔ Polars Python 1.41.0
+# Таблиця відповідності gopolars ↔ Python Polars 1.41.2
+
+> Згенеровано `gen_parity_table.py`. Не редагувати вручну.
+>
+> Кожен клас звіряється лише з відповідним Go-типом: `DataFrame`/`LazyFrame`/`Series` —
+> з інтерфейсів у `pkg/polars/types.go`, `Expr` — з методів із ресивером `Expr` у `pkg/expr`.
+> Перевіряється наявність методу, не сигнатура й не семантика — останні покривають
+> `test/parity` і `test/conformance`.
 
 **Легенда:**
 - ✅ Реалізовано — метод присутній у gopolars
 - ❌ Не реалізовано — метод відсутній у gopolars
+
 ---
 
 ## DataFrame
 
-| Python (snake_case) | Go (CamelCase) | Статус |
+| Python (snake_case) | Go | Статус |
 |---|---|---|
 | `approx_n_unique` | `ApproxNUnique` | ✅ |
 | `bottom_k` | `BottomK` | ✅ |
@@ -22,19 +30,19 @@
 | `deserialize` | `Deserialize` | ✅ |
 | `drop` | `Drop` | ✅ |
 | `drop_in_place` | `DropInPlace` | ✅ |
-| `drop_nans` | `DropNans` | ❌ |
+| `drop_nans` | `DropNaNs` | ✅ |
 | `drop_nulls` | `DropNulls` | ✅ |
 | `dtypes` | `Dtypes` | ✅ |
 | `equals` | `Equals` | ✅ |
 | `estimated_size` | `EstimatedSize` | ✅ |
 | `explode` | `Explode` | ✅ |
 | `extend` | `Extend` | ✅ |
-| `fill_nan` | `FillNan` | ❌ |
+| `fill_nan` | `FillNaN` | ✅ |
 | `fill_null` | `FillNull` | ✅ |
 | `filter` | `Filter` | ✅ |
 | `flags` | `Flags` | ✅ |
 | `fold` | `Fold` | ✅ |
-| `gather` | `Gather` | ❌ |
+| `gather` | — | ❌ |
 | `gather_every` | `GatherEvery` | ✅ |
 | `get_column` | `GetColumn` | ✅ |
 | `get_column_index` | `GetColumnIndex` | ✅ |
@@ -102,6 +110,7 @@
 | `shrink_to_fit` | `ShrinkToFit` | ✅ |
 | `slice` | `Slice` | ✅ |
 | `sort` | `Sort` | ✅ |
+| `sql` | `Sql` | ✅ |
 | `std` | `Std` | ✅ |
 | `style` | `Style` | ✅ |
 | `sum` | `Sum` | ✅ |
@@ -146,12 +155,14 @@
 | `write_ndjson` | `WriteNdjson` | ✅ |
 | `write_parquet` | `WriteParquet` | ✅ |
 
-**Підсумок DataFrame:** 134/137 реалізовано (~97%).
+**Підсумок DataFrame:** 136/137 реалізовано (~99.3%).
+
+**Не реалізовано (1):** `gather`
 
 
 ## LazyFrame
 
-| Python (snake_case) | Go (CamelCase) | Статус |
+| Python (snake_case) | Go | Статус |
 |---|---|---|
 | `approx_n_unique` | `ApproxNUnique` | ✅ |
 | `bottom_k` | `BottomK` | ✅ |
@@ -168,18 +179,18 @@
 | `describe` | `Describe` | ✅ |
 | `deserialize` | `Deserialize` | ✅ |
 | `drop` | `Drop` | ✅ |
-| `drop_nans` | `DropNans` | ❌ |
+| `drop_nans` | `DropNaNs` | ✅ |
 | `drop_nulls` | `DropNulls` | ✅ |
 | `dtypes` | `Dtypes` | ✅ |
-| `execute` | `Execute` | ❌ |
+| `execute` | — | ❌ |
 | `explain` | `Explain` | ✅ |
 | `explode` | `Explode` | ✅ |
-| `fetch` | `Fetch` | ❌ |
-| `fill_nan` | `FillNan` | ❌ |
+| `fetch` | — | ❌ |
+| `fill_nan` | `FillNaN` | ✅ |
 | `fill_null` | `FillNull` | ✅ |
 | `filter` | `Filter` | ✅ |
 | `first` | `First` | ✅ |
-| `gather` | `Gather` | ❌ |
+| `gather` | — | ❌ |
 | `gather_every` | `GatherEvery` | ✅ |
 | `group_by` | `GroupBy` | ✅ |
 | `group_by_dynamic` | `GroupByDynamic` | ✅ |
@@ -220,14 +231,15 @@
 | `show` | `Show` | ✅ |
 | `show_graph` | `ShowGraph` | ✅ |
 | `sink_batches` | `SinkBatches` | ✅ |
-| `sink_csv` | `SinkCsv` | ❌ |
+| `sink_csv` | `SinkCSV` | ✅ |
 | `sink_delta` | `SinkDelta` | ✅ |
 | `sink_iceberg` | `SinkIceberg` | ✅ |
-| `sink_ipc` | `SinkIpc` | ❌ |
-| `sink_ndjson` | `SinkNdjson` | ❌ |
+| `sink_ipc` | `SinkIPC` | ✅ |
+| `sink_ndjson` | `SinkNDJSON` | ✅ |
 | `sink_parquet` | `SinkParquet` | ✅ |
 | `slice` | `Slice` | ✅ |
 | `sort` | `Sort` | ✅ |
+| `sql` | `SQL` | ✅ |
 | `std` | `Std` | ✅ |
 | `sum` | `Sum` | ✅ |
 | `tail` | `Tail` | ✅ |
@@ -244,12 +256,14 @@
 | `with_row_count` | `WithRowCount` | ✅ |
 | `with_row_index` | `WithRowIndex` | ✅ |
 
-**Підсумок LazyFrame:** 83/91 реалізовано (~91%).
+**Підсумок LazyFrame:** 88/91 реалізовано (~96.7%).
+
+**Не реалізовано (3):** `execute`, `fetch`, `gather`
 
 
 ## Series
 
-| Python (snake_case) | Go (CamelCase) | Статус |
+| Python (snake_case) | Go | Статус |
 |---|---|---|
 | `abs` | `Abs` | ✅ |
 | `alias` | `Alias` | ✅ |
@@ -299,7 +313,7 @@
 | `cum_min` | `CumMin` | ✅ |
 | `cum_prod` | `CumProd` | ✅ |
 | `cum_sum` | `CumSum` | ✅ |
-| `cumulative_eval` | `CumulativeEval` | ❌ |
+| `cumulative_eval` | — | ❌ |
 | `cut` | `Cut` | ✅ |
 | `describe` | `Describe` | ✅ |
 | `diff` | `Diff` | ✅ |
@@ -319,7 +333,7 @@
 | `ewm_var` | `EwmVar` | ✅ |
 | `exp` | `Exp` | ✅ |
 | `explode` | `Explode` | ✅ |
-| `ext` | `Ext` | ❌ |
+| `ext` | — | ❌ |
 | `extend` | `Extend` | ✅ |
 | `extend_constant` | `ExtendConstant` | ✅ |
 | `fill_nan` | `FillNan` | ✅ |
@@ -364,7 +378,7 @@
 | `le` | `Le` | ✅ |
 | `len` | `Len` | ✅ |
 | `limit` | `Limit` | ✅ |
-| `list` | `List / Arr` | ✅ |
+| `list` | `List` | ✅ |
 | `log` | `Log` | ✅ |
 | `log10` | `Log10` | ✅ |
 | `log1p` | `Log1p` | ✅ |
@@ -391,10 +405,10 @@
 | `pct_change` | `PctChange` | ✅ |
 | `peak_max` | `PeakMax` | ✅ |
 | `peak_min` | `PeakMin` | ✅ |
-| `plot` | `Plot` | ❌ |
+| `plot` | — | ❌ |
 | `pow` | `Pow` | ✅ |
 | `product` | `Product` | ✅ |
-| `qcut` | `Qcut` | ❌ |
+| `qcut` | `QCut` | ✅ |
 | `quantile` | `Quantile` | ✅ |
 | `rank` | `Rank` | ✅ |
 | `rechunk` | `Rechunk` | ✅ |
@@ -437,7 +451,7 @@
 | `set_sorted` | `SetSorted` | ✅ |
 | `shape` | `Shape` | ✅ |
 | `shift` | `Shift` | ✅ |
-| `shrink_dtype` | `ShrinkDtype` | ❌ |
+| `shrink_dtype` | `ShrinkDType` | ✅ |
 | `shrink_to_fit` | `ShrinkToFit` | ✅ |
 | `shuffle` | `Shuffle` | ✅ |
 | `sign` | `Sign` | ✅ |
@@ -446,6 +460,7 @@
 | `skew` | `Skew` | ✅ |
 | `slice` | `Slice` | ✅ |
 | `sort` | `Sort` | ✅ |
+| `sql` | — | ❌ |
 | `sqrt` | `Sqrt` | ✅ |
 | `std` | `Std` | ✅ |
 | `str` | `Str` | ✅ |
@@ -474,12 +489,14 @@
 | `var` | `Var` | ✅ |
 | `zip_with` | `ZipWith` | ✅ |
 
-**Підсумок Series:** 217/223 реалізовано (~97%).
+**Підсумок Series:** 219/223 реалізовано (~98.2%).
+
+**Не реалізовано (4):** `cumulative_eval`, `ext`, `plot`, `sql`
 
 
 ## Expr
 
-| Python (snake_case) | Go (CamelCase) | Статус |
+| Python (snake_case) | Go | Статус |
 |---|---|---|
 | `abs` | `Abs` | ✅ |
 | `add` | `Add` | ✅ |
@@ -550,7 +567,7 @@
 | `explode` | `Explode` | ✅ |
 | `ext` | `Ext` | ✅ |
 | `extend_constant` | `ExtendConstant` | ✅ |
-| `fill_nan` | `FillNan` | ❌ |
+| `fill_nan` | `FillNaN` | ✅ |
 | `fill_null` | `FillNull` | ✅ |
 | `filter` | `Filter` | ✅ |
 | `first` | `First` | ✅ |
@@ -576,7 +593,7 @@
 | `is_between` | `IsBetween` | ✅ |
 | `is_close` | `IsClose` | ✅ |
 | `is_duplicated` | `IsDuplicated` | ✅ |
-| `is_empty` | `IsEmpty` | ❌ |
+| `is_empty` | — | ❌ |
 | `is_finite` | `IsFinite` | ✅ |
 | `is_first_distinct` | `IsFirstDistinct` | ✅ |
 | `is_in` | `IsIn` | ✅ |
@@ -591,9 +608,9 @@
 | `kurtosis` | `Kurtosis` | ✅ |
 | `last` | `Last` | ✅ |
 | `le` | `Le` | ✅ |
-| `len` | `Len` | ❌ |
+| `len` | — | ❌ |
 | `limit` | `Limit` | ✅ |
-| `list` | `List / Arr` | ✅ |
+| `list` | `List` | ✅ |
 | `log` | `Log` | ✅ |
 | `log10` | `Log10` | ✅ |
 | `log1p` | `Log1p` | ✅ |
@@ -628,12 +645,12 @@
 | `pipe` | `Pipe` | ✅ |
 | `pow` | `Pow` | ✅ |
 | `product` | `Product` | ✅ |
-| `qcut` | `Qcut` | ❌ |
+| `qcut` | `QCut` | ✅ |
 | `quantile` | `Quantile` | ✅ |
 | `radians` | `Radians` | ✅ |
 | `rank` | `Rank` | ✅ |
 | `rechunk` | `Rechunk` | ✅ |
-| `register_plugin` | `RegisterPlugin` | ❌ |
+| `register_plugin` | — | ❌ |
 | `reinterpret` | `Reinterpret` | ✅ |
 | `repeat_by` | `RepeatBy` | ✅ |
 | `replace` | `Replace` | ✅ |
@@ -691,7 +708,7 @@
 | `to_physical` | `ToPhysical` | ✅ |
 | `top_k` | `TopK` | ✅ |
 | `top_k_by` | `TopKBy` | ✅ |
-| `truediv` | `Truediv` | ❌ |
+| `truediv` | `TrueDiv` | ✅ |
 | `truncate` | `Truncate` | ✅ |
 | `unique` | `Unique` | ✅ |
 | `unique_counts` | `UniqueCounts` | ✅ |
@@ -701,13 +718,16 @@
 | `where` | `Where` | ✅ |
 | `xor` | `Xor` | ✅ |
 
-**Підсумок Expr:** 213/219 реалізовано (~97%).
+**Підсумок Expr:** 216/219 реалізовано (~98.6%).
+
+**Не реалізовано (3):** `is_empty`, `len`, `register_plugin`
 
 ## Загальний підсумок
 
 | Клас | Реалізовано | Загалом | Відсоток |
 |---|---|---|---|
-| DataFrame | 134 | 137 | ~97% |
-| LazyFrame | 83 | 91 | ~91% |
-| Series | 217 | 223 | ~97% |
-| Expr | 213 | 219 | ~97% |
+| DataFrame | 136 | 137 | ~99.3% |
+| LazyFrame | 88 | 91 | ~96.7% |
+| Series | 219 | 223 | ~98.2% |
+| Expr | 216 | 219 | ~98.6% |
+| **Разом** | **659** | **670** | **~98.4%** |

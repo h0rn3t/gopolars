@@ -74,7 +74,15 @@ func (d DataFrame) filterBatch(predicate expr.Expr) (DataFrame, bool, error) {
 		return DataFrame{}, false, nil
 	}
 	workers := runtime.GOMAXPROCS(0)
-	if d.height >= parallelFilterThreshold && workers > 1 && len(d.order) < workers {
+	// cols == workers is the worst case for the column-per-worker regime: each
+	// worker gets exactly one column, so wall-time is the most expensive column
+	// (a string gather costs ~2.4x an Int64 one) while the rest idle. The fused
+	// row-range wave balances that. Measured at 1M rows, GOMAXPROCS=4 (env, not
+	// -cpu — see docs/performance/filter-materialization-tuning.md), 4-column
+	// frame: 2.22 ms column-per-worker vs 1.81 ms fused. The bound stays at
+	// workers because the fused wave holds cols input + cols output streams per
+	// worker: at 12 columns / 4 workers it is 15% slower than round-robin.
+	if d.height >= parallelFilterThreshold && workers > 1 && len(d.order) <= workers {
 		return d.filterFused(plan, cols, workers)
 	}
 	mask, ok := d.filterMask(plan, cols)

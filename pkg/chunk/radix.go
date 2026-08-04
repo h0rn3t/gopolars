@@ -20,7 +20,17 @@ import (
 // orderPreservingFloat maps a float64 to a uint64 whose unsigned order matches
 // ascending float order: flip all bits for negatives (sign set), flip just the
 // sign bit for non-negatives. Callers must exclude NaN beforehand.
+//
+// -0.0 is collapsed onto +0.0 first. Comparing with `<` (what the comparison
+// sort this kernel must match uses, and what Polars' Rust f64 comparison does)
+// treats -0.0 and 0.0 as equal, so a stable sort has to leave them in their
+// original relative order. Their raw bit patterns differ only in the sign bit,
+// which the transform would otherwise turn into -0.0 sorting strictly before
+// 0.0 — reordering equal values and breaking stability.
 func orderPreservingFloat(v float64) uint64 {
+	if v == 0 { // true for both -0.0 and +0.0
+		v = 0
+	}
 	bits := math.Float64bits(v)
 	mask := uint64(int64(bits)>>63) | (uint64(1) << 63)
 	return bits ^ mask
@@ -57,6 +67,42 @@ func ArgsortInt64(vals []int64) []int {
 // the merge adds an O(n) pass that only pays off on large inputs.
 const parallelMergeThreshold = 1 << 16 // 65536
 
+// maxRadixMergeWorkers caps how many ranges the parallel-merge argsort splits
+// into, independently of GOMAXPROCS.
+//
+// Phase 1 (sorting the ranges) scales with the worker count, but the pairwise
+// merge that follows costs log2(workers) waves of O(n) merging plus a
+// fork-join barrier each — so past a point every extra worker buys less sorting
+// than it adds in merging and coordination. Measured on a 12-core M4 Pro at 1M
+// rows (`bench/top30`, GOMAXPROCS swept), where a profile attributed 37% of
+// DataFrame/sort to pthread_cond wait/signal and 11% to mergeInto:
+//
+//	workers:  1      2      4      6      12
+//	sort:  44.8ms 26.2ms 18.4ms 16.7ms 20.1ms
+//	rank:  24.0ms 18.7ms 15.7ms 14.6ms 15.5ms
+//
+// Both curves bottom out at 6 and regress by 12, so the cap keeps the sort off
+// the far side of that curve while GOMAXPROCS still drives the surrounding
+// parallel gather.
+//
+// ponytail: a cap on the existing merge-based radix, not a new algorithm. An
+// MSD-partition radix would remove the merge waves outright, but it needs an
+// adaptive choice of partition byte to avoid collapsing to one bucket on the
+// narrow value ranges this benchmark uses (int64 in [0,1000), float64 in
+// [-50,50)) — real work with real stability risk, deferred until this cap stops
+// being enough.
+const maxRadixMergeWorkers = 6
+
+// radixWorkers returns the range count for the parallel-merge argsort: every
+// available core, capped by maxRadixMergeWorkers.
+func radixWorkers() int {
+	workers := runtime.GOMAXPROCS(0)
+	if workers > maxRadixMergeWorkers {
+		return maxRadixMergeWorkers
+	}
+	return workers
+}
+
 // ArgsortFloat64Parallel is ArgsortFloat64 that radix-sorts disjoint ranges
 // concurrently and stable-merges the runs above parallelMergeThreshold, falling
 // back to the sequential radix below it. The result is identical to
@@ -89,7 +135,7 @@ func ArgsortInt64Parallel(vals []int64) []int {
 // result is the same stable ascending permutation as radixArgsort.
 func parallelRadixArgsort(keys []uint64) []int {
 	n := len(keys)
-	workers := runtime.GOMAXPROCS(0)
+	workers := radixWorkers()
 	if n < parallelMergeThreshold || workers <= 1 {
 		return radixArgsort(keys)
 	}

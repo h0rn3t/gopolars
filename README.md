@@ -27,7 +27,7 @@ go get github.com/h0rn3t/gopolars@latest
 Or pin the latest release:
 
 ```bash
-go get github.com/h0rn3t/gopolars@v0.3.0
+go get github.com/h0rn3t/gopolars@v0.4.0
 ```
 
 Import the public API package:
@@ -41,10 +41,12 @@ Requires **Go 1.26+**. Float64 min/max reductions use runtime-dispatched AVX2 on
 
 ## Current status
 
-Latest release: **[v0.3.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.3.0)**
-([changelog vs v0.2.0](https://github.com/h0rn3t/gopolars/compare/v0.2.0...v0.3.0)).
+Latest release: **[v0.4.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.4.0)**
+([changelog vs v0.3.0](https://github.com/h0rn3t/gopolars/compare/v0.3.0...v0.4.0)).
 The public API is versioned with SemVer; while `< v1.0.0` it may still evolve between minor
-versions (see the versioning and migration notes under [`docs/`](docs/)).
+versions — see the [versioning policy](docs/versioning_policy.md) and the
+[v0.4.0 migration notes](docs/v0_4_migration.md), which cover one **breaking** change
+(`DataFrame.Clone` now shares column buffers).
 
 The project has driven its internal parity waves up to the **v1.0 tracking matrix** ([`docs/parity/v1_0_coverage.json`](docs/parity/v1_0_coverage.json)) and now covers a broad core for Go-native analytics pipelines, including advanced joins, reshape operations, temporal windows, opt-in DuckDB SQL, and performance diagnostics.\
 It is production-usable for many DataFrame workloads, but it is **not yet a full drop-in replacement** for Python Polars.
@@ -53,7 +55,25 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 - ✅ Stable IO surface (CSV/JSON/Parquet/IPC + scans + pushdown)
 - ✅ Opt-in SQL over in-memory frames via embedded DuckDB (`-tags duckdb,duckdb_arrow`)
 - ✅ **75%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
-- ✅ **668 / 673** tracked Python Polars methods implemented on the [full parity matrix](#python-polars-vs-gopolars-function-matrix) (5 rows intentionally out of scope: `DataFrame.__setitem__` + four Series non-goals — see matrix notes)
+- ✅ **659 / 670** public Python Polars methods implemented, measured against **Polars 1.41.2** ([full parity matrix](#python-polars-vs-gopolars-function-matrix)) — 11 named gaps, listed below
+
+### What's new in v0.4.0
+
+- **BREAKING — `DataFrame.Clone` shares column buffers** instead of deep-copying, matching Python
+  Polars' `clone` (3.02 ms / 44 MB → 0.20 µs at 1 M rows). Reads, null positions and structural
+  independence are unchanged; see the [migration notes](docs/v0_4_migration.md)
+- **Metadata ops are now O(columns), not O(rows)** — `Row(i)` no longer materializes the whole
+  frame to return one row (153 ms → 0.19 µs at 1 M), and `Rename`/`Drop` share the untouched
+  columns (**Go ×20** / **×201** vs Polars)
+- **Parallel window functions** — `over` builds partition ids across all cores
+  (18.7 ms → 4.89 ms at 1 M, **Go ×2.1**); `rank` moved onto the parallel argsort
+  (21.2 ms → 14.1 ms, now at parity)
+- **CSV writer ~7× faster** (223.6 ms → 30.6 ms at 1 M) — cells append into a reused byte buffer
+  instead of allocating a string each, and row ranges format concurrently; output is byte-identical
+- **Sorting fix** — the radix argsort placed `-0.0` before `0.0`, breaking stability for keys
+  containing both; the sequential and parallel paths are both corrected
+- **Parity budgets ratcheted** — 25 workload floors raised and 4 brought into scope after a fresh
+  cross-language run
 
 ### What's new in v0.3.0
 
@@ -185,31 +205,40 @@ out, _ := ctx.Execute(c, "SELECT u.name, sum(o.amount) FROM orders o JOIN users 
 | Cloud-style partitioned dataset scans                             | ✅ ready        |
 | Explain/telemetry schema v2 and perf markers                      | ✅ ready        |
 | SQL over in-memory frames (opt-in DuckDB)                         | ✅ ready        |
-| Full Python Polars API parity (673-method tracked matrix)         | ✅ ~99.3% (668/673) |
+| Full Python Polars API parity (670 methods, Polars 1.41.2)        | ✅ ~98.4% (659/670) |
 | Performance parity on all workloads                               | 🚧 in progress |
 | Ecosystem parity (all namespaces, plugins, advanced UDF patterns) | 🚧 in progress |
 
 ## Python Polars vs gopolars function matrix
 
-**Full-matrix totals (673 tracked Python Polars methods on DataFrame, LazyFrame, Expr, Series):** **668 implemented**, **5** intentionally remaining (`DataFrame.__setitem__` plus four documented Series non-goals). Coverage **≈99.3%**.
+**Full-matrix totals (670 public Python Polars methods on `DataFrame`, `LazyFrame`, `Expr`, `Series`, measured against Polars 1.41.2):** **659 implemented**, **11** remaining. Coverage **≈98.4%**.
+
+The matrix is generated, not hand-maintained — see [`POLARS_PARITY_TABLE.md`](POLARS_PARITY_TABLE.md), produced by [`gen_parity_table.py`](gen_parity_table.py). Each Python class is checked against the corresponding Go type only (`DataFrame`/`LazyFrame`/`Series` against their interfaces in `pkg/polars/types.go`, `Expr` against methods with an `Expr` receiver in `pkg/expr`); a method is never credited to one class because another type happens to expose the same name. The matrix tracks method *presence*, not signature or semantics — those are covered by `test/parity` and `test/conformance`.
 
 ### Coverage by object (full matrix)
 
 | Object     | Implemented | Total in matrix |
 | ---------- | ----------- | ---------------- |
-| DataFrame  | 140         | 141              |
-| LazyFrame  | 89          | 89               |
-| Expr       | 217         | 217              |
-| Series     | 222         | 226              |
-| **Total**  | **668**     | **673**          |
+| DataFrame  | 136         | 137              |
+| LazyFrame  | 88          | 91               |
+| Expr       | 216         | 219              |
+| Series     | 219         | 223              |
+| **Total**  | **659**     | **670**          |
 
-### Remaining rows by priority (full matrix)
+### Remaining rows (full matrix)
 
-| Priority among not implemented | Count |
-| -------------------------------- | ----- |
-| high                             | 0     |
-| medium                           | 0     |
-| low                              | 5     |
+| Object    | Not implemented                         |
+| --------- | --------------------------------------- |
+| DataFrame | `gather`                                |
+| LazyFrame | `execute`, `fetch`, `gather`            |
+| Expr      | `is_empty`, `len`, `register_plugin`    |
+| Series    | `cumulative_eval`, `ext`, `plot`, `sql` |
+
+To regenerate the matrix against the Polars release you care about, run the generator with an interpreter that has `polars` installed — the version it measured is stamped into the table header:
+
+```bash
+python3 gen_parity_table.py
+```
 
 ## What is still needed to replace Python Polars
 
@@ -342,17 +371,20 @@ Micro-benchmark results are documented in
 ## Benchmark: gopolars vs Python Polars
 
 > **Hardware:** Apple M4 Pro · Go 1.26.5 · Python Polars 1.41.2 · macOS arm64  
-> **Methodology:** Go benchmarks run with `go test -benchmem -count=1 -benchtime=2s`; Python timings measured by the same harness with 10 repetitions per operation. Go time = min ns/op across calibration rounds. Python time = mean across 10 iterations.  
+> **Methodology:** Go benchmarks run with `go test -benchmem` at the default `-benchtime=1s`; Python timings measured by the same harness with 10 repetitions per operation. Go time = min ns/op across calibration rounds. Python time = mean across 10 iterations. Sub-microsecond operations need at least `-benchtime=1s`: at `10x`/`100x` they are dominated by noise.  
 > **Dataset:** generated float64/string/int64 columns with ~5% null rate; sizes 1 K and 1 M rows (filter+sum also 10 K / 100 K / 10 M).  
 > **"speedup":** `Go ×N` means gopolars is N× faster; `Py ×N` means Python Polars is N× faster.  
-> **Measured for:** [v0.3.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.3.0) (2026-07-11 local re-run).
+> **Measured for:** [v0.4.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.4.0) (2026-08-04 local re-run).
 
 Regenerate the tables from source:
 
 ```bash
 # Run top-30 benchmark (requires Python + polars installed)
-GOPOLARS_BENCH_PYTHON=1 go test ./bench/top30 -bench=BenchmarkTop30$ \
-  -benchmem -count=1 -benchtime=2s -light -timeout=600s \
+# One run regenerates top30_summary.{json,csv,md} and benchmem.txt together, so the
+# timings, the memory figures and the ratcheted parity budgets all come from the
+# same measurement. Note `-light` goes after the package path (it is a test flag).
+go test -run '^$' -bench 'BenchmarkTop30$' \
+  -benchmem -timeout=120m ./bench/top30/ -light \
   2>&1 | tee bench/top30/benchmem.txt
 
 # Run filter+sum cross-engine comparison vs Python Polars
@@ -373,51 +405,59 @@ python3 bench/gen_comparison_table.py --benchmem bench/top30/benchmem.txt \
 
 | operation | size | Go time | Go B/op | allocs/op | Py time | speedup |
 |-----------|------|---------|---------|-----------|---------|---------|
-| `filter` | 1 K | 6.0 µs | 27.1 KB | 23 | 94.4 µs | **Go ×15.6** |
-| `filter` | 1 M | 1.33 ms | 20.8 MB | 213 | 635.3 µs | Py ×2.1 |
-| `select` | 1 K | 601 ns | 1.5 KB | 10 | 42.3 µs | **Go ×70.4** |
-| `select` | 1 M | 475 ns | 1.5 KB | 10 | 48.2 µs | **Go ×101.4** |
-| `with_columns` | 1 K | 584 ns | 1.5 KB | 10 | 9.0 µs | **Go ×15.5** |
-| `with_columns` | 1 M | 470 ns | 1.5 KB | 10 | 8.8 µs | **Go ×18.7** |
-| `sort` | 1 K | 23.4 µs | 66.6 KB | 19 | 173.4 µs | **Go ×7.4** |
-| `sort` | 1 M | 17.42 ms | 62.0 MB | 179 | 14.03 ms | Py ×1.2 |
-| `group_by` | 1 K | 14.9 µs | 18.6 KB | 41 | 683.1 µs | **Go ×46.0** |
-| `group_by` | 1 M | 1.83 ms | 90.7 KB | 186 | 1.58 ms | Py ×1.2 |
-| `join` | 1 K | 91.6 µs | 225.4 KB | 727 | 376.5 µs | **Go ×4.1** |
-| `join` | 1 M | 6.84 ms | 101.4 MB | 1 164 | 6.30 ms | Py ×1.1 |
-| `head` | 1 K | 464 ns | 1.6 KB | 10 | 633 ns | **Go ×1.4** |
-| `head` | 1 M | 329 ns | 1.6 KB | 10 | 933 ns | **Go ×2.8** |
-| `tail` | 1 K | 474 ns | 1.3 KB | 9 | 591 ns | **Go ×1.2** |
-| `tail` | 1 M | 343 ns | 1.3 KB | 9 | 629 ns | **Go ×1.8** |
-| `unique` | 1 K | 8.6 µs | 9.9 KB | 21 | 193.4 µs | **Go ×22.4** |
-| `unique` | 1 M | 1.03 ms | 1.6 MB | 480 | 5.16 ms | **Go ×5.0** |
-| `fill_null` | 1 K | 2.2 µs | 10.0 KB | 10 | 146.7 µs | **Go ×65.4** |
-| `fill_null` | 1 M | 425.3 µs | 8.6 MB | 35 | 1.29 ms | **Go ×3.0** |
-| `drop_nulls` | 1 K | 10.2 µs | 50.6 KB | 17 | 71.8 µs | **Go ×7.1** |
-| `drop_nulls` | 1 M | 1.65 ms | 37.2 MB | 66 | 1.34 ms | Py ×1.2 |
+| `filter` | 1 K | 5.8 µs | 23.1 KB | 22 | 109.8 µs | **Go ×18.9** |
+| `filter` | 1 M | 1.13 ms | 19.8 MB | 116 | 615.8 µs | Py ×1.8 |
+| `select` | 1 K | 653 ns | 1.5 KB | 10 | 56.4 µs | **Go ×86.4** |
+| `select` | 1 M | 467 ns | 1.5 KB | 10 | 46.4 µs | **Go ×99.3** |
+| `with_columns` | 1 K | 568 ns | 1.5 KB | 10 | 8.5 µs | **Go ×14.9** |
+| `with_columns` | 1 M | 449 ns | 1.5 KB | 10 | 9.1 µs | **Go ×20.2** |
+| `sort` | 1 K | 24.2 µs | 66.6 KB | 19 | 201.3 µs | **Go ×8.3** |
+| `sort` | 1 M | 16.09 ms | 62.0 MB | 153 | 11.98 ms | Py ×1.3 |
+| `group_by` | 1 K | 14.9 µs | 18.6 KB | 41 | 706.5 µs | **Go ×47.5** |
+| `group_by` | 1 M | 1.48 ms | 90.7 KB | 186 | 1.63 ms | **Go ×1.1** |
+| `join` | 1 K | 90.0 µs | 217.4 KB | 727 | 393.2 µs | **Go ×4.4** |
+| `join` | 1 M | 6.93 ms | 95.2 MB | 1590 | 5.94 ms | Py ×1.2 |
+| `head` | 1 K | 466 ns | 1.6 KB | 10 | 621 ns | **Go ×1.3** |
+| `head` | 1 M | 412 ns | 1.6 KB | 10 | 1.0 µs | **Go ×2.5** |
+| `tail` | 1 K | 466 ns | 1.6 KB | 10 | 612 ns | **Go ×1.3** |
+| `tail` | 1 M | 327 ns | 1.6 KB | 10 | 658 ns | **Go ×2.0** |
+| `unique` | 1 K | 8.9 µs | 1.9 KB | 21 | 149.6 µs | **Go ×16.8** |
+| `unique` | 1 M | 1.08 ms | 70.6 KB | 147 | 4.85 ms | **Go ×4.5** |
+| `fill_null` | 1 K | 2.5 µs | 10.0 KB | 10 | 116.0 µs | **Go ×46.1** |
+| `fill_null` | 1 M | 478.9 µs | 8.6 MB | 35 | 905.6 µs | **Go ×1.9** |
+| `drop_nulls` | 1 K | 10.5 µs | 42.7 KB | 17 | 65.8 µs | **Go ×6.2** |
+| `drop_nulls` | 1 M | 1.63 ms | 35.4 MB | 64 | 1.31 ms | Py ×1.2 |
+| `clone` | 1 K | 238 ns | 672 B | 5 | 333 ns | **Go ×1.4** |
+| `clone` | 1 M | 189 ns | 672 B | 5 | 329 ns | **Go ×1.7** |
+| `drop` | 1 K | 319 ns | 800 B | 8 | 43.3 µs | **Go ×135.7** |
+| `drop` | 1 M | 342 ns | 800 B | 8 | 68.8 µs | **Go ×201.1** |
+| `rename` | 1 K | 410 ns | 1.1 KB | 9 | 6.7 µs | **Go ×16.3** |
+| `rename` | 1 M | 329 ns | 1.1 KB | 9 | 6.7 µs | **Go ×20.4** |
+| `row` | 1 K | 191 ns | 440 B | 7 | 279 ns | **Go ×1.5** |
+| `row` | 1 M | 163 ns | 440 B | 7 | 292 ns | **Go ×1.8** |
 
 ### Expr operations
 
 | operation | size | Go time | Go B/op | allocs/op | Py time | speedup |
 |-----------|------|---------|---------|-----------|---------|---------|
-| `cum_sum` | 1 K | 2.6 µs | 10.7 KB | 14 | 13.2 µs | **Go ×5.1** |
-| `cum_sum` | 1 M | 782.0 µs | 8.6 MB | 14 | 3.18 ms | **Go ×4.1** |
-| `rank` | 1 K | 17.2 µs | 34.7 KB | 17 | 49.2 µs | **Go ×2.9** |
-| `rank` | 1 M | 20.71 ms | 31.5 MB | 17 | 14.85 ms | Py ×1.4 |
-| `over` (window) | 1 K | 16.0 µs | 28.2 KB | 26 | 289.6 µs | **Go ×18.1** |
-| `over` (window) | 1 M | 18.21 ms | 24.8 MB | 26 | 10.86 ms | Py ×1.7 |
-| `fill_null` | 1 K | 3.0 µs | 10.9 KB | 16 | 39.0 µs | **Go ×13.1** |
-| `fill_null` | 1 M | 388.4 µs | 8.6 MB | 41 | 759.3 µs | **Go ×2.0** |
-| `fill_nan` | 1 K | 1.2 µs | 1.9 KB | 15 | 79.4 µs | **Go ×66.4** |
-| `fill_nan` | 1 M | 75.7 µs | 2.6 KB | 40 | 894.3 µs | **Go ×11.8** |
-| `rolling_mean` | 1 K | 6.5 µs | 10.7 KB | 16 | 18.5 µs | **Go ×2.8** |
-| `rolling_mean` | 1 M | 4.77 ms | 8.6 MB | 16 | 9.23 ms | **Go ×1.9** |
-| `rolling_sum` | 1 K | 6.7 µs | 10.7 KB | 16 | 18.1 µs | **Go ×2.7** |
-| `rolling_sum` | 1 M | 4.74 ms | 8.6 MB | 16 | 9.09 ms | **Go ×1.9** |
-| `rolling_min` | 1 K | 4.8 µs | 11.5 KB | 17 | 15.5 µs | **Go ×3.2** |
-| `rolling_min` | 1 M | 8.17 ms | 8.9 MB | 28 | 12.24 ms | **Go ×1.5** |
-| `rolling_max` | 1 K | 5.1 µs | 11.5 KB | 17 | 15.3 µs | **Go ×3.0** |
-| `rolling_max` | 1 M | 8.06 ms | 8.9 MB | 28 | 12.26 ms | **Go ×1.5** |
+| `cum_sum` | 1 K | 2.6 µs | 10.7 KB | 14 | 13.1 µs | **Go ×5.1** |
+| `cum_sum` | 1 M | 779.3 µs | 8.6 MB | 14 | 2.94 ms | **Go ×3.8** |
+| `rank` | 1 K | 18.4 µs | 34.7 KB | 17 | 67.2 µs | **Go ×3.7** |
+| `rank` | 1 M | 14.08 ms | 31.5 MB | 47 | 13.71 ms | Py ×1.0 |
+| `over` | 1 K | 15.4 µs | 28.2 KB | 28 | 326.6 µs | **Go ×21.2** |
+| `over` | 1 M | 4.89 ms | 25.2 MB | 137 | 10.16 ms | **Go ×2.1** |
+| `fill_null` | 1 K | 3.3 µs | 10.9 KB | 16 | 52.4 µs | **Go ×15.9** |
+| `fill_null` | 1 M | 402.3 µs | 8.6 MB | 41 | 675.0 µs | **Go ×1.7** |
+| `fill_nan` | 1 K | 1.2 µs | 1.9 KB | 15 | 73.1 µs | **Go ×60.7** |
+| `fill_nan` | 1 M | 75.5 µs | 2.6 KB | 40 | 871.1 µs | **Go ×11.5** |
+| `rolling_mean` | 1 K | 6.4 µs | 10.7 KB | 16 | 18.3 µs | **Go ×2.8** |
+| `rolling_mean` | 1 M | 4.51 ms | 8.6 MB | 16 | 9.22 ms | **Go ×2.0** |
+| `rolling_sum` | 1 K | 6.6 µs | 10.7 KB | 16 | 20.0 µs | **Go ×3.0** |
+| `rolling_sum` | 1 M | 4.39 ms | 8.6 MB | 16 | 9.05 ms | **Go ×2.1** |
+| `rolling_min` | 1 K | 4.9 µs | 11.5 KB | 17 | 15.2 µs | **Go ×3.1** |
+| `rolling_min` | 1 M | 8.11 ms | 8.9 MB | 28 | 12.05 ms | **Go ×1.5** |
+| `rolling_max` | 1 K | 5.3 µs | 11.5 KB | 17 | 15.3 µs | **Go ×2.9** |
+| `rolling_max` | 1 M | 8.12 ms | 8.9 MB | 28 | 12.15 ms | **Go ×1.5** |
 
 > Rolling window operations (`rolling_mean/sum/min/max`) use O(n) linear kernels — a running Neumaier-compensated accumulator for sum/mean and a monotonic-index deque for min/max — writing a single output buffer (≈9 MB/op at 1 M rows). gopolars outpaces Python Polars on all four at 1 M rows.
 
@@ -425,18 +465,18 @@ python3 bench/gen_comparison_table.py --benchmem bench/top30/benchmem.txt \
 
 | operation | size | Go time | Go B/op | allocs/op | Py time | speedup |
 |-----------|------|---------|---------|-----------|---------|---------|
-| `null_count` | 1 K | 2 ns | 0 B | 0 | 475 ns | **Go ×237.5** |
-| `null_count` | 1 M | 2 ns | 0 B | 0 | 663 ns | **Go ×331.3** |
-| `drop_nans` | 1 K | 410 ns | 300 B | 4 | 12.4 µs | **Go ×30.2** |
-| `drop_nans` | 1 M | 85.5 µs | 988 B | 29 | 100.8 µs | **Go ×1.2** |
-| `to_list` | 1 K | 9.5 µs | 23.8 KB | 1 001 | 9.8 µs | **Go ×1.0** |
-| `to_list` | 1 M | 7.36 ms | 22.9 MB | 1 000 001 | 14.14 ms | **Go ×1.9** |
-| `is_null` | 1 K | 395 ns | 2.2 KB | 4 | 11.5 µs | **Go ×29.2** |
-| `is_null` | 1 M | 42.0 µs | 1.9 MB | 4 | 11.8 µs | Py ×3.6 |
-| `is_not_null` | 1 K | 391 ns | 2.2 KB | 4 | 11.7 µs | **Go ×30.0** |
-| `is_not_null` | 1 M | 53.9 µs | 1.9 MB | 4 | 13.8 µs | Py ×3.9 |
-| `fill_nan` | 1 K | 396 ns | 300 B | 4 | 84.3 µs | **Go ×213.0** |
-| `fill_nan` | 1 M | 74.3 µs | 988 B | 29 | 793.3 µs | **Go ×10.7** |
+| `null_count` | 1 K | 2 ns | 0 B | 0 | 504 ns | **Go ×252.1** |
+| `null_count` | 1 M | 2 ns | 0 B | 0 | 683 ns | **Go ×341.6** |
+| `drop_nans` | 1 K | 396 ns | 300 B | 4 | 13.2 µs | **Go ×33.4** |
+| `drop_nans` | 1 M | 73.7 µs | 988 B | 29 | 99.7 µs | **Go ×1.4** |
+| `to_list` | 1 K | 9.7 µs | 23.8 KB | 1001 | 10.4 µs | **Go ×1.1** |
+| `to_list` | 1 M | 7.42 ms | 22.9 MB | 1000001 | 13.26 ms | **Go ×1.8** |
+| `is_null` | 1 K | 415 ns | 2.2 KB | 4 | 11.8 µs | **Go ×28.5** |
+| `is_null` | 1 M | 45.1 µs | 1.9 MB | 4 | 11.8 µs | Py ×3.8 |
+| `is_not_null` | 1 K | 409 ns | 2.2 KB | 4 | 11.5 µs | **Go ×28.1** |
+| `is_not_null` | 1 M | 68.7 µs | 1.9 MB | 4 | 13.6 µs | Py ×5.0 |
+| `fill_nan` | 1 K | 393 ns | 300 B | 4 | 95.9 µs | **Go ×244.0** |
+| `fill_nan` | 1 M | 73.9 µs | 988 B | 29 | 852.7 µs | **Go ×11.5** |
 
 > `null_count` is O(1) (cached validity popcount) — **Go ×237–331** vs Python Polars.  
 > `drop_nans` / `fill_nan` use parallel float64 kernels (~988 B/op at 1 M rows, down from tens of MB).  
@@ -446,10 +486,10 @@ python3 bench/gen_comparison_table.py --benchmem bench/top30/benchmem.txt \
 
 | operation | size | Go time | Go B/op | allocs/op | Py time | speedup |
 |-----------|------|---------|---------|-----------|---------|---------|
-| `LazyFrame.collect` | 1 K | 83 ns | 192 B | 2 | 4.1 µs | **Go ×49.2** |
-| `LazyFrame.collect` | 1 M | 70 ns | 192 B | 2 | 4.1 µs | **Go ×58.9** |
-| `LazyFrame.inspect` | 1 K | 31 ns | 112 B | 1 | 1.1 µs | **Go ×37.0** |
-| `LazyFrame.inspect` | 1 M | 21 ns | 112 B | 1 | 1.1 µs | **Go ×53.0** |
+| `LazyFrame.collect` | 1 K | 86 ns | 192 B | 2 | 4.0 µs | **Go ×47.0** |
+| `LazyFrame.collect` | 1 M | 69 ns | 192 B | 2 | 4.8 µs | **Go ×70.1** |
+| `LazyFrame.inspect` | 1 K | 31 ns | 112 B | 1 | 1.2 µs | **Go ×38.3** |
+| `LazyFrame.inspect` | 1 M | 20 ns | 112 B | 1 | 1.2 µs | **Go ×57.9** |
 
 > `LazyFrame.collect`/`inspect` on a no-op plan are near-zero-cost (pointer return + 192/112 B fixed metadata); Python Polars pays a Rust→Python dispatch + GIL overhead on every call regardless of plan complexity.
 
@@ -505,9 +545,11 @@ python3 bench/gen_comparison_table.py --benchmem bench/top30/benchmem.txt \
 | area | observation |
 |------|-------------|
 | **Small datasets (≤ 10 K rows)** | gopolars matches or beats Python Polars on most operations — Python's Rust→Python overhead dominates at small sizes |
-| **Large datasets (≥ 1 M rows)** | Python still leads on some compute-heavy ops (`sort`, `rank`, `unique`, `is_null`); gopolars leads on plan/dispatch, rolling windows, fill/drop kernels, and fused filter+sum |
-| **group_by (small)** | **Go ×46** at 1 K rows — hash aggregation over typed slice with no boxing |
-| **filter (small)** | **Go ×15.6** at 1 K rows — batch predicate mask via `evalbatch` + typed gather |
+| **Large datasets (≥ 1 M rows)** | Python still leads on `sort` (×1.3), `filter` (×1.8) and the validity masks (`is_null`/`is_not_null`); gopolars leads on plan/dispatch, metadata ops, window functions (`over`), rolling windows, `unique`, fill/drop kernels, and fused filter+sum. `rank` and `group_by` are at parity |
+| **Metadata ops — O(columns)** | `drop` **Go ×201**, `rename` **Go ×20**, `clone` **Go ×1.7**, `row` **Go ×1.8** at 1 M rows — these share column buffers instead of copying, so their cost does not scale with row count |
+| **Window functions** | `over` **Go ×2.1** at 1 M rows — partition ids are built across all cores |
+| **group_by (small)** | **Go ×47** at 1 K rows — hash aggregation over typed slice with no boxing |
+| **filter (small)** | **Go ×18.9** at 1 K rows — batch predicate mask via `evalbatch` + typed gather |
 | **filter+sum fused** | `eager-direct` up to **×112** faster than Python at 1 K (0% selectivity); **×4.7** at 10 M with 50% selectivity |
 | **Memory — eager path** | Allocates proportionally to surviving rows: ~11.7 MB/op at 1 M rows with 50% selectivity |
 | **Memory — fused paths** | Lazy and eager-direct stay near-constant (≈3.3–8.2 KB at 1 M–10 M rows) regardless of selectivity |
