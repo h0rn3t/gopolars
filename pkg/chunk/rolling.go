@@ -28,14 +28,23 @@ type rollSumState struct {
 	nanCount   int // non-null NaN observations in the window
 }
 
-func (s *rollSumState) add(v float64, isNull bool) {
+// add, remove and total take and return the state by value rather than through a
+// pointer receiver. The arithmetic is unchanged; the storage is not. A pointer
+// receiver makes the caller's accumulator address-taken, which pins all four
+// fields to stack slots, so every windowed step becomes a load-modify-store
+// chain that the next step must wait on. Under Go 1.27 that chain costs 5-7x
+// what it cost under 1.26.1 on the same instructions, which is what took
+// rolling_sum/rolling_mean from 4.9 ms to 12 ms at 1M rows / window 100. By
+// value the fields stay in registers on both toolchains.
+
+func (s rollSumState) add(v float64, isNull bool) rollSumState {
 	if isNull {
-		return
+		return s
 	}
 	s.validCount++
 	if math.IsNaN(v) {
 		s.nanCount++
-		return
+		return s
 	}
 	t := s.sum + v
 	if math.Abs(s.sum) >= math.Abs(v) {
@@ -44,16 +53,17 @@ func (s *rollSumState) add(v float64, isNull bool) {
 		s.comp += (v - t) + s.sum
 	}
 	s.sum = t
+	return s
 }
 
-func (s *rollSumState) remove(v float64, isNull bool) {
+func (s rollSumState) remove(v float64, isNull bool) rollSumState {
 	if isNull {
-		return
+		return s
 	}
 	s.validCount--
 	if math.IsNaN(v) {
 		s.nanCount--
-		return
+		return s
 	}
 	nv := -v
 	t := s.sum + nv
@@ -63,9 +73,10 @@ func (s *rollSumState) remove(v float64, isNull bool) {
 		s.comp += (nv - t) + s.sum
 	}
 	s.sum = t
+	return s
 }
 
-func (s *rollSumState) total() float64 { return s.sum + s.comp }
+func (s rollSumState) total() float64 { return s.sum + s.comp }
 
 func normWindowParams(window, minPeriods int) (int, int) {
 	if window <= 0 {
@@ -87,9 +98,9 @@ func RollingSum(values []float64, nulls []bool, window, minPeriods int, skipNaN 
 	var st rollSumState
 	isNull := func(i int) bool { return nulls != nil && nulls[i] }
 	for i := 0; i < n; i++ {
-		st.add(values[i], isNull(i))
+		st = st.add(values[i], isNull(i))
 		if i >= window {
-			st.remove(values[i-window], isNull(i-window))
+			st = st.remove(values[i-window], isNull(i-window))
 		}
 		obs := st.validCount
 		if skipNaN {
@@ -117,9 +128,9 @@ func RollingMean(values []float64, nulls []bool, window, minPeriods int, skipNaN
 	var st rollSumState
 	isNull := func(i int) bool { return nulls != nil && nulls[i] }
 	for i := 0; i < n; i++ {
-		st.add(values[i], isNull(i))
+		st = st.add(values[i], isNull(i))
 		if i >= window {
-			st.remove(values[i-window], isNull(i-window))
+			st = st.remove(values[i-window], isNull(i-window))
 		}
 		obs := st.validCount
 		if skipNaN {

@@ -3,6 +3,12 @@
   "reference_scale": "1M",
   "tolerance": 0.4,
   "regression_check_ceiling": 3.0,
+  "conditions": {
+    "go_toolchain": "1.27.0",
+    "polars_version": "1.27.1",
+    "cores": 12
+  },
+  "_conditions_doc": "What the ratios in this file were measured under. A ratio is only comparable to one recorded under the same conditions; where they differ the gate reports the difference instead of calling it a regression, because a toolchain or reference-implementation change moves the number without any code change. A file with no conditions block reads as 'unknown' and is compared exactly as before.",
   "_doc": "Parity gate contract. ratio = python_time / go_time at reference_scale; r_min is the minimum acceptable ratio. A workload passes when best measured ratio >= r_min AND (where baseline < regression_check_ceiling) has not regressed below baseline by more than tolerance. r_min seeded at 0.65x the measured ratio to absorb Python-side run-to-run variance on a shared machine; the ratio conflates Go time (controlled) with Python time (noisy), so the gate's strongest guarantee is the absolute r_min floor. Re-seed this file and parity_baseline.json from the same run when committing a new top30_summary.json, ideally on a quiescent machine. r_min<1.0 requires justification; out_of_scope excluded. Metadata-only ops (row/clone/rename/drop) use an order-of-magnitude floor instead of the 0.65x rule: their ratio divides two microsecond-scale timings, so run-to-run variance far exceeds 35%, and the floor only has to catch a regression from O(columns) back to O(rows).",
   "workloads": {
     "DataFrame/drop_nulls": {
@@ -10,8 +16,8 @@
       "justification": "Polars runs this op multi-threaded over chunked Arrow; gopolars now parallelizes the null scan and shards the per-column gather across all cores, but the gather is memory-bandwidth-bound and the string column's Go-pointer storage forces GC write barriers that Polars' byte-layout avoids, so it floors at the measured 1M ratio. Ratchet upward as the path improves."
     },
     "DataFrame/fill_null": {
-      "r_min": 1.2292,
-      "justification": "Single-pass typed fill; floor tracks the measured 1M ratio."
+      "r_min": 0.5743,
+      "justification": "Lowered from 1.2292, attributed to the reference implementation: gopolars got FASTER here (0.479 -> 0.379 ms at 1M), while Polars 1.27.1 went 0.906 -> 0.335 ms. The ratio fell 1.891 -> 0.8835 because the point of comparison moved, not because this path regressed. Single-pass typed fill, unchanged. Seeded at 0.65x the measured 0.8835."
     },
     "DataFrame/filter": {
       "r_min": 0.3557,
@@ -30,11 +36,12 @@
       "justification": "Polars runs this op multi-threaded over chunked Arrow; gopolars now parallelizes the predicate eval and the per-column gather, but floors at the measured 1M ratio. Ratchet upward as the path improves."
     },
     "DataFrame/select": {
-      "r_min": 64.5593
+      "r_min": 5.0,
+      "justification": "Lowered from 64.5593, attributed to the reference implementation: gopolars got FASTER here (0.47 -> 0.40 us at 1M), while Polars 1.27.1 went 46.38 -> 7.71 us. The ratio fell 99.32 -> 19.09 because the point of comparison moved, not because this path regressed. Moved off the 0.65x rule onto the metadata-op order-of-magnitude floor this file prescribes for row/clone/rename/drop: select is metadata-only (retained columns are shared, not copied), so its ratio divides two microsecond-scale timings - the calibration rounds of the seeding run spanned 27333 ns down to 403 ns. A 0.65x floor on that is not reproducible, which is exactly how the unreachable 64.5593 got recorded. Floor 5.0 catches a regression back to O(rows) materialization (~3 ms vs 0.4 us) by three orders of magnitude."
     },
     "DataFrame/sort": {
-      "r_min": 0.4842,
-      "justification": "Already on the parallel-merge radix; the remaining gap is that pairwise merge costs log2(workers) fork-join waves plus O(n) merging, measured at 37.6% pthread_cond wait/signal and 11.5% mergeInto. Capping the range count at the measured optimum recovered part of it. Closing the rest needs an MSD-partition radix (no merge waves) with an adaptive partition byte - deferred, see pkg/chunk/radix.go."
+      "r_min": 1.0309,
+      "justification": "Raised from 0.4842: the gap is closed and gopolars is now ahead (16.09 -> 8.30 ms at 1M, ratio 0.745 -> 1.5861). Closed by co-ranking the parallel merge, which removes the log2(workers) fork-join waves the previous floor was justified by. The earlier note that this 'needs an MSD-partition radix' is withdrawn: MSD was built and measured slower, see the parallel-merge-argsort change (D1/D2). Seeded at 0.65x the measured 1.5861."
     },
     "DataFrame/tail": {
       "r_min": 1.3085,
@@ -106,30 +113,32 @@
       "justification": "Single-pass typed fill; floor tracks the measured 1M ratio."
     },
     "Expr/fill_null": {
-      "r_min": 1.0905,
-      "justification": "Single-pass typed fill; floor tracks the measured 1M ratio."
+      "r_min": 0.4016,
+      "justification": "Lowered from 1.0905, attributed to the reference implementation: gopolars got FASTER here (0.402 -> 0.356 ms at 1M), while Polars 1.27.1 went 0.675 -> 0.220 ms. The ratio fell 1.6777 -> 0.6178 because the point of comparison moved, not because this path regressed. Single-pass typed fill, unchanged. Seeded at 0.65x the measured 0.6178."
     },
     "Expr/over": {
       "r_min": 1.3503,
       "justification": "Partition ids are now built across all cores (the sharded group builder), which is where a profile put ~85% of this op; the per-partition scan stays sequential single-pass because it measured at only ~15% of the cost. gopolars is now ahead of Polars here."
     },
     "Expr/rank": {
-      "r_min": 0.6328,
-      "justification": "Uses the parallel-merge radix argsort (it previously called the sequential one), with the range count capped at the measured optimum. Essentially at parity now."
+      "r_min": 1.2117,
+      "justification": "Raised from 0.6328: shares the co-ranking parallel-merge argsort with DataFrame/sort (14.08 -> 6.83 ms at 1M, ratio 0.974 -> 1.8641), so gopolars is now ahead rather than at parity. Seeded at 0.65x the measured 1.8641."
     },
     "Expr/rolling_max": {
       "r_min": 0.9721,
       "justification": "Floor tracks the measured 1M ratio; ratchet upward as the path improves."
     },
     "Expr/rolling_mean": {
-      "r_min": 1.3277
+      "r_min": 2.2127,
+      "justification": "Raised from 1.3277 (12.58 -> 3.21 ms at 1M, ratio 2.043 -> 3.4041). The Neumaier accumulator now travels in registers instead of stack slots; see Expr/rolling_sum for the toolchain story. The floor is the measured bound the linear-rolling-windows requirement asks for: the old 1.3277 would have let the constant factor grow back to ~8 ms unnoticed. Seeded at 0.65x the measured 3.4041, under the conditions block at the top of this file."
     },
     "Expr/rolling_min": {
       "r_min": 0.9672,
       "justification": "Floor tracks the measured 1M ratio; ratchet upward as the path improves."
     },
     "Expr/rolling_sum": {
-      "r_min": 1.3403
+      "r_min": 2.1170,
+      "justification": "Raised from 1.3403 (12.82 -> 3.39 ms at 1M, ratio 2.062 -> 3.2569). This op is why the toolchain conditions block exists: the identical kernel measured 4.9 ms under Go 1.26.1 and 11.9 ms under Go 1.27.0 with byte-identical inlining decisions and an identical opcode sequence - the cost was the load-modify-store chain on the Neumaier state, which a pointer receiver pinned to stack slots. Taking the accumulator by value puts it back in registers and beats both toolchains. Seeded at 0.65x the measured 3.2569, under the conditions block at the top of this file."
     },
     "LazyFrame/collect": {
       "r_min": 45.5706

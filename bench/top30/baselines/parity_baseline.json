@@ -1,32 +1,39 @@
 {
   "version": "v0.3",
   "reference_scale": "1M",
+  "conditions": {
+    "go_toolchain": "1.27.0",
+    "polars_version": "1.27.1",
+    "cores": 12
+  },
+  "_conditions_doc": "What the ratios below were measured under. Only the workloads listed in _reseeded_doc were refreshed under these conditions; the rest predate them and carry no absolutes, so the gate reports a fall on them as unattributed.",
   "_doc": "Committed measured best ratios (python_time/go_time) at reference_scale, from the bench/top30 --python run after close-remaining-python-perf-gaps (O(1) metadata ops, parallel window grouping, parallel rank, byte-appending parallel CSV writer). Refresh from the same run as top30_summary.json.",
+  "_reseeded_doc": "Refreshed from the run of 2026-08-31 (run_top30_benchmark.sh --light --benchtime 1s, Go 1.27.0, polars 1.27.1, M4 Pro / 12 cores), same run as the committed top30_summary.json: DataFrame/fill_null, DataFrame/select, DataFrame/sort, Expr/fill_null, Expr/rank, Expr/rolling_mean, Expr/rolling_sum. absolutes records the two times each refreshed ratio was computed from, so a later fall can be attributed to a side instead of guessed at. A workload absent from absolutes has an older ratio whose absolute times were never recorded.",
   "ratios": {
     "DataFrame/clone": 1.741271,
     "DataFrame/drop": 201.14532,
     "DataFrame/drop_nulls": 0.800261,
-    "DataFrame/fill_null": 1.89104,
+    "DataFrame/fill_null": 0.883508,
     "DataFrame/filter": 0.547159,
     "DataFrame/group_by": 1.099786,
     "DataFrame/head": 2.508008,
     "DataFrame/join": 0.858258,
     "DataFrame/rename": 20.351972,
     "DataFrame/row": 1.789564,
-    "DataFrame/select": 99.322056,
-    "DataFrame/sort": 0.744918,
+    "DataFrame/select": 19.090326,
+    "DataFrame/sort": 1.58607,
     "DataFrame/tail": 2.013148,
     "DataFrame/unique": 4.473878,
     "DataFrame/with_columns": 20.239419,
     "Expr/cum_sum": 3.770504,
     "Expr/fill_nan": 11.530609,
-    "Expr/fill_null": 1.677724,
+    "Expr/fill_null": 0.617838,
     "Expr/over": 2.077356,
-    "Expr/rank": 0.97353,
+    "Expr/rank": 1.864129,
     "Expr/rolling_max": 1.495573,
-    "Expr/rolling_mean": 2.042625,
+    "Expr/rolling_mean": 3.404055,
     "Expr/rolling_min": 1.486557,
-    "Expr/rolling_sum": 2.061966,
+    "Expr/rolling_sum": 3.256937,
     "LazyFrame/collect": 70.108681,
     "LazyFrame/inspect": 57.914876,
     "LazyFrame/sql": 0.003975,
@@ -39,5 +46,35 @@
     "Series/is_null": 0.262323,
     "Series/null_count": 341.649866,
     "Series/to_list": 1.786662
+  },
+  "absolutes": {
+    "DataFrame/fill_null": {
+      "go_ns_per_op": 378779,
+      "python_sec_per_op": 0.00033465420128777625
+    },
+    "DataFrame/select": {
+      "go_ns_per_op": 404,
+      "python_sec_per_op": 7.712491787970066e-06
+    },
+    "DataFrame/sort": {
+      "go_ns_per_op": 8304389,
+      "python_sec_per_op": 0.013171345903538167
+    },
+    "Expr/fill_null": {
+      "go_ns_per_op": 356438,
+      "python_sec_per_op": 0.00022022079210728406
+    },
+    "Expr/rank": {
+      "go_ns_per_op": 6826825,
+      "python_sec_per_op": 0.012726079195272178
+    },
+    "Expr/rolling_mean": {
+      "go_ns_per_op": 3209805,
+      "python_sec_per_op": 0.010926354094408453
+    },
+    "Expr/rolling_sum": {
+      "go_ns_per_op": 3388842,
+      "python_sec_per_op": 0.011037245800253004
+    }
   }
 }

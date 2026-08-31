@@ -77,6 +77,50 @@ func BenchmarkJoin1M(b *testing.B) {
 	}
 }
 
+// The rolling benchmarks below measure the SAME entry point BenchmarkTop30's
+// Expr/rolling_* cases take — the public polars facade over makeDataFrame's "v"
+// column, window 100 at the 1M reference scale — so their numbers are directly
+// comparable to the parity budget. The internal pkg/frame path measures ~1 ms
+// faster on the same commit, so it must not be used to judge a rolling budget.
+//
+// rolling_sum and rolling_mean run a Neumaier-compensated running accumulator;
+// rolling_min runs a monotonic deque over the same windowing path and is the
+// control: a change that moves the accumulator's constant factor must leave it
+// untouched.
+
+const rollingWindow = 100
+
+func BenchmarkRollingMeanFacade(b *testing.B) {
+	df := benchFrame(b)
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := df.Select(polars.Col("v").RollingMean(rollingWindow)); err != nil {
+			b.Fatalf("rolling_mean: %v", err)
+		}
+	}
+}
+
+func BenchmarkRollingSumFacade(b *testing.B) {
+	df := benchFrame(b)
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := df.Select(polars.Col("v").RollingSum(rollingWindow)); err != nil {
+			b.Fatalf("rolling_sum: %v", err)
+		}
+	}
+}
+
+// BenchmarkRollingMinFacade is the deque control for the two above.
+func BenchmarkRollingMinFacade(b *testing.B) {
+	df := benchFrame(b)
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := df.Select(polars.Col("v").RollingMin(rollingWindow)); err != nil {
+			b.Fatalf("rolling_min: %v", err)
+		}
+	}
+}
+
 // wideKeyFrame builds an n-row frame with a unique Int64 key `k` = 0..n-1 and a
 // Float64 payload. Unlike benchFrame's 1000-distinct "i", the key is fully
 // distinct, so a self-join with another wideKeyFrame has BOTH sides above the
