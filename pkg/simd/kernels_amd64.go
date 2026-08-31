@@ -15,6 +15,14 @@ import "golang.org/x/sys/cpu"
 // run showed a hand-written AVX2 add/mul ~2.5x SLOWER than the auto-vectorized
 // scalar (the turboslice project reached the same conclusion). Only the
 // reductions, where the compiler will not vectorize the compare/select, win.
+//
+// Under GOEXPERIMENT=simd the portable vector kernels (vec_simd.go) sit BELOW
+// the AVX2 gate, not above it: the assembly is hand-tuned and equivalence-tested
+// on this architecture, so the portable path serves only as the pre-AVX2
+// fallback, where it beats the scalar bodies. Whether it could replace
+// reduce_amd64.s outright is open — it needs a benchstat run on real AVX2/AVX512
+// hardware, which the measurements behind this dispatch (arm64/NEON) cannot
+// settle.
 
 var hasAVX2 = cpu.X86.HasAVX2
 
@@ -42,6 +50,9 @@ func MinFloat64(vals []float64) float64 {
 	if hasAVX2 && len(vals) >= avx2MinLen {
 		return minFloat64AVX2(vals)
 	}
+	if m, ok := minFloat64Vec(vals); ok {
+		return m
+	}
 	return minFloat64Scalar(vals)
 }
 
@@ -49,6 +60,9 @@ func MinFloat64(vals []float64) float64 {
 func MaxFloat64(vals []float64) float64 {
 	if hasAVX2 && len(vals) >= avx2MinLen {
 		return maxFloat64AVX2(vals)
+	}
+	if m, ok := maxFloat64Vec(vals); ok {
+		return m
 	}
 	return maxFloat64Scalar(vals)
 }
@@ -58,6 +72,9 @@ func MaxFloat64(vals []float64) float64 {
 func MinMaxFloat64(vals []float64) (float64, float64) {
 	if hasAVX2 && len(vals) >= avx2MinLen {
 		return minMaxFloat64AVX2(vals)
+	}
+	if mn, mx, ok := minMaxFloat64Vec(vals); ok {
+		return mn, mx
 	}
 	return minMaxFloat64Scalar(vals)
 }

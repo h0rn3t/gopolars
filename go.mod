@@ -1,6 +1,6 @@
 module github.com/h0rn3t/gopolars
 
-go 1.26.1
+go 1.27
 
 require (
 	github.com/apache/arrow-adbc/go/adbc v1.11.0

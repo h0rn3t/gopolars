@@ -289,7 +289,18 @@ func whereMask(v, lit float64, op Cmp) uint64 {
 // accumulators over an unrolled loop (mirroring SumFloat64) keep several FADDs
 // in flight; a scalar tail handles the remainder. nulls, when non-nil, excludes
 // nulls[i] rows (also branchlessly).
+//
+// Under GOEXPERIMENT=simd a null-free input long enough to fill the vector
+// accumulators takes the portable hardware path in vec_simd.go instead
+// (compare -> mask -> masked add). Both forms reorder the additions, so they
+// agree with each other and with a row-major scalar sum only up to
+// reduction-order rounding.
 func SumWhereFloat64(vals []float64, op Cmp, lit float64, nulls []bool) (sum float64, count int) {
+	if nulls == nil {
+		if s, c, ok := sumWhereFloat64Vec(vals, op, lit); ok {
+			return s, c
+		}
+	}
 	if nulls != nil {
 		for i, v := range vals {
 			m := whereMask(v, lit, op) &^ -boolToU64(nulls[i])
@@ -344,7 +355,16 @@ func SumWhereFloat64(vals []float64, op Cmp, lit float64, nulls []bool) (sum flo
 // in ascending index order and combined with plain < / >, so NaN handling is
 // identical to MaskedReduceFloat64 (sticky-from-seed). When count == 0 the
 // returned min/max are 0 and callers treat the reduction as empty.
+//
+// Under GOEXPERIMENT=simd a null-free input long enough to fill the vector
+// accumulators takes the portable hardware path in vec_simd.go instead. min and
+// max are exact in both forms — only the sum kernels reorder.
 func MinMaxWhereFloat64(vals []float64, op Cmp, lit float64, nulls []bool) (min, max float64, count int) {
+	if nulls == nil {
+		if mn, mx, c, ok := minMaxWhereFloat64Vec(vals, op, lit); ok {
+			return mn, mx, c
+		}
+	}
 	for i, v := range vals {
 		if !whereKeep(v, lit, op) {
 			continue

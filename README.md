@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/h0rn3t/gopolars/graph/badge.svg)](https://codecov.io/gh/h0rn3t/gopolars)
 [![Release](https://img.shields.io/github/v/release/h0rn3t/gopolars?sort=semver)](https://github.com/h0rn3t/gopolars/releases/latest)
 [![Go Reference](https://pkg.go.dev/badge/github.com/h0rn3t/gopolars/pkg/polars.svg)](https://pkg.go.dev/github.com/h0rn3t/gopolars/pkg/polars)
-[![Go 1.26+](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go)](go.mod)
+[![Go 1.27+](https://img.shields.io/badge/Go-1.27%2B-00ADD8?logo=go)](go.mod)
 
 `gopolars` is a high-performance Go DataFrame library inspired by Polars Python API.
 
@@ -36,8 +36,10 @@ Import the public API package:
 import "github.com/h0rn3t/gopolars/pkg/polars"
 ```
 
-Requires **Go 1.26+**. Float64 min/max reductions use runtime-dispatched AVX2 on capable
-`amd64` CPUs (one binary, no build tag); see [Performance / SIMD Acceleration](#performance--simd-acceleration).
+Requires **Go 1.27+**. Float64 min/max reductions use runtime-dispatched AVX2 on capable
+`amd64` CPUs (one binary, no build tag). Building with `GOEXPERIMENT=simd` additionally enables
+portable vector kernels (NEON on `arm64`, AVX/AVX2/AVX512 on `amd64`) for the reductions and the
+fused filter-reduce path; see [Performance / SIMD Acceleration](#performance--simd-acceleration).
 
 ## Current status
 
@@ -353,10 +355,49 @@ arm64.
   surviving, non-null rows of a bitmap in a single pass, with no surviving-index
   slice or materialized filtered column
 
+### Portable vector kernels (`GOEXPERIMENT=simd`, opt-in)
+
+Building with `GOEXPERIMENT=simd` compiles an additional set of kernels written
+against the Go 1.27 stdlib `simd` package. Those types are vector-length-agnostic
+and backed by NEON on `arm64`, AVX/AVX2/AVX512 on `amd64`, so **`arm64` gets
+hardware SIMD for the first time** — it ships no hand-written assembly. On
+`amd64` the existing AVX2 assembly keeps priority and the portable path serves as
+the pre-AVX2 fallback.
+
+Measured on Apple M4 Pro (`arm64`/NEON, 2 `float64` lanes — x86 vectors are 4–8
+lanes wide and should do better), 1M rows, `GOEXPERIMENT=simd` vs the default
+build:
+
+| Kernel | default | `GOEXPERIMENT=simd` | Delta |
+| --- | --- | --- | --- |
+| `MinMaxWhereFloat64` | 4178.3 µs | 435.6 µs | **−90%** |
+| `MaxFloat64` | 277.8 µs | 133.8 µs | **−52%** |
+| `SumWhereFloat64` (filter+sum) | 547.5 µs | 267.8 µs | **−51%** |
+| `MinFloat64` | 272.0 µs | 151.0 µs | **−44%** |
+| `MinMaxFloat64` | 324.7 µs | 239.6 µs | **−26%** |
+
+`SumFloat64`, `AddSlicesFloat64`, `MulSlicesFloat64` and the bitmap comparison
+kernels are deliberately left scalar — measured at or below parity with the
+vector form. See `pkg/simd/doc.go` for the numbers behind each exclusion.
+
+Correctness never depends on the experiment: every kernel keeps its scalar body
+as the fallback, and the equivalence tests pin the vector results (bit-identical
+min/max/count, sums within reduction-order tolerance) to it.
+
+Reproduce the table above — `benchstat` runs via `go run`, so it adds nothing to
+`go.mod`:
+
+```bash
+make bench-simd                              # A/B the whole bench/micro sweep
+make bench-simd BENCH='SumWhere|MinMax'      # narrow the selection
+make bench-simd BENCH_COUNT=10 BENCH_TIME=1s # tighten the confidence interval
+```
+
 Build (AVX2 used automatically on capable amd64 CPUs):
 
 ```bash
-go build ./...
+go build ./...                      # default: AVX2 at runtime on amd64
+GOEXPERIMENT=simd go build ./...    # + portable vector kernels (arm64 + amd64)
 ```
 
 On non-AMD64 architectures (e.g., ARM64) or pre-AVX2 amd64, the library uses

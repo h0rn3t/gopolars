@@ -65,6 +65,33 @@ func BenchmarkMinMaxFloat64(b *testing.B) {
 	}
 }
 
+// BenchmarkSumWhereFloat64 covers the fused filter+sum kernel behind the
+// cross-language benchmark (run-bench.sh). The literal is 0 over data uniform in
+// [-50,50), so selectivity is ~50% — the case the flagship benchmark measures.
+func BenchmarkSumWhereFloat64(b *testing.B) {
+	for _, n := range benchSizes {
+		data := makeFloat64Slice(n)
+		b.Run("size_"+humanize(n), func(b *testing.B) {
+			b.SetBytes(int64(n * 8))
+			for i := 0; i < b.N; i++ {
+				simd.SumWhereFloat64(data, simd.CmpGT, 0, nil)
+			}
+		})
+	}
+}
+
+func BenchmarkMinMaxWhereFloat64(b *testing.B) {
+	for _, n := range benchSizes {
+		data := makeFloat64Slice(n)
+		b.Run("size_"+humanize(n), func(b *testing.B) {
+			b.SetBytes(int64(n * 8))
+			for i := 0; i < b.N; i++ {
+				simd.MinMaxWhereFloat64(data, simd.CmpGT, 0, nil)
+			}
+		})
+	}
+}
+
 func humanize(n int) string {
 	switch n {
 	case 1_000:

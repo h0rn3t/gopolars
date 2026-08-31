@@ -22,7 +22,10 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.x'
+          # 1.27+ is required: pkg/simd's GOEXPERIMENT=simd kernels use the
+          # portable stdlib `simd` package, whose vector-length-agnostic types
+          # (and their arm64 backend) landed in Go 1.27.
+          go-version: '1.27.x'
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -51,7 +54,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          # v1.x binaries are built with Go <1.26 and cannot lint go 1.26.1 modules.
+          # v1.x binaries are built with Go <1.26 and cannot lint go 1.27 modules.
           version: v2.12.2
           # Lint the duckdb-tagged build view so the opt-in SQL engine
           # (sql_duckdb.go / sql_udf.go) is covered too. Build tags are additive, so
@@ -87,7 +90,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.x'
+          go-version: '1.27.x'
 
       - name: Cache Go modules
         uses: actions/cache@v4
