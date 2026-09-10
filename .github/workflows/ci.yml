@@ -54,8 +54,15 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          # v1.x binaries are built with Go <1.26 and cannot lint go 1.27 modules.
-          version: v2.12.2
+          # The linter binary must itself be built with a Go at least as new as
+          # this module's `go` directive, or it rejects the config before it
+          # lints anything:
+          #   can't load config: the Go language version (go1.26) used to build
+          #   golangci-lint is lower than the targeted Go version (1.27)
+          # v2.12.2 is built with Go 1.26 and broke the moment go.mod moved to
+          # 1.27; v2.13.x is built with Go 1.27. Bump this in lockstep with the
+          # `go` directive.
+          version: v2.13.2
           # Lint the duckdb-tagged build view so the opt-in SQL engine
           # (sql_duckdb.go / sql_udf.go) is covered too. Build tags are additive, so
           # every pure-Go package is still linted; only the tiny !duckdb stub
