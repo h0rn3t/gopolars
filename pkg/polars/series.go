@@ -337,41 +337,24 @@ func (s seriesFacade) Sum() float64 {
 }
 
 func (s seriesFacade) Std() float64 {
-	vals := s.numericValues(true)
-	if len(vals) < 2 {
-		return 0
-	}
-	mean := meanFloatSlice(vals)
-	sumSq := 0.0
-	for _, v := range vals {
-		d := v - mean
-		sumSq += d * d
-	}
-	return math.Sqrt(sumSq / float64(len(vals)-1))
+	return math.Sqrt(s.Var())
 }
 
 func (s seriesFacade) Max() float64 {
 	// Ignore NaN, but a series whose only non-null values are NaN reduces to NaN
-	// (matching Polars). Empty input keeps the historical 0 default.
-	all := s.numericValues(false)
+	// (matching Polars). Empty input keeps the historical 0 default. The
+	// NaN-inclusive pass runs only when the NaN-free one came back empty.
 	vals := s.numericValues(true)
-	if len(vals) == 0 {
-		if len(all) > 0 {
-			return math.NaN()
-		}
-		return simd.MaxFloat64(vals)
+	if len(vals) == 0 && len(s.numericValues(false)) > 0 {
+		return math.NaN()
 	}
 	return simd.MaxFloat64(vals)
 }
 
 func (s seriesFacade) Min() float64 {
-	all := s.numericValues(false)
 	vals := s.numericValues(true)
-	if len(vals) == 0 {
-		if len(all) > 0 {
-			return math.NaN()
-		}
-		return simd.MinFloat64(vals)
+	if len(vals) == 0 && len(s.numericValues(false)) > 0 {
+		return math.NaN()
 	}
 	return simd.MinFloat64(vals)
 }
@@ -423,10 +406,11 @@ func (s seriesFacade) NUnique() int {
 	return len(seen)
 }
 
+// Mode returns the most frequent non-null value, the earliest one on a tie, or
+// nil when every row is null.
 func (s seriesFacade) Mode() any {
 	counts := map[string]int{}
 	values := map[string]any{}
-	order := make([]string, 0, s.Len())
 	bestKey := ""
 	bestCount := 0
 	for i := 0; i < s.Len(); i++ {
@@ -437,16 +421,14 @@ func (s seriesFacade) Mode() any {
 		key := valueKey(v)
 		if _, ok := values[key]; !ok {
 			values[key] = v
-			order = append(order, key)
 		}
 		counts[key]++
+		// valueKey never returns "", so any non-null row leaves bestKey set and
+		// the all-null case falls through to the zero value.
 		if counts[key] > bestCount {
 			bestCount = counts[key]
 			bestKey = key
 		}
-	}
-	if bestKey == "" && len(order) > 0 {
-		bestKey = order[0]
 	}
 	return values[bestKey]
 }

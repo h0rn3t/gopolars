@@ -115,24 +115,40 @@ func NewBoxed(dtype dtypes.DataType, values []any, nulls []bool) *Column {
 	return &Column{dtype: dtype, n: len(values), boxed: values, nulls: normalizeNulls(nulls, len(values)), nullCount: unknownNullCount}
 }
 
+// markNull records row i of an n-row ingest as null, allocating the validity
+// slice on the first null only. An all-nil-free input (the common ingest) keeps
+// nil validity, which costs n fewer bytes and makes the column's first
+// NullCount() scan free instead of a full pass over n all-false bytes.
+func markNull(nulls []bool, i int, n int) []bool {
+	if nulls == nil {
+		nulls = make([]bool, n)
+	}
+	nulls[i] = true
+	return nulls
+}
+
 // FromAny converts a legacy []any input into a typed Column for the given
 // dtype, validating each non-nil value. nil entries become nulls. This is the
 // one-time ingest cost paid by series.New.
+//
+// Kept: the per-dtype arms stay written out rather than folding into one
+// generic ingest[T]. A type-parameter assert (v.(T), resolved through the
+// generic dictionary) is not the same code as the monomorphic v.(int64) these
+// arms compile to: benchmarked over 100k rows the generic fold cost +35% on
+// Float64 and +50% on Int64 ingest. Only the validity bookkeeping, which is
+// dtype-independent, is shared via markNull.
+// Ceiling: ten near-identical loops; a new dtype means another one.
+// Fix: revisit if the compiler devirtualizes type-parameter asserts, or if
+// ingest stops being on the measured path.
 func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 	n := len(values)
-	// Allocated on the first nil entry only. An all-nil-free input (the common
-	// ingest) keeps nil validity, which costs n fewer bytes and makes the column's
-	// first NullCount() scan free instead of a full pass over n all-false bytes.
 	var nulls []bool
 	switch dtype {
 	case dtypes.Int64:
 		buf := make([]int64, n)
 		for i, v := range values {
 			if v == nil {
-				if nulls == nil {
-					nulls = make([]bool, n)
-				}
-				nulls[i] = true
+				nulls = markNull(nulls, i, n)
 				continue
 			}
 			x, ok := v.(int64)
@@ -146,10 +162,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]float64, n)
 		for i, v := range values {
 			if v == nil {
-				if nulls == nil {
-					nulls = make([]bool, n)
-				}
-				nulls[i] = true
+				nulls = markNull(nulls, i, n)
 				continue
 			}
 			x, ok := v.(float64)
@@ -163,10 +176,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]string, n)
 		for i, v := range values {
 			if v == nil {
-				if nulls == nil {
-					nulls = make([]bool, n)
-				}
-				nulls[i] = true
+				nulls = markNull(nulls, i, n)
 				continue
 			}
 			x, ok := v.(string)
@@ -180,10 +190,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]bool, n)
 		for i, v := range values {
 			if v == nil {
-				if nulls == nil {
-					nulls = make([]bool, n)
-				}
-				nulls[i] = true
+				nulls = markNull(nulls, i, n)
 				continue
 			}
 			x, ok := v.(bool)
@@ -197,10 +204,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]time.Time, n)
 		for i, v := range values {
 			if v == nil {
-				if nulls == nil {
-					nulls = make([]bool, n)
-				}
-				nulls[i] = true
+				nulls = markNull(nulls, i, n)
 				continue
 			}
 			x, ok := v.(time.Time)
@@ -214,10 +218,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]any, n)
 		for i, v := range values {
 			if v == nil {
-				if nulls == nil {
-					nulls = make([]bool, n)
-				}
-				nulls[i] = true
+				nulls = markNull(nulls, i, n)
 				continue
 			}
 			switch v.(type) {
@@ -232,10 +233,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]any, n)
 		for i, v := range values {
 			if v == nil {
-				if nulls == nil {
-					nulls = make([]bool, n)
-				}
-				nulls[i] = true
+				nulls = markNull(nulls, i, n)
 				continue
 			}
 			if _, ok := v.([]any); !ok {
@@ -248,10 +246,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]any, n)
 		for i, v := range values {
 			if v == nil {
-				if nulls == nil {
-					nulls = make([]bool, n)
-				}
-				nulls[i] = true
+				nulls = markNull(nulls, i, n)
 				continue
 			}
 			if _, ok := v.(map[string]any); !ok {
@@ -264,10 +259,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]any, n)
 		for i, v := range values {
 			if v == nil {
-				if nulls == nil {
-					nulls = make([]bool, n)
-				}
-				nulls[i] = true
+				nulls = markNull(nulls, i, n)
 				continue
 			}
 			if _, ok := v.([]byte); !ok {
@@ -280,10 +272,7 @@ func FromAny(dtype dtypes.DataType, values []any) (*Column, error) {
 		buf := make([]any, n)
 		for i, v := range values {
 			if v == nil {
-				if nulls == nil {
-					nulls = make([]bool, n)
-				}
-				nulls[i] = true
+				nulls = markNull(nulls, i, n)
 				continue
 			}
 			if _, ok := v.(time.Duration); !ok {

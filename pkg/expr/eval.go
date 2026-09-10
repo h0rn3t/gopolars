@@ -1,6 +1,7 @@
 package expr
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -1008,7 +1009,7 @@ func compare(op string, left any, right any) (bool, error) {
 		if !ok {
 			return false, fmt.Errorf("compare type mismatch")
 		}
-		return cmpInts(op, l, r), nil
+		return cmpOrdered(op, l, r), nil
 	case float64:
 		r, ok := right.(float64)
 		if !ok {
@@ -1017,13 +1018,13 @@ func compare(op string, left any, right any) (bool, error) {
 		if math.IsNaN(l) || math.IsNaN(r) {
 			return false, nil
 		}
-		return cmpFloats(op, l, r), nil
+		return cmpOrdered(op, l, r), nil
 	case string:
 		r, ok := right.(string)
 		if !ok {
 			return false, fmt.Errorf("compare type mismatch")
 		}
-		return cmpStrings(op, l, r), nil
+		return cmpOrdered(op, l, r), nil
 	case time.Time:
 		r, ok := right.(time.Time)
 		if !ok {
@@ -1175,35 +1176,9 @@ func toInt64(v any) (int64, bool) {
 	}
 }
 
-func cmpInts(op string, l int64, r int64) bool {
-	switch op {
-	case "gt":
-		return l > r
-	case "ge":
-		return l >= r
-	case "lt":
-		return l < r
-	case "le":
-		return l <= r
-	}
-	return false
-}
-
-func cmpFloats(op string, l float64, r float64) bool {
-	switch op {
-	case "gt":
-		return l > r
-	case "ge":
-		return l >= r
-	case "lt":
-		return l < r
-	case "le":
-		return l <= r
-	}
-	return false
-}
-
-func cmpStrings(op string, l string, r string) bool {
+// cmpOrdered applies one of the four ordering operators. An op outside the set
+// (equality is handled by the caller) is false, not an error.
+func cmpOrdered[T cmp.Ordered](op string, l T, r T) bool {
 	switch op {
 	case "gt":
 		return l > r

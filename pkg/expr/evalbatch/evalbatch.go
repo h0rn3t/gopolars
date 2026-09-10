@@ -9,6 +9,7 @@
 package evalbatch
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"time"
@@ -45,7 +46,7 @@ func Compile(e expr.Expr) (*Plan, bool) {
 // handling the row-wise evaluator treats specially) return ok=false and fall
 // back to the bitmap path. The column dtype is checked by the caller, which
 // holds the typed columns.
-func (p *Plan) AsColCmpLit() (col string, cmp simd.Cmp, litF float64, ok bool) {
+func (p *Plan) AsColCmpLit() (col string, cmpCode simd.Cmp, litF float64, ok bool) {
 	e := p.root
 	if e.Kind() != expr.KindBin {
 		return "", 0, 0, false
@@ -263,10 +264,10 @@ func cmpBitmap(op string, e expr.Expr, cols map[string]*chunk.Column, height int
 			if math.IsNaN(a) || math.IsNaN(c) {
 				continue
 			}
-			if cmpFloat(op, a, c) {
+			if cmpOrdered(op, a, c) {
 				simd.BitmapSet(b, i)
 			}
-		} else if cmpInt(op, lr.intAt(i), rr.intAt(i)) {
+		} else if cmpOrdered(op, lr.intAt(i), rr.intAt(i)) {
 			simd.BitmapSet(b, i)
 		}
 	}
@@ -528,9 +529,9 @@ func numericCompare(op string, lr numericReaderT, lt string, rr numericReaderT, 
 			if math.IsNaN(a) || math.IsNaN(b) {
 				continue
 			}
-			out[i] = cmpFloat(op, a, b)
+			out[i] = cmpOrdered(op, a, b)
 		} else {
-			out[i] = cmpInt(op, lr.intAt(i), rr.intAt(i))
+			out[i] = cmpOrdered(op, lr.intAt(i), rr.intAt(i))
 		}
 	}
 	return vresult{col: chunk.NewBool(out, nulls)}
@@ -629,6 +630,26 @@ func evalNot(e expr.Expr, cols map[string]*chunk.Column, height int) (vresult, e
 	return vresult{col: chunk.NewBool(out, nulls)}, nil
 }
 
+// castRows casts every row of child to target, into the typed buffer the
+// target dtype is backed by. A null row stays null and leaves the buffer's zero
+// value in place. T must be the type batchCast returns for target.
+func castRows[T any](child vresult, target dtypes.DataType, height int, nulls []bool) ([]T, error) {
+	out := make([]T, height)
+	for i := range out {
+		v := readScalar(child, i)
+		if v == nil {
+			nulls[i] = true
+			continue
+		}
+		cv, err := batchCast(v, target)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = cv.(T)
+	}
+	return out, nil
+}
+
 func evalCast(e expr.Expr, cols map[string]*chunk.Column, height int) (vresult, error) {
 	child, err := evalNode(*e.Target(), cols, height)
 	if err != nil {
@@ -636,80 +657,37 @@ func evalCast(e expr.Expr, cols map[string]*chunk.Column, height int) (vresult, 
 	}
 	target := e.CastType()
 	nulls := make([]bool, height)
+	// Each arm differs only in the buffer type and the constructor that adopts
+	// it, so the per-row cast loop lives in castRows.
 	switch target {
 	case dtypes.Int64:
-		out := make([]int64, height)
-		for i := 0; i < height; i++ {
-			v := readScalar(child, i)
-			if v == nil {
-				nulls[i] = true
-				continue
-			}
-			cv, err := batchCast(v, target)
-			if err != nil {
-				return vresult{}, err
-			}
-			out[i] = cv.(int64)
+		out, err := castRows[int64](child, target, height, nulls)
+		if err != nil {
+			return vresult{}, err
 		}
 		return vresult{col: chunk.NewInt64(out, nulls)}, nil
 	case dtypes.Float64:
-		out := make([]float64, height)
-		for i := 0; i < height; i++ {
-			v := readScalar(child, i)
-			if v == nil {
-				nulls[i] = true
-				continue
-			}
-			cv, err := batchCast(v, target)
-			if err != nil {
-				return vresult{}, err
-			}
-			out[i] = cv.(float64)
+		out, err := castRows[float64](child, target, height, nulls)
+		if err != nil {
+			return vresult{}, err
 		}
 		return vresult{col: chunk.NewFloat64(out, nulls)}, nil
 	case dtypes.String:
-		out := make([]string, height)
-		for i := 0; i < height; i++ {
-			v := readScalar(child, i)
-			if v == nil {
-				nulls[i] = true
-				continue
-			}
-			cv, err := batchCast(v, target)
-			if err != nil {
-				return vresult{}, err
-			}
-			out[i] = cv.(string)
+		out, err := castRows[string](child, target, height, nulls)
+		if err != nil {
+			return vresult{}, err
 		}
 		return vresult{col: chunk.NewString(out, nulls)}, nil
 	case dtypes.Boolean:
-		out := make([]bool, height)
-		for i := 0; i < height; i++ {
-			v := readScalar(child, i)
-			if v == nil {
-				nulls[i] = true
-				continue
-			}
-			cv, err := batchCast(v, target)
-			if err != nil {
-				return vresult{}, err
-			}
-			out[i] = cv.(bool)
+		out, err := castRows[bool](child, target, height, nulls)
+		if err != nil {
+			return vresult{}, err
 		}
 		return vresult{col: chunk.NewBool(out, nulls)}, nil
 	case dtypes.Datetime:
-		out := make([]time.Time, height)
-		for i := 0; i < height; i++ {
-			v := readScalar(child, i)
-			if v == nil {
-				nulls[i] = true
-				continue
-			}
-			cv, err := batchCast(v, target)
-			if err != nil {
-				return vresult{}, err
-			}
-			out[i] = cv.(time.Time)
+		out, err := castRows[time.Time](child, target, height, nulls)
+		if err != nil {
+			return vresult{}, err
 		}
 		return vresult{col: chunk.NewTime(out, nulls)}, nil
 	default:
@@ -886,7 +864,7 @@ func compareAny(op string, left, right any) (any, error) {
 		if !ok {
 			return false, fmt.Errorf("compare type mismatch")
 		}
-		return cmpInt(op, l, r), nil
+		return cmpOrdered(op, l, r), nil
 	case float64:
 		r, ok := right.(float64)
 		if !ok {
@@ -895,13 +873,13 @@ func compareAny(op string, left, right any) (any, error) {
 		if math.IsNaN(l) || math.IsNaN(r) {
 			return false, nil
 		}
-		return cmpFloat(op, l, r), nil
+		return cmpOrdered(op, l, r), nil
 	case string:
 		r, ok := right.(string)
 		if !ok {
 			return false, fmt.Errorf("compare type mismatch")
 		}
-		return cmpString(op, l, r), nil
+		return cmpOrdered(op, l, r), nil
 	case time.Time:
 		r, ok := right.(time.Time)
 		if !ok {
@@ -965,35 +943,9 @@ func toFloat(v any) (float64, bool) {
 	}
 }
 
-func cmpInt(op string, l, r int64) bool {
-	switch op {
-	case "gt":
-		return l > r
-	case "ge":
-		return l >= r
-	case "lt":
-		return l < r
-	case "le":
-		return l <= r
-	}
-	return false
-}
-
-func cmpFloat(op string, l, r float64) bool {
-	switch op {
-	case "gt":
-		return l > r
-	case "ge":
-		return l >= r
-	case "lt":
-		return l < r
-	case "le":
-		return l <= r
-	}
-	return false
-}
-
-func cmpString(op string, l, r string) bool {
+// cmpOrdered applies one of the four ordering operators. An op outside the set
+// (equality is handled by the caller) is false, not an error.
+func cmpOrdered[T cmp.Ordered](op string, l, r T) bool {
 	switch op {
 	case "gt":
 		return l > r

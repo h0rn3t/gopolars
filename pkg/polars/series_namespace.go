@@ -42,23 +42,33 @@ func requireDType(s Series, want dtypes.DataType, ns string) error {
 	return nil
 }
 
+// mapValues applies fn to every non-null row of s, asserting the value to T
+// first. Nulls stay null. op names the calling namespace method and want the
+// expected type in the error a mistyped row raises.
+func mapValues[T any](s Series, op string, want string, fn func(T) any) ([]any, error) {
+	values := make([]any, s.Len())
+	for i := range values {
+		v := s.Value(i)
+		if v == nil {
+			continue
+		}
+		x, ok := v.(T)
+		if !ok {
+			return nil, fmt.Errorf("%s: value at %d is not %s", op, i, want)
+		}
+		values[i] = fn(x)
+	}
+	return values, nil
+}
+
 // Lower нижній регістр рядків (string dtype).
 func (n SeriesStrNS) Lower() (Series, error) {
 	if err := requireDType(n.s, dtypes.String, "str"); err != nil {
 		return nil, err
 	}
-	values := make([]any, n.s.Len())
-	for i := 0; i < n.s.Len(); i++ {
-		v := n.s.Value(i)
-		if v == nil {
-			values[i] = nil
-			continue
-		}
-		str, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("str.Lower: value at %d is not string", i)
-		}
-		values[i] = strings.ToLower(str)
+	values, err := mapValues(n.s, "str.Lower", "string", func(s string) any { return strings.ToLower(s) })
+	if err != nil {
+		return nil, err
 	}
 	return NewSeries(NewSeriesInput{Name: n.s.Name(), DType: dtypes.String, Values: values})
 }
@@ -68,18 +78,9 @@ func (n SeriesStrNS) Upper() (Series, error) {
 	if err := requireDType(n.s, dtypes.String, "str"); err != nil {
 		return nil, err
 	}
-	values := make([]any, n.s.Len())
-	for i := 0; i < n.s.Len(); i++ {
-		v := n.s.Value(i)
-		if v == nil {
-			values[i] = nil
-			continue
-		}
-		str, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("str.Upper: value at %d is not string", i)
-		}
-		values[i] = strings.ToUpper(str)
+	values, err := mapValues(n.s, "str.Upper", "string", func(s string) any { return strings.ToUpper(s) })
+	if err != nil {
+		return nil, err
 	}
 	return NewSeries(NewSeriesInput{Name: n.s.Name(), DType: dtypes.String, Values: values})
 }
@@ -89,18 +90,9 @@ func (n SeriesStrNS) Len() (Series, error) {
 	if err := requireDType(n.s, dtypes.String, "str"); err != nil {
 		return nil, err
 	}
-	values := make([]any, n.s.Len())
-	for i := 0; i < n.s.Len(); i++ {
-		v := n.s.Value(i)
-		if v == nil {
-			values[i] = nil
-			continue
-		}
-		str, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("str.Len: value at %d is not string", i)
-		}
-		values[i] = int64(len(str))
+	values, err := mapValues(n.s, "str.Len", "string", func(s string) any { return int64(len(s)) })
+	if err != nil {
+		return nil, err
 	}
 	return NewSeries(NewSeriesInput{Name: n.s.Name() + "_str_len", DType: dtypes.Int64, Values: values})
 }
@@ -110,18 +102,9 @@ func (n SeriesArrNS) ListLen() (Series, error) {
 	if err := requireDType(n.s, dtypes.List, "arr"); err != nil {
 		return nil, err
 	}
-	values := make([]any, n.s.Len())
-	for i := 0; i < n.s.Len(); i++ {
-		v := n.s.Value(i)
-		if v == nil {
-			values[i] = nil
-			continue
-		}
-		list, ok := v.([]any)
-		if !ok {
-			return nil, fmt.Errorf("arr.ListLen: value at %d is not list", i)
-		}
-		values[i] = int64(len(list))
+	values, err := mapValues(n.s, "arr.ListLen", "list", func(l []any) any { return int64(len(l)) })
+	if err != nil {
+		return nil, err
 	}
 	return NewSeries(NewSeriesInput{Name: n.s.Name() + "_list_len", DType: dtypes.Int64, Values: values})
 }
@@ -131,18 +114,9 @@ func (n SeriesDtNS) Year() (Series, error) {
 	if err := requireDType(n.s, dtypes.Datetime, "dt"); err != nil {
 		return nil, err
 	}
-	values := make([]any, n.s.Len())
-	for i := 0; i < n.s.Len(); i++ {
-		v := n.s.Value(i)
-		if v == nil {
-			values[i] = nil
-			continue
-		}
-		t, ok := v.(time.Time)
-		if !ok {
-			return nil, fmt.Errorf("dt.Year: value at %d is not time.Time", i)
-		}
-		values[i] = int64(t.Year())
+	values, err := mapValues(n.s, "dt.Year", "time.Time", func(t time.Time) any { return int64(t.Year()) })
+	if err != nil {
+		return nil, err
 	}
 	return NewSeries(NewSeriesInput{Name: n.s.Name() + "_year", DType: dtypes.Int64, Values: values})
 }
@@ -155,33 +129,23 @@ func (n SeriesStructNS) Field(name string) (Series, error) {
 	if name == "" {
 		return nil, fmt.Errorf("struct.Field: empty field name")
 	}
-	values := make([]any, n.s.Len())
-	for i := 0; i < n.s.Len(); i++ {
-		v := n.s.Value(i)
-		if v == nil {
-			values[i] = nil
-			continue
-		}
-		m, ok := v.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("struct.Field: value at %d is not map[string]any", i)
-		}
-		inner := m[name]
+	values, err := mapValues(n.s, "struct.Field", "map[string]any", func(m map[string]any) any {
 		// Preserve the field's native value/dtype (matching Polars) instead of
 		// stringifying. Normalize narrow numeric types to the canonical int64/
 		// float64 the series constructor expects.
-		switch t := inner.(type) {
-		case nil:
-			values[i] = nil
+		switch t := m[name].(type) {
 		case int:
-			values[i] = int64(t)
+			return int64(t)
 		case int32:
-			values[i] = int64(t)
+			return int64(t)
 		case float32:
-			values[i] = float64(t)
+			return float64(t)
 		default:
-			values[i] = t
+			return t
 		}
+	})
+	if err != nil {
+		return nil, err
 	}
 	dt := inferDataTypeFromValues(values, dtypes.String)
 	return NewSeries(NewSeriesInput{Name: n.s.Name() + "_" + name, DType: dt, Values: values})
@@ -192,26 +156,17 @@ func (n SeriesCatNS) Codes() (Series, error) {
 	if err := requireDType(n.s, dtypes.Categorical, "cat"); err != nil {
 		return nil, err
 	}
-	next := 0
 	keyToCode := map[string]int64{}
-	values := make([]any, n.s.Len())
-	for i := 0; i < n.s.Len(); i++ {
-		v := n.s.Value(i)
-		if v == nil {
-			values[i] = nil
-			continue
-		}
-		str, ok := v.(string)
+	values, err := mapValues(n.s, "cat.Codes", "string", func(s string) any {
+		code, ok := keyToCode[s]
 		if !ok {
-			return nil, fmt.Errorf("cat.Codes: value at %d is not string", i)
+			code = int64(len(keyToCode))
+			keyToCode[s] = code
 		}
-		code, ok := keyToCode[str]
-		if !ok {
-			code = int64(next)
-			next++
-			keyToCode[str] = code
-		}
-		values[i] = code
+		return code
+	})
+	if err != nil {
+		return nil, err
 	}
 	return NewSeries(NewSeriesInput{Name: n.s.Name() + "_codes", DType: dtypes.Int64, Values: values})
 }

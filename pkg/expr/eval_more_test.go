@@ -82,30 +82,33 @@ func TestEvalBinComparisons(t *testing.T) {
 	}
 }
 
-// TestCmpHelpers exercises cmpInts/cmpFloats/cmpStrings directly across all four
-// operators plus the unknown-op fallthrough.
+// TestCmpHelpers exercises cmpOrdered at each instantiation the evaluator uses,
+// across all four operators plus the unknown-op fallthrough.
 func TestCmpHelpers(t *testing.T) {
 	t.Parallel()
 
-	if !cmpInts("gt", 3, 2) || !cmpInts("ge", 2, 2) || !cmpInts("lt", 1, 2) || !cmpInts("le", 2, 2) {
-		t.Fatal("cmpInts true cases failed")
+	if !cmpOrdered("gt", int64(3), int64(2)) || !cmpOrdered("ge", int64(2), int64(2)) ||
+		!cmpOrdered("lt", int64(1), int64(2)) || !cmpOrdered("le", int64(2), int64(2)) {
+		t.Fatal("int64 true cases failed")
 	}
-	if cmpInts("gt", 2, 3) || cmpInts("??", 1, 1) {
-		t.Fatal("cmpInts false/unknown cases failed")
-	}
-
-	if !cmpFloats("gt", 3, 2) || !cmpFloats("ge", 2, 2) || !cmpFloats("lt", 1, 2) || !cmpFloats("le", 2, 2) {
-		t.Fatal("cmpFloats true cases failed")
-	}
-	if cmpFloats("??", 1, 1) {
-		t.Fatal("cmpFloats unknown op should be false")
+	if cmpOrdered("gt", int64(2), int64(3)) || cmpOrdered("??", int64(1), int64(1)) {
+		t.Fatal("int64 false/unknown cases failed")
 	}
 
-	if !cmpStrings("gt", "b", "a") || !cmpStrings("ge", "a", "a") || !cmpStrings("lt", "a", "b") || !cmpStrings("le", "a", "a") {
-		t.Fatal("cmpStrings true cases failed")
+	if !cmpOrdered("gt", 3.0, 2.0) || !cmpOrdered("ge", 2.0, 2.0) ||
+		!cmpOrdered("lt", 1.0, 2.0) || !cmpOrdered("le", 2.0, 2.0) {
+		t.Fatal("float64 true cases failed")
 	}
-	if cmpStrings("??", "a", "a") {
-		t.Fatal("cmpStrings unknown op should be false")
+	if cmpOrdered("??", 1.0, 1.0) {
+		t.Fatal("float64 unknown op should be false")
+	}
+
+	if !cmpOrdered("gt", "b", "a") || !cmpOrdered("ge", "a", "a") ||
+		!cmpOrdered("lt", "a", "b") || !cmpOrdered("le", "a", "a") {
+		t.Fatal("string true cases failed")
+	}
+	if cmpOrdered("??", "a", "a") {
+		t.Fatal("string unknown op should be false")
 	}
 }
 

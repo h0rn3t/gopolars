@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
@@ -819,6 +820,22 @@ func toFloat(v any) (float64, bool) {
 	}
 }
 
+// compareOrdered orders two values of the same comparable type. Any pair that
+// is neither less nor greater compares equal — which for float64 includes every
+// pair involving a NaN. cmp.Compare is deliberately not used: it orders NaN
+// below every other value, which would reorder rows this engine sorts.
+func compareOrdered[T cmp.Ordered](l T, r T) int {
+	if l < r {
+		return -1
+	}
+	if l > r {
+		return 1
+	}
+	return 0
+}
+
+// compareForOrder orders two row values, with nulls first and any mismatched or
+// unsupported pair reported as equal.
 func compareForOrder(left any, right any) int {
 	if left == nil && right == nil {
 		return 0
@@ -831,48 +848,22 @@ func compareForOrder(left any, right any) int {
 	}
 	switch l := left.(type) {
 	case int64:
-		r, ok := right.(int64)
-		if !ok {
-			return 0
-		}
-		if l < r {
-			return -1
-		}
-		if l > r {
-			return 1
+		if r, ok := right.(int64); ok {
+			return compareOrdered(l, r)
 		}
 	case float64:
-		r, ok := right.(float64)
-		if !ok {
-			return 0
-		}
-		if l < r {
-			return -1
-		}
-		if l > r {
-			return 1
+		if r, ok := right.(float64); ok {
+			return compareOrdered(l, r)
 		}
 	case string:
-		r, ok := right.(string)
-		if !ok {
-			return 0
-		}
-		if l < r {
-			return -1
-		}
-		if l > r {
-			return 1
+		if r, ok := right.(string); ok {
+			return compareOrdered(l, r)
 		}
 	case time.Time:
-		r, ok := right.(time.Time)
-		if !ok {
-			return 0
-		}
-		if l.Before(r) {
-			return -1
-		}
-		if l.After(r) {
-			return 1
+		if r, ok := right.(time.Time); ok {
+			// Compare is Before/After/equal in one call, with the same
+			// monotonic-clock handling.
+			return l.Compare(r)
 		}
 	}
 	return 0
