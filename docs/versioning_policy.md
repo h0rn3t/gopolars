@@ -33,7 +33,7 @@ reached against Python Polars. These appear as `v0.6`…`v1.0` in:
 - `docs/v0_6_migration.md`, `docs/release_checklist_v0_6.md`
 
 **A wave number is not a release version.** Wave `v0.6` describes a parity milestone, not the
-`v0.6.0` tag — at the time of writing the latest release tag is `v0.3.0`, well behind the wave
+`v0.6.0` tag — at the time of writing the latest release tag is `v0.5.0`, still behind the wave
 numbering. When adding a migration note, name it after the *release* it ships in, not the wave.
 
 ### What a breaking change requires

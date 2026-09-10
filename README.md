@@ -27,7 +27,7 @@ go get github.com/h0rn3t/gopolars@latest
 Or pin the latest release:
 
 ```bash
-go get github.com/h0rn3t/gopolars@v0.4.1
+go get github.com/h0rn3t/gopolars@v0.5.0
 ```
 
 Import the public API package:
@@ -43,12 +43,15 @@ fused filter-reduce path; see [Performance / SIMD Acceleration](#performance--si
 
 ## Current status
 
-Latest release: **[v0.4.1](https://github.com/h0rn3t/gopolars/releases/tag/v0.4.1)**
-([changelog vs v0.4.0](https://github.com/h0rn3t/gopolars/compare/v0.4.0...v0.4.1)).
+Latest release: **[v0.5.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.5.0)**
+([changelog vs v0.4.1](https://github.com/h0rn3t/gopolars/compare/v0.4.1...v0.5.0)).
 The public API is versioned with SemVer; while `< v1.0.0` it may still evolve between minor
-versions — see the [versioning policy](docs/versioning_policy.md). `v0.4.1` is a patch release
-and changes no public API; the [v0.4.0 migration notes](docs/v0_4_migration.md) still cover the
-one **breaking** change in the `v0.4` line (`DataFrame.Clone` now shares column buffers).
+versions — see the [versioning policy](docs/versioning_policy.md). `v0.5.0` changes no public
+API — the exported surface of `pkg/polars` is byte-for-byte identical to `v0.4.1` — but it
+**requires Go 1.27+**, which is a compatibility break for anyone still on Go 1.26; see the
+[v0.5.0 migration notes](docs/v0_5_migration.md). The
+[v0.4.0 migration notes](docs/v0_4_migration.md) still cover the one **breaking** behavior change
+in this line (`DataFrame.Clone` now shares column buffers).
 
 The project has driven its internal parity waves up to the **v1.0 tracking matrix** ([`docs/parity/v1_0_coverage.json`](docs/parity/v1_0_coverage.json)) and now covers a broad core for Go-native analytics pipelines, including advanced joins, reshape operations, temporal windows, opt-in DuckDB SQL, and performance diagnostics.\
 It is production-usable for many DataFrame workloads, but it is **not yet a full drop-in replacement** for Python Polars.
@@ -58,6 +61,30 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 - ✅ Opt-in SQL over in-memory frames via embedded DuckDB (`-tags duckdb,duckdb_arrow`)
 - ✅ **75%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
 - ✅ **659 / 670** public Python Polars methods implemented, measured against **Polars 1.41.2** ([full parity matrix](#python-polars-vs-gopolars-function-matrix)) — 11 named gaps, listed below
+
+### What's new in v0.5.0
+
+Minor release. The public API is unchanged, but the **minimum Go version is now 1.27** — see the
+[migration notes](docs/v0_5_migration.md).
+
+- **BREAKING — requires Go 1.27+** (`go.mod`: `1.26.1` → `1.27`). The portable vector kernels are
+  written against the Go 1.27 stdlib `simd` package. If you are pinned to Go 1.26, stay on `v0.4.1`
+- **Portable vector kernels** under `GOEXPERIMENT=simd` — one body of Go covering NEON on `arm64`,
+  AVX/AVX2/AVX512 on `amd64`, and a pure-Go emulation elsewhere, so `arm64` finally gets accelerated
+  reductions without hand-written assembly. At 1 M float64 on Apple M4 Pro: `MinMaxWhereFloat64`
+  4178.3 µs → 435.6 µs (**−90%**), `SumWhereFloat64` 547.5 µs → 267.8 µs (−51%), `MaxFloat64`
+  277.8 µs → 133.8 µs (−52%). The default build is unaffected and keeps the runtime-dispatched
+  AVX2 path
+- **Rolling regression on Go 1.27 fixed** — `rollSumState` moved to value receivers. A pointer
+  receiver made the accumulator address-taken, pinning its fields to stack slots and serializing
+  each windowed step on a load-modify-store chain that cost 5–7× more under 1.27 than under 1.26.1.
+  `rolling_sum`/`rolling_mean` are back from 12 ms to 4.9 ms at 1 M rows / window 100; the Kahan
+  compensation and null/NaN counting are unchanged
+- **−203 lines of internal duplication removed**, behavior identical — per-dtype comparison ladders
+  across `pkg/expr`, `pkg/expr/evalbatch`, `pkg/frame` and `pkg/exec` collapsed onto generic
+  helpers; the six namespace map loops in `series_namespace.go` onto one `mapValues[T]`.
+  `Series.Std` delegates to `Var`, and `Series.Max`/`Min` no longer make a second full pass over
+  the column in the common case
 
 ### What's new in v0.4.1
 
