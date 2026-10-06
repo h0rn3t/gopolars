@@ -30,11 +30,12 @@ reached against Python Polars. These appear as `v0.6`…`v1.0` in:
 
 - `test/conformance/` (e.g. `v07_top30_conformance_test.go`, `v09_wave_b_medium_conformance_test.go`)
 - `docs/parity/`, `docs/performance/` (e.g. `v0_6_budgets.json`)
-- `docs/v0_6_migration.md`, `docs/release_checklist_v0_6.md`
+- `docs/release_checklist_v0_6.md`, and the trailing "Conformance wave v0.6" section of
+  `docs/v0_6_migration.md` (the file's leading section is the `v0.6.0` *release* note)
 
 **A wave number is not a release version.** Wave `v0.6` describes a parity milestone, not the
-`v0.6.0` tag — at the time of writing the latest release tag is `v0.5.0`, still behind the wave
-numbering. When adding a migration note, name it after the *release* it ships in, not the wave.
+`v0.6.0` tag — at the time of writing the latest release tag is `v0.6.0`, whose contents are
+unrelated to wave `v0.6`. When adding a migration note, name it after the *release* it ships in, not the wave.
 
 ### What a breaking change requires
 

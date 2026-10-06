@@ -27,7 +27,7 @@ go get github.com/h0rn3t/gopolars@latest
 Or pin the latest release:
 
 ```bash
-go get github.com/h0rn3t/gopolars@v0.5.0
+go get github.com/h0rn3t/gopolars@v0.6.0
 ```
 
 Import the public API package:
@@ -43,13 +43,14 @@ fused filter-reduce path; see [Performance / SIMD Acceleration](#performance--si
 
 ## Current status
 
-Latest release: **[v0.5.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.5.0)**
-([changelog vs v0.4.1](https://github.com/h0rn3t/gopolars/compare/v0.4.1...v0.5.0)).
+Latest release: **[v0.6.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.6.0)**
+([changelog vs v0.5.0](https://github.com/h0rn3t/gopolars/compare/v0.5.0...v0.6.0)).
 The public API is versioned with SemVer; while `< v1.0.0` it may still evolve between minor
-versions — see the [versioning policy](docs/versioning_policy.md). `v0.5.0` changes no public
-API — the exported surface of `pkg/polars` is byte-for-byte identical to `v0.4.1` — but it
-**requires Go 1.27+**, which is a compatibility break for anyone still on Go 1.26; see the
-[v0.5.0 migration notes](docs/v0_5_migration.md). The
+versions — see the [versioning policy](docs/versioning_policy.md). `v0.6.0` adds a typed column
+API and speeds up parquet IO; its one compatibility note is **narrowly breaking**: the `Series`
+interface gains five methods, which only affects code that implements `polars.Series` itself
+(e.g. a test double) — see the [v0.6.0 migration notes](docs/v0_6_migration.md). `v0.5.0`
+moved the minimum Go version to 1.27 ([notes](docs/v0_5_migration.md)), and the
 [v0.4.0 migration notes](docs/v0_4_migration.md) still cover the one **breaking** behavior change
 in this line (`DataFrame.Clone` now shares column buffers).
 
@@ -61,6 +62,26 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 - ✅ Opt-in SQL over in-memory frames via embedded DuckDB (`-tags duckdb,duckdb_arrow`)
 - ✅ **75%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
 - ✅ **659 / 670** public Python Polars methods implemented, measured against **Polars 1.41.2** ([full parity matrix](#python-polars-vs-gopolars-function-matrix)) — 11 named gaps, listed below
+
+### What's new in v0.6.0
+
+Minor release: a typed column API plus faster, leaner parquet IO — see the
+[migration notes](docs/v0_6_migration.md) and [`docs/performance/parquet-io.md`](docs/performance/parquet-io.md).
+Numbers are for 200,000 rows on Apple M4 Pro.
+
+- **BREAKING (narrow)** — `polars.Series` gains `Int64Values`, `Float64Values`, `StringValues`,
+  `BoolValues` and `DatetimeValues`. Only custom implementations of the interface (test doubles)
+  need updating; no data path changes
+- **Typed column exchange** — the accessors above return copies of the values and a null mask;
+  `NewInt64Series` … `NewDatetimeSeries` and `NewDataFrameFromSeries` build frames from typed
+  slices. Frame → `[]struct`: 30.9 ms / 1.2M allocations (`IterRows`) → 4.2 ms / 17;
+  `[]struct` → frame: 7.9 ms / 800k allocations (`NewDataFrame([]any)`) → 2.1 ms / 22
+- **`ReadParquet` reads only the requested columns, in parallel** — 2 of 4 columns 10.0 ms →
+  2.2 ms (−78%) and 44.7 → 19.2 MiB; all columns −37%; allocations −99%
+- **`WriteParquet` adaptive dictionary encoding** — high-cardinality numeric/datetime columns skip
+  the dictionary: 54.9 ms → 26.2 ms (−52%), 173.8 → 50.9 MiB (−71%), file 4.27 → 2.99 MB
+- **Arrow import** copies a string column's buffer once (200k → 10 allocations); `IterRows`
+  resolves columns once (−22%)
 
 ### What's new in v0.5.0
 
@@ -158,6 +179,29 @@ the `v0.4.0` measurement run and do not yet reflect these numbers.
 - Partition pruning by predicate for dataset scans
 - Arrow import/export bridge (Apache `arrow-go/v18`)
 - Object store URI mapping profile (`s3://`, `gcs://`, `az://`) via environment-configured roots
+- Parquet reads decode only the requested `Columns`, in parallel; parquet writes skip
+  dictionary encoding for high-cardinality numeric and datetime columns
+  (see `docs/performance/parquet-io.md`)
+
+#### Typed exchange with Go code
+
+`IterRows`/`ToDicts` and `NewDataFrame` box every cell in `any`. When the caller maps
+rows to or from Go structs, read and build whole columns as typed slices instead:
+
+```go
+id, err := polars.NewInt64Series("id", []int64{1, 2, 3}, nil)
+// ... more series ...
+df, err := polars.NewDataFrameFromSeries(id, ts)
+
+col, err := df.GetColumn("id")
+ids, nulls, err := col.Int64Values() // nulls == nil when the column has no nulls
+```
+
+`Int64Values`, `Float64Values`, `StringValues` (also Categorical/Enum), `BoolValues` and
+`DatetimeValues` return copies; a dtype mismatch wraps `polars.ErrDTypeMismatch`. The
+constructors `NewInt64Series` … `NewDatetimeSeries` copy their input. On 200,000 rows,
+frame → `[]struct` drops from 30.9 ms / 1.2M allocations (`IterRows`) to 4.2 ms / 17
+allocations, and `[]struct` → frame from 7.9 ms / 800k allocations to 2.1 ms / 22.
 
 #### Database IO (ADBC)
 
