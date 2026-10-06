@@ -32,7 +32,7 @@ func TestWithRowIndexAsIntRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get idx: %v", err)
 	}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		got := idx.Value(i)
 		switch v := got.(type) {
 		case int64:

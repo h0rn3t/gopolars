@@ -14,12 +14,7 @@ type reverseRowCtx struct {
 }
 
 func (r reverseRowCtx) ValueByName(name string) (any, bool) {
-	h := r.base.NumRows()
-	br := r.base.RowIndex()
-	if h <= 0 || br < 0 || br >= h {
-		return nil, false
-	}
-	return r.base.ValueAt(h-1-br, name)
+	return r.ValueAt(r.base.RowIndex(), name)
 }
 
 func (r reverseRowCtx) RowIndex() int { return r.base.RowIndex() }

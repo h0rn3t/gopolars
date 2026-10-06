@@ -16,7 +16,7 @@ func BenchmarkFilterFrame1M(b *testing.B) {
 	v := make([]any, n)
 	nn := make([]any, n)
 	iv := make([]any, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		g[i] = "grp"
 		v[i] = float64(i%200 - 100) // ≈half are > 0
 		nn[i] = float64(i)

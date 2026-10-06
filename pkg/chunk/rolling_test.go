@@ -13,11 +13,8 @@ func refRolling(agg string, values []float64, nulls []bool, window, minPeriods i
 	n := len(values)
 	out := make([]float64, n)
 	outNulls := make([]bool, n)
-	for i := 0; i < n; i++ {
-		lo := i - window + 1
-		if lo < 0 {
-			lo = 0
-		}
+	for i := range n {
+		lo := max(i-window+1, 0)
 		obs := 0
 		sum := 0.0
 		nan := false

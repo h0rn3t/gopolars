@@ -169,3 +169,24 @@ func TestKernelOrdinalDay(t *testing.T) {
 		t.Fatalf("ordinal_day null: got %v, want nil", v)
 	}
 }
+
+// TestKernelLeftRightClamp pins the count clamp of str_left/str_right.
+func TestKernelLeftRightClamp(t *testing.T) {
+	row := kernelRow{"s": "abcdef"}
+	cases := []struct {
+		e    Expr
+		want string
+	}{
+		{Col("s").StrLeft(Lit(int64(-99))), ""},
+		{Col("s").StrRight(Lit(int64(-99))), ""},
+		{Col("s").StrLeft(Lit(int64(-6))), ""},
+		{Col("s").StrLeft(Lit(int64(0))), ""},
+		{Col("s").StrRight(Lit(int64(99))), "abcdef"},
+		{Col("s").StrRight(Lit(int64(-5))), "f"},
+	}
+	for _, tc := range cases {
+		if v := evalKernel(t, tc.e, row); v != tc.want {
+			t.Errorf("%s(%v) = %q, want %q", tc.e.Op(), tc.e.Right().Value(), v, tc.want)
+		}
+	}
+}

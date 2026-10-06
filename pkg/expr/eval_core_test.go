@@ -133,3 +133,100 @@ func TestExprBuildersCoverage(t *testing.T) {
 	_ = Col("a").IsNull()
 	_ = Col("a").IsNotNull()
 }
+
+// TestEvalParamUnaryDispatch pins how "name:arg" unary ops route: known names
+// evaluate, malformed arguments report their op, and unknown names fall through
+// to the unsupported-op error.
+func TestEvalParamUnaryDispatch(t *testing.T) {
+	t.Parallel()
+
+	row := mapRow{"x": int64(7), "s": "a-b-b"}
+	cases := []struct {
+		op      string
+		col     string
+		want    any
+		wantErr string
+	}{
+		{op: "head:3", col: "x", want: int64(7)},
+		{op: "rolling_rank:2", col: "x", want: int64(7)},
+		{op: "round_dp:2", col: "x", want: int64(7)},
+		{op: "str_replace:b:c", col: "s", want: "a-c-b"},
+		{op: "str_replace_all:b:c", col: "s", want: "a-c-c"},
+		{op: "str_substr:3:1", col: "s", want: "b"},
+		{op: "str_replace:b", col: "s", wantErr: "invalid str_replace configuration"},
+		{op: "str_substr:x:1", col: "s", wantErr: "invalid str_substr configuration"},
+		{op: "round_dp:x", col: "x", wantErr: "invalid round_dp configuration"},
+		{op: "struct_field:k", col: "x", wantErr: "struct_field expects struct"},
+		{op: "round_sig_figs:2", col: "s", wantErr: "round_sig_figs expects numeric"},
+		{op: "nope:1", col: "x", wantErr: "unsupported unary op nope:1"},
+		{op: "head", col: "x", wantErr: "unsupported unary op head"},
+	}
+	for _, tc := range cases {
+		target := Col(tc.col)
+		e := Expr{kind: KindUnary, op: tc.op, target: &target}
+		got, err := Eval(e, row)
+		if tc.wantErr != "" {
+			if err == nil || err.Error() != tc.wantErr {
+				t.Errorf("Eval(%s on %s) error = %v, want %q", tc.op, tc.col, err, tc.wantErr)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Errorf("Eval(%s on %s) = %v, %v; want %v, nil", tc.op, tc.col, got, err, tc.want)
+		}
+	}
+}
+
+// TestEvalTernOperands pins the ternary dispatch: operand ops evaluate target,
+// then left, then right and stop at the first error; pass-through ops return
+// the target without evaluating their other operands; any other op is a when.
+func TestEvalTernOperands(t *testing.T) {
+	t.Parallel()
+
+	row := mapRow{"s": "ab", "x": int64(5)}
+	tern := func(op string, target, left, right Expr) Expr {
+		return Expr{kind: KindTern, op: op, target: &target, left: &left, right: &right}
+	}
+	operandOps := []string{"str_pad_start", "str_pad_end", "str_split_part", "clip", "replace", "replace_strict", "is_between"}
+	for _, op := range operandOps {
+		for _, tc := range []struct{ target, left, right, wantErr string }{
+			{"t_missing", "l_missing", "r_missing", "column t_missing not found"},
+			{"x", "l_missing", "r_missing", "column l_missing not found"},
+			{"x", "x", "r_missing", "column r_missing not found"},
+		} {
+			got, err := Eval(tern(op, Col(tc.target), Col(tc.left), Col(tc.right)), row)
+			if got != nil || err == nil || err.Error() != tc.wantErr {
+				t.Errorf("%s(%s, %s, %s) = %v, %v; want error %q", op, tc.target, tc.left, tc.right, got, err, tc.wantErr)
+			}
+		}
+	}
+	for op, wantErr := range map[string]string{"clip": "clip expects numeric", "is_between": "is_between expects numeric"} {
+		if _, err := Eval(tern(op, Col("s"), Col("x"), Col("x")), row); err == nil || err.Error() != wantErr {
+			t.Errorf("%s on a string: error = %v, want %q", op, err, wantErr)
+		}
+	}
+
+	passthrough := []string{
+		"bottom_k_by:2", "top_k_by:2", "sort_by:desc",
+		"ewm_mean_by", "extend_constant", "max_by", "min_by", "interpolate_by",
+		"rolling_max_by:2", "rolling_mean_by:2", "rolling_min_by:2", "rolling_sum_by:2", "rolling_std_by:2",
+		"rolling_var_by:2", "rolling_median_by:2", "rolling_quantile_by:2", "rolling_rank_by:2",
+	}
+	for _, op := range passthrough {
+		if got, err := Eval(tern(op, Col("x"), Col("missing"), Col("missing")), row); err != nil || got != int64(5) {
+			t.Errorf("%s = %v, %v; want the target 5", op, got, err)
+		}
+	}
+	// A prefix op without its argument, or an exact op with one, is a when.
+	for _, op := range []string{"sort_by", "rolling_max_by", "min_by:x", "interpolate_by:x"} {
+		if _, err := Eval(tern(op, Col("x"), Col("missing"), Col("x")), row); err == nil || err.Error() != "column missing not found" {
+			t.Errorf("%s: error = %v, want the when condition's error", op, err)
+		}
+	}
+	if _, err := Eval(tern("when", Col("x"), Col("x"), Col("x")), row); err == nil || err.Error() != "when expects bool condition" {
+		t.Errorf("when on int condition: error = %v", err)
+	}
+	if _, err := Eval(tern("when", Col("x"), Lit(false), Col("x")), row); err == nil || err.Error() != "when expects otherwise branch" {
+		t.Errorf("when without otherwise: error = %v", err)
+	}
+}

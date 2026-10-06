@@ -71,7 +71,7 @@ func TestRankRadixMatchesStableReference(t *testing.T) {
 	wantI := referenceOrdinalRankInt(iv)
 	fc := gotF.cols[gotF.order[0]]
 	ic := gotI.cols[gotI.order[0]]
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if fc.Value(i).(int64) != wantF[i] {
 			t.Fatalf("float rank[%d] = %v, want %d", i, fc.Value(i), wantF[i])
 		}
@@ -98,7 +98,7 @@ func TestRankRadixEqualValuesKeepInputOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := got.cols[got.order[0]]
-	for i := 0; i < n; i++ {
+	for i := range n {
 		for j := i + 1; j < n; j++ {
 			if v[i] == v[j] && c.Value(i).(int64) >= c.Value(j).(int64) {
 				t.Fatalf("equal values at %d,%d out of input order: rank %v vs %v",
@@ -174,7 +174,7 @@ func TestRankFallbackMatchesRowwise(t *testing.T) {
 			}
 			tcol := typed.cols[typed.order[0]]
 			rcol := rowwise.cols[rowwise.order[0]]
-			for i := 0; i < n; i++ {
+			for i := range n {
 				if tcol.Value(i).(int64) != rcol.Value(i).(int64) {
 					t.Fatalf("rank[%d]: typed %v rowwise %v", i, tcol.Value(i), rcol.Value(i))
 				}
@@ -232,7 +232,7 @@ func TestOverRankRadixParity(t *testing.T) {
 		}
 		tc := typed.cols[typed.order[0]]
 		rc := rowwise.cols[rowwise.order[0]]
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if tc.Value(i).(int64) != rc.Value(i).(int64) {
 				t.Fatalf("over-rank %s[%d]: typed %v rowwise %v", col, i, tc.Value(i), rc.Value(i))
 			}

@@ -80,7 +80,7 @@ func BenchmarkGroupBySumFloat64_1M(b *testing.B) {
 	const nGroups = 100
 	keys := make([]any, n)
 	vals := make([]any, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		keys[i] = int64(i % nGroups)
 		vals[i] = float64(i)
 	}

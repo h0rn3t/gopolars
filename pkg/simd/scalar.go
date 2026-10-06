@@ -1,9 +1,11 @@
 package simd
 
-// Scalar float64 reduction and element-wise kernels. These have no build tag:
-// they are the always-correct reference that both the non-amd64 build
-// (simd_generic.go) and the amd64 non-AVX2 fallback (kernels_amd64.go) call,
-// and that the AVX2 equivalence test pins the assembly against.
+// Scalar float64 reduction and element-wise kernels. These have no build tag.
+// Sum and the element-wise kernels are the implementation on every
+// architecture; the Min/Max reductions are the always-correct reference that
+// both the non-amd64 build (simd_generic.go) and the amd64 non-AVX2 fallback
+// (kernels_amd64.go) call, and that the AVX2 equivalence test pins the
+// assembly against.
 //
 // The reductions use multiple independent accumulators over an unrolled loop so
 // a superscalar core keeps several FADD/FCMP in flight (instruction-level
@@ -13,8 +15,9 @@ package simd
 // scalar loop. Sum reorders additions, so it differs from a strict left-to-right
 // sum only by floating-point reduction-order rounding.
 
-// sumFloat64Scalar sums vals using eight independent accumulators.
-func sumFloat64Scalar(vals []float64) float64 {
+// SumFloat64 returns the sum of vals, using eight independent accumulators.
+// Returns 0 for an empty slice.
+func SumFloat64(vals []float64) float64 {
 	var s0, s1, s2, s3, s4, s5, s6, s7 float64
 	rest := vals
 	for len(rest) >= 8 {
@@ -179,43 +182,34 @@ func minMaxFloat64Scalar(vals []float64) (float64, float64) {
 	return min, max
 }
 
-// addSlicesFloat64Scalar returns a new slice where each element is a[i] + b[i].
+// AddSlicesFloat64 returns a new slice where each element is a[i] + b[i].
 // The result length is min(len(a), len(b)).
-func addSlicesFloat64Scalar(a, b []float64) []float64 {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
+func AddSlicesFloat64(a, b []float64) []float64 {
+	n := min(len(a), len(b))
 	result := make([]float64, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		result[i] = a[i] + b[i]
 	}
 	return result
 }
 
-// mulSlicesFloat64Scalar returns a new slice where each element is a[i] * b[i].
+// MulSlicesFloat64 returns a new slice where each element is a[i] * b[i].
 // The result length is min(len(a), len(b)).
-func mulSlicesFloat64Scalar(a, b []float64) []float64 {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
+func MulSlicesFloat64(a, b []float64) []float64 {
+	n := min(len(a), len(b))
 	result := make([]float64, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		result[i] = a[i] * b[i]
 	}
 	return result
 }
 
-// dotProductFloat64Scalar returns the dot product of a and b using a scalar
-// loop. Only elements up to min(len(a), len(b)) are used.
-func dotProductFloat64Scalar(a, b []float64) float64 {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
+// DotProductFloat64 returns the dot product of a and b.
+// Only elements up to min(len(a), len(b)) are used.
+func DotProductFloat64(a, b []float64) float64 {
+	n := min(len(a), len(b))
 	sum := 0.0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		sum += a[i] * b[i]
 	}
 	return sum

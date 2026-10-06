@@ -1,5 +1,7 @@
 package dtypes
 
+import "slices"
+
 type Field struct {
 	Name string
 	Type DataType
@@ -8,10 +10,5 @@ type Field struct {
 type Schema []Field
 
 func (s Schema) IndexOf(name string) int {
-	for i, f := range s {
-		if f.Name == name {
-			return i
-		}
-	}
-	return -1
+	return slices.IndexFunc(s, func(f Field) bool { return f.Name == name })
 }

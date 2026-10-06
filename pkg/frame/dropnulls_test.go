@@ -60,7 +60,7 @@ func buildNullFrame(t *testing.T, n, aEvery, bEvery int) DataFrame {
 	a := make([]any, n)
 	b := make([]any, n)
 	c := make([]any, n)
-	for r := 0; r < n; r++ {
+	for r := range n {
 		if aEvery > 0 && r%aEvery == 0 {
 			a[r] = nil
 		} else {

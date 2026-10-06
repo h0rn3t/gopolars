@@ -69,7 +69,7 @@ func groupIDsSharded[K comparable](vals []K, nulls []bool, n int) (ids []int, ng
 
 	sample := min(groupSampleSize, n)
 	seen := make(map[K]struct{}, sample)
-	for row := 0; row < sample; row++ {
+	for row := range sample {
 		if nulls != nil && nulls[row] {
 			continue
 		}
@@ -106,7 +106,7 @@ func groupIDsSharded[K comparable](vals []K, nulls []bool, n int) (ids []int, ng
 	global := make(map[K]int, len(seen))
 	remaps := make([][]int, workers)
 	anyNull := false
-	for w := 0; w < workers; w++ {
+	for w := range workers {
 		remap := make([]int, len(localKeys[w]))
 		for localID, k := range localKeys[w] {
 			g, hit := global[k]

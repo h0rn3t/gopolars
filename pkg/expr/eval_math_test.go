@@ -1,6 +1,7 @@
 package expr
 
 import (
+	"errors"
 	"math"
 	"testing"
 	"time"
@@ -336,5 +337,120 @@ func TestEvalDatetimeKernels(t *testing.T) {
 	ordinal, err := Eval(Col("ts").DtOrdinalDay(), row)
 	if err != nil || ordinal != int64(60) {
 		t.Fatalf("dt_ordinal_day = %v err=%v", ordinal, err)
+	}
+}
+
+// evalUnaryOp evaluates the unary op on the single value v.
+func evalUnaryOp(op string, v any) (any, error) {
+	target := Col("v")
+	return Eval(Expr{kind: KindUnary, op: op, target: &target}, mapRow{"v": v})
+}
+
+// TestEvalNumericUnaryFamilies pins every float-math, datetime and bitwise unary
+// op: its value for each accepted operand type, and the exact, unwrapped error
+// text for a mismatched operand and for null.
+func TestEvalNumericUnaryFamilies(t *testing.T) {
+	t.Parallel()
+
+	floatOps := map[string]func(float64) float64{
+		"arccos": math.Acos, "arccosh": math.Acosh, "arcsin": math.Asin,
+		"arcsinh": math.Asinh, "arctan": math.Atan, "arctanh": math.Atanh,
+		"cbrt": math.Cbrt, "ceil": math.Ceil, "cos": math.Cos, "sin": math.Sin,
+		"cosh": math.Cosh, "sinh": math.Sinh, "tan": math.Tan, "tanh": math.Tanh,
+		"floor": math.Floor, "log10": math.Log10, "log1p": math.Log1p,
+		"log": math.Log, "sqrt": math.Sqrt, "exp": math.Exp,
+		"cot":     func(f float64) float64 { return 1 / math.Tan(f) },
+		"degrees": func(f float64) float64 { return f * 180 / math.Pi },
+		"radians": func(f float64) float64 { return f * math.Pi / 180 },
+		"sign": func(f float64) float64 {
+			switch {
+			case f < 0:
+				return -1
+			case f > 0:
+				return 1
+			}
+			return 0
+		},
+	}
+	inputs := []struct {
+		v any
+		f float64
+	}{
+		{0.25, 0.25}, {-2.0, -2}, {0.0, 0}, {math.NaN(), math.NaN()}, {math.Inf(1), math.Inf(1)},
+		{int64(3), 3}, {int64(-4), -4},
+	}
+	for op, fn := range floatOps {
+		for _, in := range inputs {
+			got, err := evalUnaryOp(op, in.v)
+			want := fn(in.f)
+			g, ok := got.(float64)
+			if err != nil || !ok || (g != want && !(math.IsNaN(g) && math.IsNaN(want))) {
+				t.Errorf("%s(%v) = %v (%T), %v; want %v", op, in.v, got, got, err, want)
+			}
+		}
+		for _, bad := range []any{"x", nil, true} {
+			got, err := evalUnaryOp(op, bad)
+			if got != nil || err == nil || err.Error() != op+" expects numeric" || errors.Unwrap(err) != nil {
+				t.Errorf("%s(%v) = %v, %v; want %q", op, bad, got, err, op+" expects numeric")
+			}
+		}
+	}
+
+	sunday := time.Date(2024, 3, 17, 13, 45, 30, 0, time.UTC)
+	monday := time.Date(2025, 12, 1, 0, 1, 2, 0, time.UTC)
+	dtOps := []struct {
+		op           string
+		sunday, mond int64
+	}{
+		{"dt_year", 2024, 2025}, {"dt_month", 3, 12}, {"dt_day", 17, 1}, {"dt_hour", 13, 0},
+		{"dt_weekday", 7, 1}, {"dt_minute", 45, 1}, {"dt_second", 30, 2},
+	}
+	for _, tc := range dtOps {
+		for in, want := range map[time.Time]int64{sunday: tc.sunday, monday: tc.mond} {
+			if got, err := evalUnaryOp(tc.op, in); err != nil || got != want {
+				t.Errorf("%s(%v) = %v, %v; want %d", tc.op, in, got, err, want)
+			}
+		}
+		for _, bad := range []any{"x", nil, int64(1)} {
+			got, err := evalUnaryOp(tc.op, bad)
+			if got != nil || err == nil || err.Error() != tc.op+" expects datetime" || errors.Unwrap(err) != nil {
+				t.Errorf("%s(%v) = %v, %v; want %q", tc.op, bad, got, err, tc.op+" expects datetime")
+			}
+		}
+	}
+
+	// Operands: int64(11) = 0b1011, int64(-1) (all ones), 6.9 (truncated to 6 = 0b110).
+	bitOps := []struct {
+		op   string
+		want [3]int64
+	}{
+		{"bitwise_count_ones", [3]int64{3, 64, 2}},
+		{"bitwise_count_zeros", [3]int64{60, 0, 62}},
+		{"bitwise_leading_ones", [3]int64{0, 64, 0}},
+		{"bitwise_leading_zeros", [3]int64{60, 0, 61}},
+		{"bitwise_trailing_ones", [3]int64{2, 64, 0}},
+		{"bitwise_trailing_zeros", [3]int64{0, 0, 1}},
+	}
+	for _, tc := range bitOps {
+		for i, in := range []any{int64(11), int64(-1), 6.9} {
+			if got, err := evalUnaryOp(tc.op, in); err != nil || got != tc.want[i] {
+				t.Errorf("%s(%v) = %v, %v; want %d", tc.op, in, got, err, tc.want[i])
+			}
+		}
+		for _, bad := range []any{"x", nil, true} {
+			got, err := evalUnaryOp(tc.op, bad)
+			if got != nil || err == nil || err.Error() != tc.op+" expects int" || errors.Unwrap(err) != nil {
+				t.Errorf("%s(%v) = %v, %v; want %q", tc.op, bad, got, err, tc.op+" expects int")
+			}
+		}
+	}
+
+	// Pass-through unary ops return the operand unchanged, null included.
+	for _, op := range []string{"cum_sum", "cum_count", "rank", "dt", "str", "list", "struct", "agg_groups", "var"} {
+		for _, in := range []any{int64(7), nil} {
+			if got, err := evalUnaryOp(op, in); err != nil || got != in {
+				t.Errorf("%s(%v) = %v, %v; want the operand", op, in, got, err)
+			}
+		}
 	}
 }

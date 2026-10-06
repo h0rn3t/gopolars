@@ -89,7 +89,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 
 	case *array.Boolean:
 		vals := make([]bool, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if arr.IsValid(i) {
 				vals[i] = a.Value(i)
 			}
@@ -113,7 +113,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 	case *array.Timestamp:
 		vals := make([]time.Time, n)
 		unit := a.DataType().(*goarrow.TimestampType).Unit
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if arr.IsValid(i) {
 				vals[i] = timestampToTime(int64(a.Value(i)), unit)
 			}
@@ -122,7 +122,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 
 	case *array.Date32:
 		vals := make([]time.Time, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if arr.IsValid(i) {
 				vals[i] = a.Value(i).ToTime()
 			}
@@ -131,7 +131,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 
 	case *array.Date64:
 		vals := make([]time.Time, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if arr.IsValid(i) {
 				vals[i] = a.Value(i).ToTime()
 			}
@@ -141,7 +141,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 	case *array.Time32:
 		unit := a.DataType().(*goarrow.Time32Type).Unit
 		vals := make([]time.Time, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if arr.IsValid(i) {
 				vals[i] = a.Value(i).ToTime(unit)
 			}
@@ -151,7 +151,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 	case *array.Time64:
 		unit := a.DataType().(*goarrow.Time64Type).Unit
 		vals := make([]time.Time, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if arr.IsValid(i) {
 				vals[i] = a.Value(i).ToTime(unit)
 			}
@@ -160,7 +160,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 
 	case *array.Binary:
 		boxed := make([]any, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if arr.IsValid(i) {
 				boxed[i] = append([]byte{}, a.Value(i)...)
 			}
@@ -169,7 +169,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 
 	case *array.LargeBinary:
 		boxed := make([]any, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if arr.IsValid(i) {
 				boxed[i] = append([]byte{}, a.Value(i)...)
 			}
@@ -178,7 +178,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 
 	case *array.MonthDayNanoInterval:
 		boxed := make([]any, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if arr.IsValid(i) {
 				boxed[i] = intervalToDuration(a.Value(i))
 			}
@@ -188,7 +188,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 	case *array.Decimal128:
 		dt := a.DataType().(*goarrow.Decimal128Type)
 		boxed := make([]any, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if arr.IsValid(i) {
 				boxed[i] = dtypes.DecimalValue(a.Value(i).ToString(dt.Scale))
 			}
@@ -206,7 +206,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 		// the boxed column does not alias a C-owned Arrow buffer that is freed on
 		// the record's Release (see sliceStringBuffer).
 		boxed := make([]any, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if arr.IsNull(i) {
 				continue
 			}
@@ -302,16 +302,16 @@ func columnToArrowArray(s series.Series, alloc memory.Allocator) (goarrow.Array,
 
 	if dt := s.DataType(); dt == dtypes.List || dt == dtypes.Struct {
 		values := make([]any, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			values[i] = s.Value(i)
 		}
-		return nestedColumnToArrow(values, col.Nulls(), alloc)
+		return nestedColumnToArrow(values, alloc)
 	}
 
 	if s.DataType() == dtypes.Binary {
 		b := array.NewBinaryBuilder(alloc, goarrow.BinaryTypes.Binary)
 		b.Reserve(n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if v, ok := s.Value(i).([]byte); ok {
 				b.Append(v)
 			} else {
@@ -324,7 +324,7 @@ func columnToArrowArray(s series.Series, alloc memory.Allocator) (goarrow.Array,
 	// Boxed fallback: build a string array from Value(i).
 	b := array.NewStringBuilder(alloc)
 	b.Reserve(n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		v := s.Value(i)
 		if v == nil {
 			b.AppendNull()
@@ -440,7 +440,7 @@ func ToTable(df frame.DataFrame) Table {
 			}
 		} else {
 			// Boxed fallback via Value(i).
-			for i := 0; i < n; i++ {
+			for i := range n {
 				values[i] = s.Value(i)
 			}
 		}

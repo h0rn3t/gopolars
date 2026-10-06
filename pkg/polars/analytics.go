@@ -2,6 +2,7 @@ package polars
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -50,13 +51,11 @@ type PivotInput struct {
 	ValueName string
 }
 
-func WindowSum(df DataFrame, input WindowSumInput) (DataFrame, error) {
-	table, err := df.ToArrow(ToArrowInput{})
+func WindowSum(d DataFrame, input WindowSumInput) (DataFrame, error) {
+	table, err := d.ToArrow(ToArrowInput{})
 	if err != nil {
 		return nil, err
 	}
-	partKey := make([]string, 0, len(input.PartitionBy))
-	rows := len(table.Columns[input.Value])
 	orderValues, ok := table.Columns[input.OrderBy]
 	if !ok {
 		return nil, fmt.Errorf("order column not found")
@@ -65,8 +64,9 @@ func WindowSum(df DataFrame, input WindowSumInput) (DataFrame, error) {
 	if !ok {
 		return nil, fmt.Errorf("value column not found")
 	}
+	rows := len(valueValues)
 	indexes := make([]int, rows)
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		indexes[i] = i
 	}
 	sort.SliceStable(indexes, func(i, j int) bool {
@@ -88,6 +88,7 @@ func WindowSum(df DataFrame, input WindowSumInput) (DataFrame, error) {
 	})
 	out := make([]any, rows)
 	runningByPartition := map[string]float64{}
+	partKey := make([]string, 0, len(input.PartitionBy))
 	for _, idx := range indexes {
 		partKey = partKey[:0]
 		for _, p := range input.PartitionBy {
@@ -109,16 +110,16 @@ func WindowSum(df DataFrame, input WindowSumInput) (DataFrame, error) {
 	return NewDataFrameFromArrow(table)
 }
 
-func RollingMean(df DataFrame, input RollingMeanInput) (DataFrame, error) {
-	return df.RollingMean(input)
+func RollingMean(d DataFrame, input RollingMeanInput) (DataFrame, error) {
+	return d.RollingMean(input)
 }
 
-func GroupByDynamic(df DataFrame, input DynamicGroupInput) (DataFrame, error) {
-	return df.GroupByDynamic(input)
+func GroupByDynamic(d DataFrame, input DynamicGroupInput) (DataFrame, error) {
+	return d.GroupByDynamic(input)
 }
 
-func Melt(df DataFrame, input MeltInput) (DataFrame, error) {
-	table, err := df.ToArrow(ToArrowInput{})
+func Melt(d DataFrame, input MeltInput) (DataFrame, error) {
+	table, err := d.ToArrow(ToArrowInput{})
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +136,7 @@ func Melt(df DataFrame, input MeltInput) (DataFrame, error) {
 	}
 	outCols[input.VariableCol] = make([]any, 0, rowCount*len(input.ValueVars))
 	outCols[input.ValueCol] = make([]any, 0, rowCount*len(input.ValueVars))
-	for i := 0; i < rowCount; i++ {
+	for i := range rowCount {
 		for _, vv := range input.ValueVars {
 			for _, id := range input.IDVars {
 				outCols[id] = append(outCols[id], table.Columns[id][i])
@@ -147,8 +148,8 @@ func Melt(df DataFrame, input MeltInput) (DataFrame, error) {
 	return NewDataFrameFromArrow(iarrow.Table{Columns: outCols})
 }
 
-func Pivot(df DataFrame, input PivotInput) (DataFrame, error) {
-	table, err := df.ToArrow(ToArrowInput{})
+func Pivot(d DataFrame, input PivotInput) (DataFrame, error) {
+	table, err := d.ToArrow(ToArrowInput{})
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +188,7 @@ func Pivot(df DataFrame, input PivotInput) (DataFrame, error) {
 	for idx := range aggMap {
 		indexOrder = append(indexOrder, idx)
 	}
-	sort.Strings(indexOrder)
+	slices.Sort(indexOrder)
 	outCols := map[string][]any{input.Index: make([]any, 0, len(indexOrder))}
 	for _, c := range colOrder {
 		outCols[c] = make([]any, 0, len(indexOrder))

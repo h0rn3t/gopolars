@@ -13,7 +13,7 @@ func streamingSource(t *testing.T, n int) frame.DataFrame {
 	t.Helper()
 	ids := make([]any, n)
 	vals := make([]any, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ids[i] = int64(i)
 		vals[i] = float64(n - i) // descending, so sort order is observable
 	}

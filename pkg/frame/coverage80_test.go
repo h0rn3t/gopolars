@@ -933,8 +933,8 @@ func TestWithContextColumns(t *testing.T) {
 	}
 }
 
-// TestInferDataTypeAllBranches covers inferAnyDataType and inferDataType across
-// dtypes including the cannot-infer error.
+// TestInferDataTypeAllBranches covers inferDataType across dtypes including the
+// cannot-infer error.
 func TestInferDataTypeAllBranches(t *testing.T) {
 	cases := []struct {
 		vals []any
@@ -951,13 +951,6 @@ func TestInferDataTypeAllBranches(t *testing.T) {
 		{[]any{time.Second}, dtypes.Duration},
 	}
 	for _, tc := range cases {
-		got, err := inferAnyDataType(tc.vals)
-		if err != nil {
-			t.Fatalf("inferAnyDataType %v: %v", tc.vals, err)
-		}
-		if got != tc.want {
-			t.Fatalf("inferAnyDataType %v: got %s want %s", tc.vals, got, tc.want)
-		}
 		got2, err := inferDataType(tc.vals)
 		if err != nil {
 			t.Fatalf("inferDataType %v: %v", tc.vals, err)
@@ -965,9 +958,6 @@ func TestInferDataTypeAllBranches(t *testing.T) {
 		if got2 != tc.want {
 			t.Fatalf("inferDataType %v: got %s want %s", tc.vals, got2, tc.want)
 		}
-	}
-	if _, err := inferAnyDataType([]any{nil, nil}); err == nil {
-		t.Fatal("expected inferAnyDataType all-null error")
 	}
 	if _, err := inferDataType([]any{nil}); err == nil {
 		t.Fatal("expected inferDataType all-null error")

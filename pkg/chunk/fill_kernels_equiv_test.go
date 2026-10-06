@@ -18,7 +18,7 @@ func makeF64(n, nullEvery, nanEvery int) *Column {
 	if nullEvery > 0 {
 		nulls = make([]bool, n)
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		vals[i] = float64(i)*0.5 - 3
 		if nanEvery > 0 && i%nanEvery == 0 {
 			vals[i] = math.NaN()
@@ -69,7 +69,7 @@ func refFillNull(c *Column, fill float64) ([]float64, []bool) {
 	vals, _ := c.Float64s()
 	out := make([]float64, n)
 	nulls := make([]bool, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if c.IsNull(i) {
 			out[i] = fill
 		} else {
@@ -84,7 +84,7 @@ func refFillNaN(c *Column, fill float64) ([]float64, []bool) {
 	vals, _ := c.Float64s()
 	out := make([]float64, n)
 	nulls := make([]bool, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		nulls[i] = c.IsNull(i)
 		v := vals[i]
 		if !nulls[i] && math.IsNaN(v) {
@@ -100,7 +100,7 @@ func refDropNaN(c *Column) ([]float64, []bool) {
 	vals, _ := c.Float64s()
 	var outV []float64
 	var outN []bool
-	for i := 0; i < n; i++ {
+	for i := range n {
 		isNull := c.IsNull(i)
 		if !isNull && math.IsNaN(vals[i]) {
 			continue

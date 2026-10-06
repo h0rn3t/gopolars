@@ -15,6 +15,7 @@ package sql
 import (
 	"context"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/h0rn3t/gopolars/pkg/frame"
@@ -536,13 +537,7 @@ func queryErrors(t *testing.T, d polars.DataFrame, q string) bool {
 func complementAny(all, sub []any) []any {
 	out := []any{}
 	for _, v := range all {
-		in := false
-		for _, s := range sub {
-			if s == v {
-				in = true
-				break
-			}
-		}
+		in := slices.Contains(sub, v)
 		if !in {
 			out = append(out, v)
 		}

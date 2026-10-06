@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -59,25 +60,15 @@ func Read(input ReadInput) (frame.DataFrame, error) {
 		}
 	}
 	colValues := make([][]string, len(header))
-	for i := start; i < len(rows); i++ {
-		for j := range header {
-			if j < len(rows[i]) {
-				colValues[j] = append(colValues[j], rows[i][j])
-			} else {
-				colValues[j] = append(colValues[j], "")
-			}
+	for _, row := range rows[start:] {
+		for j, v := range row {
+			colValues[j] = append(colValues[j], v)
 		}
-	}
-	selected := map[string]struct{}{}
-	for _, c := range input.Columns {
-		selected[c] = struct{}{}
 	}
 	sr := make([]series.Series, 0, len(header))
 	for i, name := range header {
-		if len(selected) > 0 {
-			if _, ok := selected[name]; !ok {
-				continue
-			}
+		if len(input.Columns) > 0 && !slices.Contains(input.Columns, name) {
+			continue
 		}
 		values, dt := inferColumn(colValues[i], input.Schema, name)
 		s, err := series.New(name, dt, values)
@@ -116,10 +107,11 @@ func Write(df frame.DataFrame, input WriteInput) error {
 	// type-specialized appender, so the inner loop avoids per-cell Series lookups,
 	// interface boxing, reflection, and — unlike a formatter returning string —
 	// any per-cell allocation.
+	cols := make([]series.Series, len(names))
 	appenders := make([]func(dst []byte, row int) []byte, len(names))
 	for j, name := range names {
-		s, _ := df.Series(name)
-		appenders[j] = cellAppender(s, comma)
+		cols[j], _ = df.Series(name)
+		appenders[j] = cellAppender(cols[j], comma)
 	}
 
 	buf := make([]byte, 0, writeBlockSize+4096)
@@ -135,17 +127,11 @@ func Write(df frame.DataFrame, input WriteInput) error {
 
 	h := df.Height()
 	if workers := runtime.GOMAXPROCS(0); workers > 1 && h >= parallelWriteThreshold {
-		return writeRowsParallel(f, df, names, comma, buf, h, workers)
+		return writeRowsParallel(f, cols, comma, buf, h, workers)
 	}
 
-	for row := 0; row < h; row++ {
-		for j := range appenders {
-			if j > 0 {
-				buf = utf8.AppendRune(buf, comma)
-			}
-			buf = appenders[j](buf, row)
-		}
-		buf = append(buf, '\n')
+	for row := range h {
+		buf = appendRow(buf, appenders, comma, row)
 		if len(buf) >= writeBlockSize {
 			if _, err := f.Write(buf); err != nil {
 				return err
@@ -177,11 +163,7 @@ const csvChunkRows = 1 << 14 // 16384 rows
 // (whose scratch buffers must not be shared) and its own output buffer, reused
 // across waves. pending carries any bytes already staged by the caller (the
 // header) so it is emitted before the first chunk.
-func writeRowsParallel(f *os.File, df frame.DataFrame, names []string, comma rune, pending []byte, h, workers int) error {
-	cols := make([]series.Series, len(names))
-	for j, name := range names {
-		cols[j], _ = df.Series(name)
-	}
+func writeRowsParallel(f *os.File, cols []series.Series, comma rune, pending []byte, h, workers int) error {
 	perWorker := make([][]func(dst []byte, row int) []byte, workers)
 	bufs := make([][]byte, workers)
 	for w := range perWorker {
@@ -205,33 +187,25 @@ func writeRowsParallel(f *os.File, df frame.DataFrame, names []string, comma run
 	stride := workers * csvChunkRows
 	for start := 0; start < h; start += stride {
 		var wg sync.WaitGroup
-		for w := 0; w < workers; w++ {
+		for w := range workers {
 			lo := start + w*csvChunkRows
 			if lo >= h {
 				bufs[w] = bufs[w][:0]
 				continue
 			}
 			hi := min(lo+csvChunkRows, h)
-			wg.Add(1)
-			go func(w, lo, hi int) {
-				defer wg.Done()
+			wg.Go(func() {
 				apps := perWorker[w]
 				buf := bufs[w][:0]
 				for row := lo; row < hi; row++ {
-					for j := range apps {
-						if j > 0 {
-							buf = utf8.AppendRune(buf, comma)
-						}
-						buf = apps[j](buf, row)
-					}
-					buf = append(buf, '\n')
+					buf = appendRow(buf, apps, comma, row)
 				}
 				bufs[w] = buf
-			}(w, lo, hi)
+			})
 		}
 		wg.Wait()
 		// Write the wave's blocks in row order.
-		for w := 0; w < workers; w++ {
+		for w := range workers {
 			if len(bufs[w]) == 0 {
 				continue
 			}
@@ -241,6 +215,18 @@ func writeRowsParallel(f *os.File, df frame.DataFrame, names []string, comma run
 		}
 	}
 	return nil
+}
+
+// appendRow appends row as one delimited, newline-terminated record, one cell
+// per appender.
+func appendRow(buf []byte, apps []func(dst []byte, row int) []byte, comma rune, row int) []byte {
+	for j, app := range apps {
+		if j > 0 {
+			buf = utf8.AppendRune(buf, comma)
+		}
+		buf = app(buf, row)
+	}
+	return append(buf, '\n')
 }
 
 // appendCSVField appends field to dst with the same quoting encoding/csv's
@@ -278,7 +264,7 @@ func fieldNeedsQuotes(field []byte, comma rune) bool {
 		return true
 	}
 	if comma < utf8.RuneSelf {
-		for i := 0; i < len(field); i++ {
+		for i := range field {
 			c := field[i]
 			if c == '\n' || c == '\r' || c == '"' || c == byte(comma) {
 				return true
@@ -386,38 +372,44 @@ func inferColumn(values []string, schema dtypes.Schema, name string) ([]any, dty
 		if v == "" {
 			continue
 		}
-		if _, err := strconv.ParseInt(v, 10, 64); err != nil {
-			isInt = false
+		if isInt {
+			_, err := strconv.ParseInt(v, 10, 64)
+			isInt = err == nil
 		}
-		if _, err := strconv.ParseFloat(v, 64); err != nil {
-			isFloat = false
+		if isFloat {
+			_, err := strconv.ParseFloat(v, 64)
+			isFloat = err == nil
 		}
-		if _, err := strconv.ParseBool(v); err != nil {
-			isBool = false
+		if isBool {
+			_, err := strconv.ParseBool(v)
+			isBool = err == nil
 		}
-		if _, err := time.Parse(time.RFC3339, v); err != nil {
-			isTime = false
+		if isTime {
+			_, err := time.Parse(time.RFC3339, v)
+			isTime = err == nil
+		}
+		if !isInt && !isFloat && !isBool && !isTime {
+			break
 		}
 	}
+	dt := dtypes.String
 	switch {
 	case isInt:
-		return parseWithType(values, dtypes.Int64), dtypes.Int64
+		dt = dtypes.Int64
 	case isFloat:
-		return parseWithType(values, dtypes.Float64), dtypes.Float64
+		dt = dtypes.Float64
 	case isBool:
-		return parseWithType(values, dtypes.Boolean), dtypes.Boolean
+		dt = dtypes.Boolean
 	case isTime:
-		return parseWithType(values, dtypes.Datetime), dtypes.Datetime
-	default:
-		return parseWithType(values, dtypes.String), dtypes.String
+		dt = dtypes.Datetime
 	}
+	return parseWithType(values, dt), dt
 }
 
 func parseWithType(values []string, dt dtypes.DataType) []any {
 	out := make([]any, len(values))
 	for i, v := range values {
 		if v == "" {
-			out[i] = nil
 			continue
 		}
 		switch dt {

@@ -417,18 +417,18 @@ func TestExecuteSetOpUnionViaEngine(t *testing.T) {
 	execNodeErr(t, src, logical.Node{Type: logical.NodeSetOp, Strings: nil})
 }
 
-// TestToFloatDirect covers toFloat's int64 / float64 / unsupported branches.
+// TestToFloatDirect covers expr.ToFloat's int64 / float64 / unsupported branches.
 func TestToFloatDirect(t *testing.T) {
 	t.Parallel()
 
-	if f, ok := toFloat(int64(7)); !ok || f != 7.0 {
-		t.Fatalf("toFloat(int64) = %v,%v want 7,true", f, ok)
+	if f, ok := expr.ToFloat(int64(7)); !ok || f != 7.0 {
+		t.Fatalf("expr.ToFloat(int64) = %v,%v want 7,true", f, ok)
 	}
-	if f, ok := toFloat(2.5); !ok || f != 2.5 {
-		t.Fatalf("toFloat(float64) = %v,%v want 2.5,true", f, ok)
+	if f, ok := expr.ToFloat(2.5); !ok || f != 2.5 {
+		t.Fatalf("expr.ToFloat(float64) = %v,%v want 2.5,true", f, ok)
 	}
-	if _, ok := toFloat("nope"); ok {
-		t.Fatal("toFloat(string) should be false")
+	if _, ok := expr.ToFloat("nope"); ok {
+		t.Fatal("expr.ToFloat(string) should be false")
 	}
 }
 

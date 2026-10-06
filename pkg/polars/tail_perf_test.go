@@ -14,7 +14,7 @@ func buildTailFrame(t testing.TB, n int) DataFrame {
 	a := make([]any, n)
 	b := make([]any, n)
 	c := make([]any, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		a[i] = int64(i)
 		b[i] = float64(i) * 0.5
 		c[i] = "row"
@@ -37,13 +37,7 @@ func TestTailEqualsFrameTail(t *testing.T) {
 	df := buildTailFrame(t, n)
 	for _, k := range []int{0, 1, 100, n, n + 5} {
 		got := df.Tail(k)
-		wantH := k
-		if wantH > n {
-			wantH = n
-		}
-		if wantH < 0 {
-			wantH = 0
-		}
+		wantH := max(min(k, n), 0)
 		if got.Height() != wantH {
 			t.Fatalf("k=%d: height=%d, want %d", k, got.Height(), wantH)
 		}
@@ -52,7 +46,7 @@ func TestTailEqualsFrameTail(t *testing.T) {
 		if err != nil {
 			t.Fatalf("k=%d GetColumn(a): %v", k, err)
 		}
-		for i := 0; i < wantH; i++ {
+		for i := range wantH {
 			if v, ok := acol.Value(i).(int64); !ok || v != int64(start+i) {
 				t.Fatalf("k=%d row %d: a=%v, want %d", k, i, acol.Value(i), start+i)
 			}

@@ -87,7 +87,7 @@ func TestRepeatViaExtendConstant(t *testing.T) {
 	if out.Len() != 5 {
 		t.Fatalf("len: got %d, want 5", out.Len())
 	}
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if v, ok := out.Value(i).(int64); !ok || v != 7 {
 			t.Fatalf("idx %d: got %v, want 7", i, out.Value(i))
 		}

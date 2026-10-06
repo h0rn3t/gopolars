@@ -1,16 +1,19 @@
 package polars
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"math"
 	"math/rand"
+	"slices"
 	"sort"
 	"time"
 
 	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/expr"
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
 	iseries "github.com/h0rn3t/gopolars/pkg/series"
@@ -106,11 +109,7 @@ func (s seriesFacade) FillNull(value any) (Series, error) {
 			values[i] = s.value.Value(i)
 		}
 	}
-	out, err := iseries.New(s.value.Name(), s.value.DataType(), values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.value.Name(), DType: s.value.DataType(), Values: values})
 }
 
 func (s seriesFacade) FillNan(value float64) (Series, error) {
@@ -127,11 +126,7 @@ func (s seriesFacade) FillNan(value float64) (Series, error) {
 		}
 		values[i] = v
 	}
-	out, err := iseries.New(s.value.Name(), s.value.DataType(), values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.value.Name(), DType: s.value.DataType(), Values: values})
 }
 
 func (s seriesFacade) DropNans() Series {
@@ -196,118 +191,112 @@ func (s seriesFacade) RollingQuantile(window int, q float64) Series {
 }
 
 func (s seriesFacade) Abs() Series {
-	return s.unaryNumeric("abs")
+	return s.unaryNumeric(math.Abs)
 }
 
 func (s seriesFacade) Exp() Series {
-	return s.unaryNumeric("exp")
+	return s.unaryNumeric(math.Exp)
 }
 
 func (s seriesFacade) Log() Series {
-	return s.unaryNumeric("log")
+	return s.unaryNumeric(math.Log)
 }
 
 func (s seriesFacade) Sqrt() Series {
-	return s.unaryNumeric("sqrt")
+	return s.unaryNumeric(math.Sqrt)
 }
 
 func (s seriesFacade) Sin() Series {
-	return s.unaryNumeric("sin")
+	return s.unaryNumeric(math.Sin)
 }
 
 func (s seriesFacade) Cos() Series {
-	return s.unaryNumeric("cos")
+	return s.unaryNumeric(math.Cos)
 }
 
 func (s seriesFacade) Tan() Series {
-	return s.unaryNumeric("tan")
+	return s.unaryNumeric(math.Tan)
 }
 
 func (s seriesFacade) Sinh() Series {
-	return s.unaryNumeric("sinh")
+	return s.unaryNumeric(math.Sinh)
 }
 
 func (s seriesFacade) Cosh() Series {
-	return s.unaryNumeric("cosh")
+	return s.unaryNumeric(math.Cosh)
 }
 
 func (s seriesFacade) Tanh() Series {
-	return s.unaryNumeric("tanh")
+	return s.unaryNumeric(math.Tanh)
 }
 
 func (s seriesFacade) Arcsin() Series {
-	return s.unaryNumeric("arcsin")
+	return s.unaryNumeric(math.Asin)
 }
 
 func (s seriesFacade) Arccos() Series {
-	return s.unaryNumeric("arccos")
+	return s.unaryNumeric(math.Acos)
 }
 
 func (s seriesFacade) Arctan() Series {
-	return s.unaryNumeric("arctan")
+	return s.unaryNumeric(math.Atan)
 }
 
 func (s seriesFacade) Arcsinh() Series {
-	return s.unaryNumeric("arcsinh")
+	return s.unaryNumeric(math.Asinh)
 }
 
 func (s seriesFacade) Arccosh() Series {
-	return s.unaryNumeric("arccosh")
+	return s.unaryNumeric(math.Acosh)
 }
 
 func (s seriesFacade) Arctanh() Series {
-	return s.unaryNumeric("arctanh")
+	return s.unaryNumeric(math.Atanh)
 }
 
 func (s seriesFacade) Cbrt() Series {
-	return s.unaryNumeric("cbrt")
+	return s.unaryNumeric(math.Cbrt)
 }
 
 func (s seriesFacade) Ceil() Series {
-	return s.unaryNumeric("ceil")
+	return s.unaryNumeric(math.Ceil)
 }
 
 func (s seriesFacade) Floor() Series {
-	return s.unaryNumeric("floor")
+	return s.unaryNumeric(math.Floor)
 }
 
 func (s seriesFacade) Degrees() Series {
-	return s.unaryNumeric("degrees")
+	return s.unaryNumeric(func(f float64) float64 { return f * 180 / math.Pi })
 }
 
 func (s seriesFacade) Sign() Series {
-	return s.unaryNumeric("sign")
+	return s.unaryNumeric(func(f float64) float64 {
+		switch {
+		case f < 0:
+			return -1
+		case f > 0:
+			return 1
+		default:
+			return 0
+		}
+	})
 }
 
 func (s seriesFacade) Log10() Series {
-	return s.unaryNumeric("log10")
+	return s.unaryNumeric(math.Log10)
 }
 
 func (s seriesFacade) Log1p() Series {
-	return s.unaryNumeric("log1p")
+	return s.unaryNumeric(math.Log1p)
 }
 
 func (s seriesFacade) Round() Series {
-	return s.unaryNumeric("round")
+	return s.unaryNumeric(math.Round)
 }
 
 func (s seriesFacade) Pow(power float64) Series {
-	values := make([]any, s.Len())
-	for i := 0; i < s.Len(); i++ {
-		v := s.Value(i)
-		if v == nil {
-			values[i] = nil
-			continue
-		}
-		f, ok := toFloat64(v)
-		if !ok {
-			values[i] = nil
-			continue
-		}
-		values[i] = math.Pow(f, power)
-	}
-	out, _ := iseries.New(s.value.Name(), dtypes.Float64, values)
-	return seriesFacade{value: out}
+	return s.unaryNumeric(func(f float64) float64 { return math.Pow(f, power) })
 }
 
 func (s seriesFacade) Shift(periods int) Series {
@@ -372,12 +361,7 @@ func (s seriesFacade) Median() float64 {
 	if len(vals) == 0 {
 		return 0
 	}
-	sort.Float64s(vals)
-	mid := len(vals) / 2
-	if len(vals)%2 == 0 {
-		return (vals[mid-1] + vals[mid]) / 2
-	}
-	return vals[mid]
+	return medianFloatSlice(vals)
 }
 
 func (s seriesFacade) Var() float64 {
@@ -385,13 +369,7 @@ func (s seriesFacade) Var() float64 {
 	if len(vals) < 2 {
 		return 0
 	}
-	mean := meanFloatSlice(vals)
-	sumSq := 0.0
-	for _, v := range vals {
-		d := v - mean
-		sumSq += d * d
-	}
-	return sumSq / float64(len(vals)-1)
+	return sumSquaredDeviations(vals) / float64(len(vals)-1)
 }
 
 func (s seriesFacade) NUnique() int {
@@ -438,21 +416,7 @@ func (s seriesFacade) Kurtosis() float64 {
 	if len(vals) < 2 {
 		return 0
 	}
-	mean := meanFloatSlice(vals)
-	m2 := 0.0
-	m4 := 0.0
-	for _, v := range vals {
-		d := v - mean
-		d2 := d * d
-		m2 += d2
-		m4 += d2 * d2
-	}
-	m2 /= float64(len(vals))
-	if m2 == 0 {
-		return 0
-	}
-	m4 /= float64(len(vals))
-	return m4/(m2*m2) - 3
+	return excessKurtosis(vals)
 }
 
 func (s seriesFacade) Skew() float64 {
@@ -482,24 +446,7 @@ func (s seriesFacade) Quantile(q float64) float64 {
 	if len(vals) == 0 {
 		return 0
 	}
-	if q < 0 {
-		q = 0
-	}
-	if q > 1 {
-		q = 1
-	}
-	sort.Float64s(vals)
-	if len(vals) == 1 {
-		return vals[0]
-	}
-	idx := float64(len(vals)-1) * q
-	lower := int(math.Floor(idx))
-	upper := int(math.Ceil(idx))
-	if lower == upper {
-		return vals[lower]
-	}
-	weight := idx - float64(lower)
-	return vals[lower]*(1-weight) + vals[upper]*weight
+	return quantileFloatSlice(vals, q).(float64)
 }
 
 func (s seriesFacade) Product() float64 {
@@ -517,10 +464,8 @@ func (s seriesFacade) Product() float64 {
 // NanMax propagates NaN: any NaN among the non-null values yields NaN.
 func (s seriesFacade) NanMax() float64 {
 	vals := s.numericValues(false)
-	for _, v := range vals {
-		if math.IsNaN(v) {
-			return math.NaN()
-		}
+	if slices.ContainsFunc(vals, math.IsNaN) {
+		return math.NaN()
 	}
 	return simd.MaxFloat64(vals)
 }
@@ -528,10 +473,8 @@ func (s seriesFacade) NanMax() float64 {
 // NanMin propagates NaN: any NaN among the non-null values yields NaN.
 func (s seriesFacade) NanMin() float64 {
 	vals := s.numericValues(false)
-	for _, v := range vals {
-		if math.IsNaN(v) {
-			return math.NaN()
-		}
+	if slices.ContainsFunc(vals, math.IsNaN) {
+		return math.NaN()
 	}
 	return simd.MinFloat64(vals)
 }
@@ -599,77 +542,49 @@ func (s seriesFacade) Sort(descending bool) Series {
 	for i := range indexes {
 		indexes[i] = i
 	}
-	sort.SliceStable(indexes, func(i int, j int) bool {
-		left := s.Value(indexes[i])
-		right := s.Value(indexes[j])
+	slices.SortStableFunc(indexes, func(a, b int) int {
+		left := s.Value(a)
+		right := s.Value(b)
 		// Nulls sort first regardless of direction (Polars default nulls_last=False).
 		lnull := left == nil
 		rnull := right == nil
 		if lnull || rnull {
-			if lnull && rnull {
-				return false
+			switch {
+			case lnull && rnull:
+				return 0
+			case lnull:
+				return -1
 			}
-			return lnull
+			return 1
 		}
-		cmp := compareForSeriesOrder(left, right)
+		c := compareForSeriesOrder(left, right)
 		if descending {
-			return cmp > 0
+			return -c
 		}
-		return cmp < 0
+		return c
 	})
 	return s.Gather(indexes)
 }
 
 func (s seriesFacade) Unique() Series {
-	values := make([]any, 0, s.Len())
-	seen := map[string]struct{}{}
-	for i := 0; i < s.Len(); i++ {
-		v := s.Value(i)
-		key := valueKey(v)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		values = append(values, v)
-	}
-	out, _ := iseries.New(s.value.Name(), s.value.DataType(), values)
-	return seriesFacade{value: out}
+	return s.Gather(s.firstDistinctIndexes())
 }
 
 func (s seriesFacade) ArgSort() Series {
-	indexes := make([]int, s.Len())
-	for i := range indexes {
-		indexes[i] = i
-	}
-	sort.SliceStable(indexes, func(i int, j int) bool {
-		return compareForSeriesOrder(s.Value(indexes[i]), s.Value(indexes[j])) < 0
-	})
-	return newIndexSeries(s.value.Name()+"_arg_sort", indexes)
+	return newIndexSeries(s.value.Name()+"_arg_sort", sortPermBy(s, false))
 }
 
 func (s seriesFacade) ArgMax() int {
-	if s.Len() == 0 {
-		return -1
-	}
-	bestIdx := -1
-	var best any
-	for i := 0; i < s.Len(); i++ {
-		v := s.Value(i)
-		if v == nil {
-			continue
-		}
-		if bestIdx == -1 || compareForSeriesOrder(v, best) > 0 {
-			bestIdx = i
-			best = v
-		}
-	}
-	return bestIdx
+	return s.argExtreme(true)
 }
 
 func (s seriesFacade) ArgMin() int {
-	if s.Len() == 0 {
-		return -1
-	}
+	return s.argExtreme(false)
+}
+
+// argExtreme returns the index of the first maximal (wantMax) or minimal
+// non-null value under compareForSeriesOrder, or -1 when there is none.
+func (s seriesFacade) argExtreme(wantMax bool) int {
 	bestIdx := -1
 	var best any
 	for i := 0; i < s.Len(); i++ {
@@ -677,15 +592,24 @@ func (s seriesFacade) ArgMin() int {
 		if v == nil {
 			continue
 		}
-		if bestIdx == -1 || compareForSeriesOrder(v, best) < 0 {
-			bestIdx = i
-			best = v
+		if bestIdx == -1 {
+			bestIdx, best = i, v
+			continue
+		}
+		if c := compareForSeriesOrder(v, best); wantMax && c > 0 || !wantMax && c < 0 {
+			bestIdx, best = i, v
 		}
 	}
 	return bestIdx
 }
 
 func (s seriesFacade) ArgUnique() Series {
+	return newIndexSeries(s.value.Name()+"_arg_unique", s.firstDistinctIndexes())
+}
+
+// firstDistinctIndexes returns the row of each distinct value's first
+// occurrence, in row order.
+func (s seriesFacade) firstDistinctIndexes() []int {
 	seen := map[string]struct{}{}
 	indexes := make([]int, 0, s.Len())
 	for i := 0; i < s.Len(); i++ {
@@ -696,7 +620,7 @@ func (s seriesFacade) ArgUnique() Series {
 		seen[key] = struct{}{}
 		indexes = append(indexes, i)
 	}
-	return newIndexSeries(s.value.Name()+"_arg_unique", indexes)
+	return indexes
 }
 
 func (s seriesFacade) ArgTrue() Series {
@@ -819,9 +743,6 @@ func (s seriesFacade) Not_() Series {
 	// Boolean it is the logical negation. Nulls are preserved.
 	if s.DataType() == dtypes.Int64 {
 		for i := 0; i < s.Len(); i++ {
-			if s.value.IsNull(i) {
-				continue
-			}
 			if v, ok := s.Value(i).(int64); ok {
 				values[i] = ^v
 			}
@@ -840,28 +761,28 @@ func (s seriesFacade) Not_() Series {
 
 func (s seriesFacade) IsNan() Series {
 	return s.booleanMap(func(v any) bool {
-		f, ok := toFloat64(v)
+		f, ok := expr.ToFloat(v)
 		return ok && math.IsNaN(f)
 	})
 }
 
 func (s seriesFacade) IsNotNan() Series {
 	return s.booleanMap(func(v any) bool {
-		f, ok := toFloat64(v)
+		f, ok := expr.ToFloat(v)
 		return !ok || !math.IsNaN(f)
 	})
 }
 
 func (s seriesFacade) IsFinite() Series {
 	return s.booleanMap(func(v any) bool {
-		f, ok := toFloat64(v)
+		f, ok := expr.ToFloat(v)
 		return ok && !math.IsNaN(f) && !math.IsInf(f, 0)
 	})
 }
 
 func (s seriesFacade) IsInfinite() Series {
 	return s.booleanMap(func(v any) bool {
-		f, ok := toFloat64(v)
+		f, ok := expr.ToFloat(v)
 		return ok && math.IsInf(f, 0)
 	})
 }
@@ -907,13 +828,10 @@ func (s seriesFacade) IsLastDistinct() Series {
 }
 
 func (s seriesFacade) IsBetween(lower float64, upper float64) Series {
-	values := make([]any, s.Len())
-	for i := 0; i < s.Len(); i++ {
-		f, ok := toFloat64(s.Value(i))
-		values[i] = ok && f >= lower && f <= upper
-	}
-	out, _ := iseries.New(s.value.Name(), dtypes.Boolean, values)
-	return seriesFacade{value: out}
+	return s.booleanMap(func(v any) bool {
+		f, ok := expr.ToFloat(v)
+		return ok && f >= lower && f <= upper
+	})
 }
 
 func (s seriesFacade) IsClose(other Series) (Series, error) {
@@ -922,15 +840,11 @@ func (s seriesFacade) IsClose(other Series) (Series, error) {
 	}
 	values := make([]any, s.Len())
 	for i := 0; i < s.Len(); i++ {
-		left, lok := toFloat64(s.Value(i))
-		right, rok := toFloat64(other.Value(i))
+		left, lok := expr.ToFloat(s.Value(i))
+		right, rok := expr.ToFloat(other.Value(i))
 		values[i] = lok && rok && math.Abs(left-right) <= 1e-9
 	}
-	out, err := iseries.New(s.value.Name(), dtypes.Boolean, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.value.Name(), DType: dtypes.Boolean, Values: values})
 }
 
 func (s seriesFacade) IsIn(values []any) Series {
@@ -989,15 +903,10 @@ func (s seriesFacade) Diff(n int) Series {
 	if n <= 0 {
 		n = 1
 	}
-	for i := 0; i < s.Len(); i++ {
-		if i < n {
-			values[i] = nil
-			continue
-		}
-		current, cok := toFloat64(s.Value(i))
-		prev, pok := toFloat64(s.Value(i - n))
+	for i := n; i < s.Len(); i++ {
+		current, cok := expr.ToFloat(s.Value(i))
+		prev, pok := expr.ToFloat(s.Value(i - n))
 		if !cok || !pok {
-			values[i] = nil
 			continue
 		}
 		values[i] = current - prev
@@ -1011,15 +920,10 @@ func (s seriesFacade) PctChange(n int) Series {
 	if n <= 0 {
 		n = 1
 	}
-	for i := 0; i < s.Len(); i++ {
-		if i < n {
-			values[i] = nil
-			continue
-		}
-		current, cok := toFloat64(s.Value(i))
-		prev, pok := toFloat64(s.Value(i - n))
+	for i := n; i < s.Len(); i++ {
+		current, cok := expr.ToFloat(s.Value(i))
+		prev, pok := expr.ToFloat(s.Value(i - n))
 		if !cok || !pok || prev == 0 {
-			values[i] = nil
 			continue
 		}
 		values[i] = (current - prev) / prev
@@ -1034,8 +938,8 @@ func (s seriesFacade) Dot(other Series) (float64, error) {
 	}
 	acc := 0.0
 	for i := 0; i < s.Len(); i++ {
-		left, lok := toFloat64(s.Value(i))
-		right, rok := toFloat64(other.Value(i))
+		left, lok := expr.ToFloat(s.Value(i))
+		right, rok := expr.ToFloat(other.Value(i))
 		if !lok || !rok {
 			return 0, fmt.Errorf("dot requires numeric series")
 		}
@@ -1062,7 +966,6 @@ func (s seriesFacade) ValueCounts() (DataFrame, error) {
 	values := make([]any, 0, s.Len())
 	counts := make([]any, 0, s.Len())
 	seen := map[string]struct{}{}
-	valueMap := map[string]any{}
 	freq := s.valueCounts()
 	for i := 0; i < s.Len(); i++ {
 		v := s.Value(i)
@@ -1071,7 +974,6 @@ func (s seriesFacade) ValueCounts() (DataFrame, error) {
 			continue
 		}
 		seen[key] = struct{}{}
-		valueMap[key] = v
 		values = append(values, v)
 		counts = append(counts, int64(freq[key]))
 	}
@@ -1122,34 +1024,32 @@ func (s seriesFacade) BottomKBy(by Series, k int) (Series, error) {
 }
 
 func (s seriesFacade) PeakMax() Series {
-	values := make([]any, s.Len())
-	for i := 0; i < s.Len(); i++ {
-		if i == 0 || i == s.Len()-1 {
-			values[i] = false
-			continue
-		}
-		curr, cok := toFloat64(s.Value(i))
-		prev, pok := toFloat64(s.Value(i - 1))
-		next, nok := toFloat64(s.Value(i + 1))
-		values[i] = cok && pok && nok && curr > prev && curr > next
-	}
-	out, _ := iseries.New(s.value.Name()+"_peak_max", dtypes.Boolean, values)
-	return seriesFacade{value: out}
+	return s.peaks("_peak_max", func(curr, prev, next float64) bool {
+		return curr > prev && curr > next
+	})
 }
 
 func (s seriesFacade) PeakMin() Series {
+	return s.peaks("_peak_min", func(curr, prev, next float64) bool {
+		return curr < prev && curr < next
+	})
+}
+
+// peaks flags the interior rows whose numeric value and both numeric
+// neighbors satisfy isPeak; the first and last rows are never peaks.
+func (s seriesFacade) peaks(suffix string, isPeak func(curr, prev, next float64) bool) Series {
 	values := make([]any, s.Len())
 	for i := 0; i < s.Len(); i++ {
 		if i == 0 || i == s.Len()-1 {
 			values[i] = false
 			continue
 		}
-		curr, cok := toFloat64(s.Value(i))
-		prev, pok := toFloat64(s.Value(i - 1))
-		next, nok := toFloat64(s.Value(i + 1))
-		values[i] = cok && pok && nok && curr < prev && curr < next
+		curr, cok := expr.ToFloat(s.Value(i))
+		prev, pok := expr.ToFloat(s.Value(i - 1))
+		next, nok := expr.ToFloat(s.Value(i + 1))
+		values[i] = cok && pok && nok && isPeak(curr, prev, next)
 	}
-	out, _ := iseries.New(s.value.Name()+"_peak_min", dtypes.Boolean, values)
+	out, _ := iseries.New(s.value.Name()+suffix, dtypes.Boolean, values)
 	return seriesFacade{value: out}
 }
 
@@ -1163,7 +1063,7 @@ func (s seriesFacade) InterpolateBy(by Series) (Series, error) {
 func (s seriesFacade) ForwardFill() Series {
 	values := s.ToList()
 	var last any
-	for i := 0; i < len(values); i++ {
+	for i := range values {
 		if values[i] != nil {
 			last = values[i]
 			continue
@@ -1196,7 +1096,7 @@ func (s seriesFacade) Cut(breaks []float64) (Series, error) {
 	sort.Float64s(sortedBreaks)
 	values := make([]any, s.Len())
 	for i := 0; i < s.Len(); i++ {
-		f, ok := toFloat64(s.Value(i))
+		f, ok := expr.ToFloat(s.Value(i))
 		if !ok {
 			values[i] = nil
 			continue
@@ -1210,11 +1110,7 @@ func (s seriesFacade) Cut(breaks []float64) (Series, error) {
 		}
 		values[i] = label
 	}
-	out, err := iseries.New(s.value.Name()+"_cut", dtypes.String, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.value.Name() + "_cut", DType: dtypes.String, Values: values})
 }
 
 func (s seriesFacade) QCut(q int) (Series, error) {
@@ -1232,38 +1128,29 @@ func (s seriesFacade) QCut(q int) (Series, error) {
 		seen[key] = struct{}{}
 		breaks = append(breaks, b)
 	}
-	if len(breaks) == 0 {
-		breaks = append(breaks, s.Max())
-	}
 	return s.Cut(breaks)
 }
 
 func (s seriesFacade) Rle() (DataFrame, error) {
-	if s.Len() == 0 {
-		return NewDataFrame(NewDataFrameInput{
-			Columns: []frame.SeriesInput{
-				{Name: "value", Values: []any{}},
-				{Name: "count", Values: []any{}},
-			},
-		})
-	}
 	values := make([]any, 0, s.Len())
 	counts := make([]any, 0, s.Len())
-	current := s.Value(0)
-	run := int64(1)
-	for i := 1; i < s.Len(); i++ {
-		v := s.Value(i)
-		if valueEquals(v, current) {
-			run++
-			continue
+	if s.Len() > 0 {
+		current := s.Value(0)
+		run := int64(1)
+		for i := 1; i < s.Len(); i++ {
+			v := s.Value(i)
+			if valueEquals(v, current) {
+				run++
+				continue
+			}
+			values = append(values, current)
+			counts = append(counts, run)
+			current = v
+			run = 1
 		}
 		values = append(values, current)
 		counts = append(counts, run)
-		current = v
-		run = 1
 	}
-	values = append(values, current)
-	counts = append(counts, run)
 	return NewDataFrame(NewDataFrameInput{
 		Columns: []frame.SeriesInput{
 			{Name: "value", Values: values},
@@ -1274,35 +1161,26 @@ func (s seriesFacade) Rle() (DataFrame, error) {
 
 func (s seriesFacade) RleId() Series {
 	values := make([]any, s.Len())
-	if s.Len() == 0 {
-		out, _ := iseries.New(s.value.Name()+"_rle_id", dtypes.Int64, values)
-		return seriesFacade{value: out}
-	}
-	runID := int64(0)
-	values[0] = runID
-	prev := s.Value(0)
-	for i := 1; i < s.Len(); i++ {
-		current := s.Value(i)
-		if !valueEquals(current, prev) {
-			runID++
+	if s.Len() > 0 {
+		runID := int64(0)
+		values[0] = runID
+		prev := s.Value(0)
+		for i := 1; i < s.Len(); i++ {
+			current := s.Value(i)
+			if !valueEquals(current, prev) {
+				runID++
+			}
+			values[i] = runID
+			prev = current
 		}
-		values[i] = runID
-		prev = current
 	}
 	out, _ := iseries.New(s.value.Name()+"_rle_id", dtypes.Int64, values)
 	return seriesFacade{value: out}
 }
 
 func (s seriesFacade) Rank() Series {
-	indexes := make([]int, s.Len())
-	for i := range indexes {
-		indexes[i] = i
-	}
-	sort.SliceStable(indexes, func(i int, j int) bool {
-		return compareForSeriesOrder(s.Value(indexes[i]), s.Value(indexes[j])) < 0
-	})
 	values := make([]any, s.Len())
-	for rank, idx := range indexes {
+	for rank, idx := range sortPermBy(s, false) {
 		values[idx] = int64(rank + 1)
 	}
 	out, _ := iseries.New(s.value.Name()+"_rank", dtypes.Int64, values)
@@ -1358,18 +1236,14 @@ func (s seriesFacade) IndexOf(value any) int {
 func (s seriesFacade) MapElements(fn func(any) any) (Series, error) {
 	values := make([]any, s.Len())
 	for i := 0; i < s.Len(); i++ {
-		if s.Value(i) == nil {
-			values[i] = nil
+		v := s.Value(i)
+		if v == nil {
 			continue
 		}
-		values[i] = fn(s.Value(i))
+		values[i] = fn(v)
 	}
 	dt := inferDataTypeFromValues(values, s.value.DataType())
-	out, err := iseries.New(s.value.Name(), dt, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.value.Name(), DType: dt, Values: values})
 }
 
 func (s seriesFacade) Replace(old any, new any) Series {
@@ -1431,7 +1305,6 @@ func (s seriesFacade) RepeatBy(n int) Series {
 }
 
 func (s seriesFacade) SetSorted(descending bool) Series {
-	_ = descending
 	return s.Clone()
 }
 
@@ -1446,23 +1319,19 @@ func (s seriesFacade) ToFrame() (DataFrame, error) {
 }
 
 func (s seriesFacade) ToDummies() (DataFrame, error) {
-	df, err := s.ToFrame()
+	out, err := s.ToFrame()
 	if err != nil {
 		return nil, err
 	}
-	return df.ToDummies(s.Name())
+	return out.ToDummies(s.Name())
 }
 
 func (s seriesFacade) ToArrow() (iarrow.Table, error) {
-	frameOut, err := s.ToFrame()
+	f, err := frame.New(frame.NewInput{Series: []iseries.Series{s.value}})
 	if err != nil {
 		return iarrow.Table{}, err
 	}
-	wrapped, ok := frameOut.(*df)
-	if !ok {
-		return iarrow.Table{}, fmt.Errorf("unsupported dataframe implementation")
-	}
-	return iarrow.ToTable(wrapped.value), nil
+	return iarrow.ToTable(f), nil
 }
 
 func (s seriesFacade) ToInitRepr() string {
@@ -1472,7 +1341,7 @@ func (s seriesFacade) ToInitRepr() string {
 func (s seriesFacade) ToJax() []float64 {
 	out := make([]float64, s.Len())
 	for i := 0; i < s.Len(); i++ {
-		if f, ok := toFloat64(s.Value(i)); ok {
+		if f, ok := expr.ToFloat(s.Value(i)); ok {
 			out[i] = f
 		}
 	}
@@ -1521,11 +1390,7 @@ func (s seriesFacade) Deserialize(payload []byte) (Series, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := iseries.New(name, dt, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: name, DType: dt, Values: values})
 }
 
 func (s seriesFacade) Hash(seed uint64) Series {
@@ -1567,21 +1432,17 @@ func (s seriesFacade) Flatten() Series {
 }
 
 func (s seriesFacade) Extend(other Series) (Series, error) {
-	values := append(append([]any{}, s.ToList()...), other.ToList()...)
+	values := append(s.ToList(), other.ToList()...)
 	dt := inferDataTypeFromValues(values, s.DataType())
-	out, err := iseries.New(s.value.Name(), dt, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.value.Name(), DType: dt, Values: values})
 }
 
 func (s seriesFacade) ExtendConstant(value any, n int) Series {
 	if n <= 0 {
 		return s.Clone()
 	}
-	values := append([]any{}, s.ToList()...)
-	for i := 0; i < n; i++ {
+	values := s.ToList()
+	for range n {
 		values = append(values, value)
 	}
 	dt := inferDataTypeFromValues(values, s.DataType())
@@ -1598,21 +1459,17 @@ func (s seriesFacade) NewFromIndex(index int, n int) (Series, error) {
 		return s.Clear(), nil
 	}
 	values := make([]any, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		values[i] = value
 	}
-	out, err := iseries.New(s.value.Name(), s.DataType(), values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.value.Name(), DType: s.DataType(), Values: values})
 }
 
 func (s seriesFacade) Scatter(indices []int, values []any) (Series, error) {
 	if len(indices) != len(values) {
 		return nil, fmt.Errorf("scatter indices and values length mismatch")
 	}
-	outValues := append([]any{}, s.ToList()...)
+	outValues := s.ToList()
 	for i, idx := range indices {
 		if idx < 0 || idx >= len(outValues) {
 			return nil, fmt.Errorf("scatter index out of bounds")
@@ -1620,18 +1477,14 @@ func (s seriesFacade) Scatter(indices []int, values []any) (Series, error) {
 		outValues[idx] = values[i]
 	}
 	dt := inferDataTypeFromValues(outValues, s.DataType())
-	out, err := iseries.New(s.value.Name(), dt, outValues)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.value.Name(), DType: dt, Values: outValues})
 }
 
 func (s seriesFacade) Set(mask Series, value any) (Series, error) {
 	if s.Len() != mask.Len() {
 		return nil, fmt.Errorf("series length mismatch")
 	}
-	values := append([]any{}, s.ToList()...)
+	values := s.ToList()
 	for i := 0; i < s.Len(); i++ {
 		flag, ok := mask.Value(i).(bool)
 		if ok && flag {
@@ -1639,11 +1492,7 @@ func (s seriesFacade) Set(mask Series, value any) (Series, error) {
 		}
 	}
 	dt := inferDataTypeFromValues(values, s.DataType())
-	out, err := iseries.New(s.value.Name(), dt, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.value.Name(), DType: dt, Values: values})
 }
 
 func (s seriesFacade) ZipWith(mask Series, other Series) (Series, error) {
@@ -1660,11 +1509,7 @@ func (s seriesFacade) ZipWith(mask Series, other Series) (Series, error) {
 		values[i] = other.Value(i)
 	}
 	dt := inferDataTypeFromValues(values, s.DataType())
-	out, err := iseries.New(s.value.Name(), dt, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.value.Name(), DType: dt, Values: values})
 }
 
 func (s seriesFacade) Describe() map[string]any {
@@ -1673,22 +1518,10 @@ func (s seriesFacade) Describe() map[string]any {
 		"null_count": s.NullCount(),
 		"dtype":      string(s.DataType()),
 	}
-	nums := make([]float64, 0, s.Len())
-	for i := 0; i < s.Len(); i++ {
-		v := s.Value(i)
-		switch t := v.(type) {
-		case int64:
-			nums = append(nums, float64(t))
-		case float64:
-			if !math.IsNaN(t) {
-				nums = append(nums, t)
-			}
-		}
-	}
+	nums := s.numericRange(0, s.Len())
 	if len(nums) > 0 {
-		minV, maxV, sum := nums[0], nums[0], float64(0)
+		minV, maxV := nums[0], nums[0]
 		for _, n := range nums {
-			sum += n
 			if n < minV {
 				minV = n
 			}
@@ -1698,7 +1531,7 @@ func (s seriesFacade) Describe() map[string]any {
 		}
 		out["min"] = minV
 		out["max"] = maxV
-		out["mean"] = sum / float64(len(nums))
+		out["mean"] = meanFloatSlice(nums)
 	}
 	return out
 }
@@ -1707,17 +1540,7 @@ func (s seriesFacade) Hist(bins int) (DataFrame, error) {
 	if bins <= 0 {
 		bins = 10
 	}
-	nums := make([]float64, 0, s.Len())
-	for i := 0; i < s.Len(); i++ {
-		switch t := s.Value(i).(type) {
-		case int64:
-			nums = append(nums, float64(t))
-		case float64:
-			if !math.IsNaN(t) {
-				nums = append(nums, t)
-			}
-		}
-	}
+	nums := s.numericRange(0, s.Len())
 	if len(nums) == 0 {
 		return NewDataFrame(NewDataFrameInput{Columns: []frame.SeriesInput{
 			{Name: "bin", Values: []any{}},
@@ -1765,7 +1588,7 @@ func (s seriesFacade) Hist(bins int) (DataFrame, error) {
 
 func (s seriesFacade) Interpolate() Series {
 	values := s.ToList()
-	for i := 0; i < len(values); i++ {
+	for i := range values {
 		if values[i] != nil {
 			continue
 		}
@@ -1785,8 +1608,8 @@ func (s seriesFacade) Interpolate() Series {
 		}
 		switch {
 		case left >= 0 && right >= 0:
-			l, lok := toFloat64(values[left])
-			r, rok := toFloat64(values[right])
+			l, lok := expr.ToFloat(values[left])
+			r, rok := expr.ToFloat(values[right])
 			if lok && rok {
 				ratio := float64(i-left) / float64(right-left)
 				values[i] = l + (r-l)*ratio
@@ -1813,23 +1636,11 @@ func (s seriesFacade) ToPandas() []any {
 }
 
 func (s seriesFacade) Cast(dt dtypes.DataType) (Series, error) {
-	values := make([]any, s.value.Len())
-	for i := 0; i < s.value.Len(); i++ {
-		if s.value.IsNull(i) {
-			values[i] = nil
-			continue
-		}
-		v, err := castAny(s.value.Value(i), dt)
-		if err != nil {
-			return nil, err
-		}
-		values[i] = v
-	}
-	out, err := iseries.New(s.value.Name(), dt, values)
+	values, err := coerceValuesForDataType(s.ToList(), dt)
 	if err != nil {
 		return nil, err
 	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.value.Name(), DType: dt, Values: values})
 }
 
 func (s seriesFacade) Add(other Series) (Series, error) { return s.binaryNumeric(other, "add") }
@@ -1856,41 +1667,31 @@ func (s seriesFacade) binaryNumeric(other Series, op string) (Series, error) {
 		lv := s.Value(i)
 		rv := other.Value(i)
 		if lv == nil || rv == nil {
-			values[i] = nil
 			continue
 		}
-		l, lok := toFloat64(lv)
-		r, rok := toFloat64(rv)
+		l, lok := expr.ToFloat(lv)
+		r, rok := expr.ToFloat(rv)
 		if !lok || !rok {
 			return nil, fmt.Errorf("numeric operations require numeric values")
 		}
+		var f float64
 		switch op {
 		case "add":
-			values[i] = l + r
+			f = l + r
 		case "sub":
-			values[i] = l - r
+			f = l - r
 		case "mul":
-			values[i] = l * r
+			f = l * r
 		case "div":
-			values[i] = l / r
+			f = l / r
 		}
-	}
-	if outType == dtypes.Int64 {
-		intVals := make([]any, len(values))
-		for i, v := range values {
-			if v == nil {
-				intVals[i] = nil
-				continue
-			}
-			intVals[i] = int64(v.(float64))
+		if outType == dtypes.Int64 {
+			values[i] = int64(f)
+			continue
 		}
-		values = intVals
+		values[i] = f
 	}
-	next, err := iseries.New(s.Name(), outType, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: next}, nil
+	return NewSeries(NewSeriesInput{Name: s.Name(), DType: outType, Values: values})
 }
 
 func (s seriesFacade) binaryCompare(other Series, op string) (Series, error) {
@@ -1902,16 +1703,11 @@ func (s seriesFacade) binaryCompare(other Series, op string) (Series, error) {
 		lv := s.Value(i)
 		rv := other.Value(i)
 		if lv == nil || rv == nil {
-			values[i] = nil
 			continue
 		}
 		values[i] = compareAny(lv, rv, op)
 	}
-	next, err := iseries.New(s.Name(), dtypes.Boolean, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: next}, nil
+	return NewSeries(NewSeriesInput{Name: s.Name(), DType: dtypes.Boolean, Values: values})
 }
 
 // rollingFloat64Col extracts a []float64 view and validity mask from a column
@@ -1964,21 +1760,7 @@ func (s seriesFacade) rolling(window int, mode string) Series {
 	}
 	values := make([]any, s.value.Len())
 	for i := 0; i < s.value.Len(); i++ {
-		start := i - window + 1
-		if start < 0 {
-			start = 0
-		}
-		nums := make([]float64, 0, window)
-		for j := start; j <= i; j++ {
-			switch t := s.value.Value(j).(type) {
-			case int64:
-				nums = append(nums, float64(t))
-			case float64:
-				if !math.IsNaN(t) {
-					nums = append(nums, t)
-				}
-			}
-		}
+		nums := s.numericRange(max(i-window+1, 0), i+1)
 		// min_periods defaults to the window size: a window with fewer valid
 		// observations than `window` yields null (matches Polars default).
 		if len(nums) < window {
@@ -1995,31 +1777,18 @@ func (s seriesFacade) rolling(window int, mode string) Series {
 		case "max":
 			values[i] = simd.MaxFloat64(nums)
 		case "std", "var":
-			mean := meanFloatSlice(nums)
-			sumSq := 0.0
-			for _, n := range nums {
-				d := n - mean
-				sumSq += d * d
-			}
 			denominator := float64(len(nums))
 			if len(nums) > 1 {
 				denominator = float64(len(nums) - 1)
 			}
-			variance := sumSq / denominator
+			variance := sumSquaredDeviations(nums) / denominator
 			if mode == "std" {
 				values[i] = math.Sqrt(variance)
 			} else {
 				values[i] = variance
 			}
 		case "median":
-			sorted := append([]float64(nil), nums...)
-			sort.Float64s(sorted)
-			mid := len(sorted) / 2
-			if len(sorted)%2 == 0 {
-				values[i] = (sorted[mid-1] + sorted[mid]) / 2
-			} else {
-				values[i] = sorted[mid]
-			}
+			values[i] = medianFloatSlice(nums)
 		case "skew":
 			n := len(nums)
 			if n < 2 {
@@ -2041,26 +1810,11 @@ func (s seriesFacade) rolling(window int, mode string) Series {
 			sigma := math.Sqrt(m2)
 			values[i] = m3 / (float64(n) * sigma * sigma * sigma)
 		case "kurtosis":
-			n := len(nums)
-			if n < 4 {
+			if len(nums) < 4 {
 				values[i] = nil
 				break
 			}
-			mean := meanFloatSlice(nums)
-			m2, m4 := 0.0, 0.0
-			for _, x := range nums {
-				d := x - mean
-				d2 := d * d
-				m2 += d2
-				m4 += d2 * d2
-			}
-			m2 /= float64(n)
-			if m2 == 0 {
-				values[i] = 0.0
-				break
-			}
-			m4 /= float64(n)
-			values[i] = m4/(m2*m2) - 3
+			values[i] = excessKurtosis(nums)
 		case "rank":
 			last := nums[len(nums)-1]
 			if math.IsNaN(last) {
@@ -2095,16 +1849,7 @@ func (s seriesFacade) rollingQuantile(window int, q float64) Series {
 	}
 	values := make([]any, s.value.Len())
 	for i := 0; i < s.value.Len(); i++ {
-		start := i - window + 1
-		if start < 0 {
-			start = 0
-		}
-		nums := make([]float64, 0, window)
-		for j := start; j <= i; j++ {
-			if f, ok := toFloat64(s.value.Value(j)); ok && !math.IsNaN(f) {
-				nums = append(nums, f)
-			}
-		}
+		nums := s.numericRange(max(i-window+1, 0), i+1)
 		// min_periods defaults to the window size (Polars default).
 		if len(nums) < window {
 			values[i] = nil
@@ -2116,82 +1861,13 @@ func (s seriesFacade) rollingQuantile(window int, q float64) Series {
 	return seriesFacade{value: out}
 }
 
-func (s seriesFacade) unaryNumeric(op string) Series {
+// unaryNumeric applies fn to every int64 or float64 row as float64; null and
+// non-numeric rows yield null. The result is always Float64.
+func (s seriesFacade) unaryNumeric(fn func(float64) float64) Series {
 	values := make([]any, s.Len())
 	for i := 0; i < s.Len(); i++ {
-		v := s.Value(i)
-		if v == nil {
-			values[i] = nil
-			continue
-		}
-		f, ok := toFloat64(v)
-		if !ok {
-			values[i] = nil
-			continue
-		}
-		switch op {
-		case "abs":
-			values[i] = math.Abs(f)
-		case "exp":
-			values[i] = math.Exp(f)
-		case "log":
-			values[i] = math.Log(f)
-		case "sqrt":
-			values[i] = math.Sqrt(f)
-		case "sin":
-			values[i] = math.Sin(f)
-		case "cos":
-			values[i] = math.Cos(f)
-		case "tan":
-			values[i] = math.Tan(f)
-		case "cot":
-			t := math.Tan(f)
-			if t == 0 {
-				values[i] = math.Copysign(math.Inf(1), f)
-			} else {
-				values[i] = 1 / t
-			}
-		case "sinh":
-			values[i] = math.Sinh(f)
-		case "cosh":
-			values[i] = math.Cosh(f)
-		case "tanh":
-			values[i] = math.Tanh(f)
-		case "arcsin":
-			values[i] = math.Asin(f)
-		case "arccos":
-			values[i] = math.Acos(f)
-		case "arctan":
-			values[i] = math.Atan(f)
-		case "arcsinh":
-			values[i] = math.Asinh(f)
-		case "arccosh":
-			values[i] = math.Acosh(f)
-		case "arctanh":
-			values[i] = math.Atanh(f)
-		case "cbrt":
-			values[i] = math.Cbrt(f)
-		case "ceil":
-			values[i] = math.Ceil(f)
-		case "floor":
-			values[i] = math.Floor(f)
-		case "degrees":
-			values[i] = f * 180 / math.Pi
-		case "sign":
-			switch {
-			case f < 0:
-				values[i] = float64(-1)
-			case f > 0:
-				values[i] = float64(1)
-			default:
-				values[i] = float64(0)
-			}
-		case "log10":
-			values[i] = math.Log10(f)
-		case "log1p":
-			values[i] = math.Log1p(f)
-		case "round":
-			values[i] = math.Round(f)
+		if f, ok := expr.ToFloat(s.Value(i)); ok {
+			values[i] = fn(f)
 		}
 	}
 	out, _ := iseries.New(s.value.Name(), dtypes.Float64, values)
@@ -2259,7 +1935,7 @@ func (s seriesFacade) numericValues(skipNaN bool) []float64 {
 			}
 			continue
 		}
-		f, ok := toFloat64(v)
+		f, ok := expr.ToFloat(v)
 		if !ok {
 			continue
 		}
@@ -2271,12 +1947,72 @@ func (s seriesFacade) numericValues(skipNaN bool) []float64 {
 	return values
 }
 
+// numericRange returns the int64 and non-NaN float64 values of rows
+// [start, end) as float64, skipping nulls and every other type.
+func (s seriesFacade) numericRange(start, end int) []float64 {
+	nums := make([]float64, 0, end-start)
+	for i := start; i < end; i++ {
+		switch t := s.value.Value(i).(type) {
+		case int64:
+			nums = append(nums, float64(t))
+		case float64:
+			if !math.IsNaN(t) {
+				nums = append(nums, t)
+			}
+		}
+	}
+	return nums
+}
+
 func meanFloatSlice(values []float64) float64 {
 	sum := 0.0
 	for _, v := range values {
 		sum += v
 	}
 	return sum / float64(len(values))
+}
+
+// medianFloatSlice sorts the non-empty values in place and returns their
+// median.
+func medianFloatSlice(values []float64) float64 {
+	sort.Float64s(values)
+	mid := len(values) / 2
+	if len(values)%2 == 0 {
+		return (values[mid-1] + values[mid]) / 2
+	}
+	return values[mid]
+}
+
+// sumSquaredDeviations returns the sum of squared deviations of values from
+// their mean.
+func sumSquaredDeviations(values []float64) float64 {
+	mean := meanFloatSlice(values)
+	sumSq := 0.0
+	for _, v := range values {
+		d := v - mean
+		sumSq += d * d
+	}
+	return sumSq
+}
+
+// excessKurtosis returns the population excess kurtosis of values, or 0 when
+// they have no spread.
+func excessKurtosis(values []float64) float64 {
+	mean := meanFloatSlice(values)
+	m2 := 0.0
+	m4 := 0.0
+	for _, v := range values {
+		d := v - mean
+		d2 := d * d
+		m2 += d2
+		m4 += d2 * d2
+	}
+	m2 /= float64(len(values))
+	if m2 == 0 {
+		return 0
+	}
+	m4 /= float64(len(values))
+	return m4/(m2*m2) - 3
 }
 
 func quantileFloatSlice(values []float64, q float64) any {
@@ -2333,14 +2069,7 @@ func compareForSeriesOrder(left any, right any) int {
 		if !ok {
 			return 0
 		}
-		switch {
-		case l < r:
-			return -1
-		case l > r:
-			return 1
-		default:
-			return 0
-		}
+		return cmp.Compare(l, r)
 	case float64:
 		r, ok := right.(float64)
 		if !ok {
@@ -2359,14 +2088,7 @@ func compareForSeriesOrder(left any, right any) int {
 		if !ok {
 			return 0
 		}
-		switch {
-		case l < r:
-			return -1
-		case l > r:
-			return 1
-		default:
-			return 0
-		}
+		return cmp.Compare(l, r)
 	case bool:
 		r, ok := right.(bool)
 		if !ok {
@@ -2384,14 +2106,7 @@ func compareForSeriesOrder(left any, right any) int {
 		if !ok {
 			return 0
 		}
-		switch {
-		case l.Before(r):
-			return -1
-		case l.After(r):
-			return 1
-		default:
-			return 0
-		}
+		return l.Compare(r)
 	default:
 		return 0
 	}
@@ -2420,26 +2135,9 @@ func (s seriesFacade) binaryMissing(other Series, equal bool) (Series, error) {
 	}
 	values := make([]any, s.Len())
 	for i := 0; i < s.Len(); i++ {
-		left := s.Value(i)
-		right := other.Value(i)
-		match := false
-		switch {
-		case left == nil || right == nil:
-			match = left == right
-		default:
-			match = valueKey(left) == valueKey(right)
-		}
-		if equal {
-			values[i] = match
-		} else {
-			values[i] = !match
-		}
+		values[i] = valueEquals(s.Value(i), other.Value(i)) == equal
 	}
-	out, err := iseries.New(s.value.Name(), dtypes.Boolean, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.value.Name(), DType: dtypes.Boolean, Values: values})
 }
 
 func (s seriesFacade) kBy(by Series, k int, descending bool) (Series, error) {
@@ -2452,18 +2150,7 @@ func (s seriesFacade) kBy(by Series, k int, descending bool) (Series, error) {
 	if k > s.Len() {
 		k = s.Len()
 	}
-	indexes := make([]int, s.Len())
-	for i := range indexes {
-		indexes[i] = i
-	}
-	sort.SliceStable(indexes, func(i int, j int) bool {
-		cmp := compareForSeriesOrder(by.Value(indexes[i]), by.Value(indexes[j]))
-		if descending {
-			return cmp > 0
-		}
-		return cmp < 0
-	})
-	return s.Gather(indexes[:k]), nil
+	return s.Gather(sortPermBy(by, descending)[:k]), nil
 }
 
 func (s seriesFacade) cumulative(mode string) Series {
@@ -2474,9 +2161,8 @@ func (s seriesFacade) cumulative(mode string) Series {
 	var running any
 	for i := 0; i < s.Len(); i++ {
 		current := s.Value(i)
-		f, ok := toFloat64(current)
+		f, ok := expr.ToFloat(current)
 		if !ok {
-			values[i] = nil
 			continue
 		}
 		switch mode {
@@ -2514,14 +2200,12 @@ func (s seriesFacade) ewm(alpha float64, mode string) Series {
 	variance := 0.0
 	initialized := false
 	for i := 0; i < s.Len(); i++ {
-		current, ok := toFloat64(s.Value(i))
+		current, ok := expr.ToFloat(s.Value(i))
 		if !ok {
-			values[i] = nil
 			continue
 		}
 		if !initialized {
 			mean = current
-			variance = 0
 			initialized = true
 		} else {
 			mean = alpha*current + (1-alpha)*mean
@@ -2578,7 +2262,6 @@ func coerceValuesForDataType(values []any, dt dtypes.DataType) ([]any, error) {
 	out := make([]any, len(values))
 	for i, v := range values {
 		if v == nil {
-			out[i] = nil
 			continue
 		}
 		cast, err := castAny(v, dt)
@@ -2591,23 +2274,10 @@ func coerceValuesForDataType(values []any, dt dtypes.DataType) ([]any, error) {
 }
 
 func valueEquals(left any, right any) bool {
-	switch {
-	case left == nil || right == nil:
+	if left == nil || right == nil {
 		return left == right
-	default:
-		return valueKey(left) == valueKey(right)
 	}
-}
-
-func toFloat64(v any) (float64, bool) {
-	switch t := v.(type) {
-	case int64:
-		return float64(t), true
-	case float64:
-		return t, true
-	default:
-		return 0, false
-	}
+	return valueKey(left) == valueKey(right)
 }
 
 func compareAny(left any, right any, op string) bool {

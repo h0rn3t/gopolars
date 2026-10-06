@@ -11,7 +11,7 @@ func BenchmarkFilterInt64(b *testing.B) {
 	n := 20000
 	ids := make([]any, n)
 	values := make([]any, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ids[i] = int64(i)
 		values[i] = int64(i % 100)
 	}

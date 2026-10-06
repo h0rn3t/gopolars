@@ -78,7 +78,7 @@ func TestBatchMatchesRowWise(t *testing.T) {
 			if got.Len() != height {
 				t.Fatalf("batch len = %d, want %d", got.Len(), height)
 			}
-			for i := 0; i < height; i++ {
+			for i := range height {
 				want, werr := expr.Eval(tc.e, rowAcc{cols: cols, row: i})
 				if werr != nil {
 					t.Fatalf("row-wise eval row %d: %v", i, werr)

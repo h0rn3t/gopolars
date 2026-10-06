@@ -84,7 +84,7 @@ func buildParallelGroupFrame(n int) DataFrame {
 	vNull := make([]bool, n)
 	iv := make([]int64, n)
 	ivNull := make([]bool, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		gs[i] = "k" + string(rune('A'+r.Intn(37)))
 		gsNull[i] = i%53 == 0 // scattered null keys -> one null group
 		gi[i] = int64(r.Intn(60))
@@ -191,7 +191,7 @@ func TestGroupByParallelDeterministicOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		again, err := df.GroupBy("gs").Agg(expr.Sum(expr.Col("v")))
 		if err != nil {
 			t.Fatal(err)

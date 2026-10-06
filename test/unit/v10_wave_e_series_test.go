@@ -21,7 +21,6 @@ func TestV10WaveESeriesMathAndStatsSurface(t *testing.T) {
 	}
 
 	for _, name := range methods {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if !reflect.ValueOf(s).MethodByName(name).IsValid() {
@@ -42,7 +41,6 @@ func TestV10WaveESeriesStructuralSurface(t *testing.T) {
 	}
 
 	for _, name := range methods {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if !reflect.ValueOf(s).MethodByName(name).IsValid() {
@@ -63,7 +61,6 @@ func TestV10WaveESeriesBooleanSurface(t *testing.T) {
 	}
 
 	for _, name := range methods {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if !reflect.ValueOf(s).MethodByName(name).IsValid() {
@@ -84,7 +81,6 @@ func TestV10WaveESeriesRollingSurface(t *testing.T) {
 	}
 
 	for _, name := range methods {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if !reflect.ValueOf(s).MethodByName(name).IsValid() {
@@ -106,7 +102,6 @@ func TestV10WaveESeriesAdvancedSurface(t *testing.T) {
 	}
 
 	for _, name := range methods {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if !reflect.ValueOf(s).MethodByName(name).IsValid() {
@@ -127,7 +122,6 @@ func TestV10WaveESeriesIOSurface(t *testing.T) {
 	}
 
 	for _, name := range methods {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if !reflect.ValueOf(s).MethodByName(name).IsValid() {
@@ -154,7 +148,6 @@ func TestV10WaveESeriesTrigAndSign(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := mustCallSeries(t, trig, tc.name)
@@ -194,7 +187,6 @@ func TestV10WaveESeriesMathTransforms(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := mustCallSeries(t, input, tc.name)
@@ -226,7 +218,6 @@ func TestV10WaveESeriesStatAggregates(t *testing.T) {
 	}
 
 	for _, tc := range scalars {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var out any

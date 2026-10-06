@@ -2,6 +2,7 @@ package chunk
 
 import (
 	"math/bits"
+	"slices"
 	"sync"
 	"time"
 
@@ -13,23 +14,8 @@ import (
 // preserving ascending row order. Equivalent to Slice(CompressIndices(mask))
 // without allocating the intermediate []int keep list.
 func (c *Column) GatherBitmap(mask simd.Bitmap, nRows int) *Column {
-	n := simd.BitmapPopcount(mask, nRows)
-	out := allocGatherOut(c, n)
-	needNulls := out.nulls != nil
-	switch c.dtype {
-	case dtypes.Int64:
-		gatherBitmapSlice(out.i64, c.i64, mask, nRows, needNulls, out.nulls, c.nulls)
-	case dtypes.Float64:
-		gatherBitmapSlice(out.f64, c.f64, mask, nRows, needNulls, out.nulls, c.nulls)
-	case dtypes.String, dtypes.Categorical, dtypes.Enum:
-		gatherBitmapSlice(out.str, c.str, mask, nRows, needNulls, out.nulls, c.nulls)
-	case dtypes.Boolean:
-		gatherBitmapSlice(out.bln, c.bln, mask, nRows, needNulls, out.nulls, c.nulls)
-	case dtypes.Datetime:
-		gatherBitmapSlice(out.tim, c.tim, mask, nRows, needNulls, out.nulls, c.nulls)
-	default:
-		gatherBitmapSlice(out.boxed, c.boxed, mask, nRows, needNulls, out.nulls, c.nulls)
-	}
+	out := allocGatherOut(c, simd.BitmapPopcount(mask, nRows), c.NullCount() != 0)
+	gatherBitmapRange(out, c, mask, 0, nRows, 0, out.nulls != nil)
 	return out
 }
 
@@ -57,10 +43,9 @@ func FilterGatherColumns(cols []*Column, nRows, workers int, evalShard func(star
 	proceed := make(chan struct{})
 	var evalDone, wave sync.WaitGroup
 	evalDone.Add(len(ranges))
-	wave.Add(len(ranges))
 	for i, rg := range ranges {
-		go func(i, start, end int) {
-			defer wave.Done()
+		start, end := rg[0], rg[1]
+		wave.Go(func() {
 			if mask, ok := evalShard(start, end); ok {
 				okShard[i] = true
 				copy(global[start>>6:], mask)
@@ -73,19 +58,16 @@ func FilterGatherColumns(cols []*Column, nRows, workers int, evalShard func(star
 			for ci, c := range cols {
 				gatherBitmapRange(out[ci], c, global, start, end, offsets[i], out[ci].nulls != nil)
 			}
-		}(i, rg[0], rg[1])
+		})
 	}
 	evalDone.Wait()
-	allOK := true
-	for _, ok := range okShard {
-		allOK = allOK && ok
-	}
+	allOK := !slices.Contains(okShard, false)
 	if allOK {
 		for i, rg := range ranges {
 			offsets[i+1] = offsets[i] + bitmapPopcountRange(global, rg[0], rg[1])
 		}
 		for i, c := range cols {
-			out[i] = allocGatherOut(c, offsets[len(ranges)])
+			out[i] = allocGatherOut(c, offsets[len(ranges)], c.NullCount() != 0)
 		}
 		doGather = true
 	}
@@ -97,9 +79,10 @@ func FilterGatherColumns(cols []*Column, nRows, workers int, evalShard func(star
 	return out, true
 }
 
-func allocGatherOut(c *Column, n int) *Column {
+// allocGatherOut allocates an n-row output column of c's dtype, with a validity
+// slice only when needNulls; without one the null count is a known zero.
+func allocGatherOut(c *Column, n int, needNulls bool) *Column {
 	out := &Column{dtype: c.dtype, n: n, nullCount: unknownNullCount}
-	needNulls := c.NullCount() != 0
 	if needNulls {
 		out.nulls = make([]bool, n)
 	} else {
@@ -120,39 +103,6 @@ func allocGatherOut(c *Column, n int) *Column {
 		out.boxed = make([]any, n)
 	}
 	return out
-}
-
-func gatherBitmapSlice[T any](dst, src []T, mask simd.Bitmap, nRows int, needNulls bool, outNulls, srcNulls []bool) {
-	j := 0
-	fullWords := nRows >> 6
-	for wi := range fullWords {
-		w := mask[wi]
-		base := wi << 6
-		for w != 0 {
-			s := base + bits.TrailingZeros64(w)
-			if needNulls && srcNulls != nil && srcNulls[s] {
-				outNulls[j] = true
-			} else {
-				dst[j] = src[s]
-			}
-			j++
-			w &= w - 1
-		}
-	}
-	if rem := nRows & 63; rem != 0 {
-		w := mask[fullWords] & (uint64(1)<<uint(rem) - 1)
-		base := fullWords << 6
-		for w != 0 {
-			s := base + bits.TrailingZeros64(w)
-			if needNulls && srcNulls != nil && srcNulls[s] {
-				outNulls[j] = true
-			} else {
-				dst[j] = src[s]
-			}
-			j++
-			w &= w - 1
-		}
-	}
 }
 
 func gatherBitmapRange(out, c *Column, mask simd.Bitmap, start, end, outOff int, needNulls bool) {

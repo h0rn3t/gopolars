@@ -7,12 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/h0rn3t/gopolars/pkg/exec"
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	icsv "github.com/h0rn3t/gopolars/pkg/io/csv"
 	iipc "github.com/h0rn3t/gopolars/pkg/io/ipc"
 	ijson "github.com/h0rn3t/gopolars/pkg/io/json"
-	"github.com/h0rn3t/gopolars/pkg/plan/logical"
 )
 
 type IO interface {
@@ -34,55 +32,19 @@ func NewIO() IO {
 }
 
 func (f ioFacade) ScanCSV(input ScanCSVInput) (LazyFrame, error) {
-	return &lf{
-		source: frame.DataFrame{},
-		engine: exec.New(),
-		nodes:  []logical.Node{},
-		scan: &scanSource{
-			format: "csv",
-			path:   input.Path,
-			csv:    input,
-		},
-	}, nil
+	return newLazy(frame.DataFrame{}, &scanSource{format: "csv", path: input.Path, csv: input}), nil
 }
 
 func (f ioFacade) ScanParquet(input ScanParquetInput) (LazyFrame, error) {
-	return &lf{
-		source: frame.DataFrame{},
-		engine: exec.New(),
-		nodes:  []logical.Node{},
-		scan: &scanSource{
-			format: "parquet",
-			path:   input.Path,
-			parq:   input,
-		},
-	}, nil
+	return newLazy(frame.DataFrame{}, &scanSource{format: "parquet", path: input.Path, parq: input}), nil
 }
 
 func (f ioFacade) ScanIPC(input ScanIPCInput) (LazyFrame, error) {
-	return &lf{
-		source: frame.DataFrame{},
-		engine: exec.New(),
-		nodes:  []logical.Node{},
-		scan: &scanSource{
-			format: "ipc",
-			path:   input.Path,
-			ips:    input,
-		},
-	}, nil
+	return newLazy(frame.DataFrame{}, &scanSource{format: "ipc", path: input.Path}), nil
 }
 
 func (f ioFacade) ScanJSON(input ScanJSONInput) (LazyFrame, error) {
-	return &lf{
-		source: frame.DataFrame{},
-		engine: exec.New(),
-		nodes:  []logical.Node{},
-		scan: &scanSource{
-			format: "json",
-			path:   input.Path,
-			json:   input,
-		},
-	}, nil
+	return newLazy(frame.DataFrame{}, &scanSource{format: "json", path: input.Path, json: input}), nil
 }
 
 func (f ioFacade) ReadCSV(input ReadCSVInput) (DataFrame, error) {
@@ -103,8 +65,7 @@ func (f ioFacade) ReadParquet(input ReadParquetInput) (DataFrame, error) {
 	if err != nil {
 		return nil, err
 	}
-	df, err := readParquetSource(path, input.Columns, nil)
-	return fromFrame(df, err)
+	return fromFrame(readParquetSource(path, input.Columns, nil))
 }
 
 func (f ioFacade) ReadIPC(input ReadIPCInput) (DataFrame, error) {

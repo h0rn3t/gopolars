@@ -98,7 +98,7 @@ func TestWriteMatchesEncodingCSVByteForByte(t *testing.T) {
 			if header {
 				records = append(records, names)
 			}
-			for row := 0; row < 2; row++ {
+			for row := range 2 {
 				rec := make([]string, len(quotingSamples))
 				for i := range quotingSamples {
 					if row == 0 {
@@ -209,7 +209,7 @@ func TestWriteParallelMatchesSequential(t *testing.T) {
 	ints := make([]any, rows)
 	floats := make([]any, rows)
 	strs := make([]any, rows)
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		ints[i] = int64(i)
 		floats[i] = float64(i) * 1.5
 		switch i % 4 {
@@ -261,7 +261,7 @@ func TestWriteParallelMatchesSequential(t *testing.T) {
 
 	// And the sequential baseline itself still matches encoding/csv.
 	records := [][]string{{"i", "f", "s"}}
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		rec := make([]string, 3)
 		rec[0] = strconv.FormatInt(ints[i].(int64), 10)
 		if floats[i] == nil {
@@ -308,7 +308,7 @@ func TestWriteBlockBoundaryIsTransparent(t *testing.T) {
 	}
 
 	records := [][]string{{"s"}}
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		records = append(records, []string{vals[i].(string)})
 	}
 	if want := referenceCSV(t, records, ','); !bytes.Equal(got, want) {

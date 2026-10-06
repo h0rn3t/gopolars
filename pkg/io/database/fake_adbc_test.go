@@ -174,7 +174,7 @@ func TestEngineWriteReadRoundTrip(t *testing.T) {
 	}
 	idCol, _ := got.GetColumn("id")
 	nameCol, _ := got.GetColumn("name")
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if idCol.Value(i) != int64(i+1) {
 			t.Fatalf("id[%d] = %v, want %d", i, idCol.Value(i), i+1)
 		}

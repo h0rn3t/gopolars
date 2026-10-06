@@ -46,7 +46,7 @@ func TestParallelSortMatchesStableReference(t *testing.T) {
 	// The "id" column in sorted order is the permutation the sort produced.
 	ref := stableArgsortFloat(v)
 	idc := got.cols["id"]
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if idc.Value(i).(int64) != int64(ref[i]) {
 			t.Fatalf("permutation mismatch at %d: got id=%v, want %d", i, idc.Value(i), ref[i])
 		}
@@ -227,7 +227,7 @@ func TestParallelSortMultiKey(t *testing.T) {
 		}
 		ref := stableMultiKeyRef(lead, sec, false)
 		idc := got.cols["id"]
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if idc.Value(i).(int64) != int64(ref[i]) {
 				t.Fatalf("multi-key permutation mismatch at %d: got %v want %d", i, idc.Value(i), ref[i])
 			}

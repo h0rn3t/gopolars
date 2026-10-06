@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
-	"sort"
+	"slices"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/expr"
 	iseries "github.com/h0rn3t/gopolars/pkg/series"
 )
 
@@ -64,9 +65,6 @@ func (s seriesFacade) Filter(mask Series) (Series, error) {
 	}
 	idx := make([]int, 0)
 	for i := 0; i < mInt.Len(); i++ {
-		if mInt.IsNull(i) {
-			continue
-		}
 		b, ok := mInt.Value(i).(bool)
 		if ok && b {
 			idx = append(idx, i)
@@ -82,28 +80,17 @@ func (s seriesFacade) Truncate(maxLen int) (Series, error) {
 	if s.DataType() != dtypes.String {
 		return nil, fmt.Errorf("truncate: expected string dtype, got %s", s.DataType())
 	}
-	values := make([]any, s.Len())
-	for i := 0; i < s.Len(); i++ {
-		v := s.Value(i)
-		if v == nil {
-			values[i] = nil
-			continue
-		}
-		str, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("truncate: value at %d is not string", i)
-		}
+	values, err := mapValues(s, "truncate", "string", func(str string) any {
 		runes := []rune(str)
 		if len(runes) > maxLen {
 			str = string(runes[:maxLen])
 		}
-		values[i] = str
-	}
-	out, err := iseries.New(s.Name(), dtypes.String, values)
+		return str
+	})
 	if err != nil {
 		return nil, err
 	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.Name(), DType: dtypes.String, Values: values})
 }
 
 func roundSigFigs(x float64, sig int) float64 {
@@ -131,46 +118,35 @@ func (s seriesFacade) RoundSigFigs(sigFigs int) (Series, error) {
 			values[i] = nil
 			continue
 		}
-		f, ok := toFloat64(v)
+		f, ok := expr.ToFloat(v)
 		if !ok {
 			return nil, fmt.Errorf("round_sig_figs: non-numeric value at %d", i)
 		}
 		values[i] = roundSigFigs(f, sigFigs)
 	}
-	out, err := iseries.New(s.Name(), dtypes.Float64, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.Name(), DType: dtypes.Float64, Values: values})
 }
 
 func (s seriesFacade) Clip(lower, upper float64) Series {
-	values := make([]any, s.Len())
-	for i := 0; i < s.Len(); i++ {
-		v := s.Value(i)
-		if v == nil {
-			values[i] = nil
-			continue
-		}
-		f, ok := toFloat64(v)
-		if !ok {
-			values[i] = nil
-			continue
-		}
+	return s.unaryNumeric(func(f float64) float64 {
 		if f < lower {
 			f = lower
 		}
 		if f > upper {
 			f = upper
 		}
-		values[i] = f
-	}
-	out, _ := iseries.New(s.Name(), dtypes.Float64, values)
-	return seriesFacade{value: out}
+		return f
+	})
 }
 
 func (s seriesFacade) Cot() Series {
-	return s.unaryNumeric("cot")
+	return s.unaryNumeric(func(f float64) float64 {
+		t := math.Tan(f)
+		if t == 0 {
+			return math.Copysign(math.Inf(1), f)
+		}
+		return 1 / t
+	})
 }
 
 func (s seriesFacade) ShrinkDType() (Series, error) {
@@ -199,11 +175,7 @@ func (s seriesFacade) ShrinkDType() (Series, error) {
 	if !allWholeInInt64 {
 		return s.Clone(), nil
 	}
-	out, err := iseries.New(s.Name(), dtypes.Int64, intVals)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.Name(), DType: dtypes.Int64, Values: intVals})
 }
 
 func (s seriesFacade) List() SeriesArrNS {
@@ -219,11 +191,7 @@ func (s seriesFacade) Append(other Series) (Series, error) {
 		return nil, fmt.Errorf("append: dtype mismatch %s vs %s", s.DataType(), o.DataType())
 	}
 	combined := append(s.ToList(), o.ToList()...)
-	out, err := iseries.New(s.Name(), s.DataType(), combined)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.Name(), DType: s.DataType(), Values: combined})
 }
 
 func (s seriesFacade) GetChunks() ([]Series, error) {
@@ -246,28 +214,22 @@ func (s seriesFacade) MinBy(by Series) (Series, error) {
 	return s.extremeBy(by, false)
 }
 
-func (s seriesFacade) extremeBy(by Series, max bool) (Series, error) {
+func (s seriesFacade) extremeBy(by Series, wantMax bool) (Series, error) {
 	if s.Len() != by.Len() {
 		return nil, fmt.Errorf("max_by/min_by: length mismatch")
 	}
 	order := make([]string, 0)
-	seen := map[string]struct{}{}
 	best := make(map[string]any)
-	set := make(map[string]bool)
 
 	for i := 0; i < s.Len(); i++ {
 		k := valueKey(by.Value(i))
-		if _, ok := seen[k]; !ok {
-			seen[k] = struct{}{}
-			order = append(order, k)
-		}
 		cur := s.Value(i)
-		if !set[k] {
+		prev, ok := best[k]
+		if !ok {
+			order = append(order, k)
 			best[k] = cur
-			set[k] = true
 			continue
 		}
-		prev := best[k]
 		if cur == nil {
 			continue
 		}
@@ -276,10 +238,10 @@ func (s seriesFacade) extremeBy(by Series, max bool) (Series, error) {
 			continue
 		}
 		cmp := compareForSeriesOrder(cur, prev)
-		if max && cmp > 0 {
+		if wantMax && cmp > 0 {
 			best[k] = cur
 		}
-		if !max && cmp < 0 {
+		if !wantMax && cmp < 0 {
 			best[k] = cur
 		}
 	}
@@ -287,31 +249,22 @@ func (s seriesFacade) extremeBy(by Series, max bool) (Series, error) {
 	for _, k := range order {
 		vals = append(vals, best[k])
 	}
-	out, err := iseries.New(s.Name()+"_by", s.DataType(), vals)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.Name() + "_by", DType: s.DataType(), Values: vals})
 }
 
-func sortPermBy(by Series) []int {
-	n := by.Len()
-	idx := make([]int, n)
+func sortPermBy(by Series, descending bool) []int {
+	idx := make([]int, by.Len())
 	for i := range idx {
 		idx[i] = i
 	}
-	sort.SliceStable(idx, func(i, j int) bool {
-		return compareForSeriesOrder(by.Value(idx[i]), by.Value(idx[j])) < 0
+	slices.SortStableFunc(idx, func(a, b int) int {
+		c := compareForSeriesOrder(by.Value(a), by.Value(b))
+		if descending {
+			return -c
+		}
+		return c
 	})
 	return idx
-}
-
-func permInverse(perm []int) []int {
-	inv := make([]int, len(perm))
-	for pos, orig := range perm {
-		inv[orig] = pos
-	}
-	return inv
 }
 
 func (s seriesFacade) gatherValues(perm []int) []any {
@@ -322,61 +275,29 @@ func (s seriesFacade) gatherValues(perm []int) []any {
 	return out
 }
 
-func (s seriesFacade) rollingScatterBy(by Series, window int, mode string) (Series, error) {
+// applySortedBy runs fn over s reordered by ascending by, then scatters fn's
+// result back to s's row order as Float64. op prefixes the length error.
+func (s seriesFacade) applySortedBy(by Series, op string, fn func(sorted seriesFacade) Series) (Series, error) {
 	if s.Len() != by.Len() {
-		return nil, fmt.Errorf("rolling_by: length mismatch")
+		return nil, fmt.Errorf("%s: length mismatch", op)
 	}
-	perm := sortPermBy(by)
-	sortedVals := s.gatherValues(perm)
-	tmp, err := iseries.New(s.Name()+"_sorted", s.DataType(), sortedVals)
+	perm := sortPermBy(by, false)
+	tmp, err := iseries.New(s.Name()+"_sorted", s.DataType(), s.gatherValues(perm))
 	if err != nil {
 		return nil, err
 	}
-	inner := seriesFacade{value: tmp}
-	rolled := inner.rolling(window, mode)
-	rf, ok := rolled.(seriesFacade)
-	if !ok {
-		return nil, fmt.Errorf("rolling_by: internal rolling failed")
-	}
-	inv := permInverse(perm)
+	result := fn(seriesFacade{value: tmp})
 	outVals := make([]any, s.Len())
-	for orig := 0; orig < s.Len(); orig++ {
-		pos := inv[orig]
-		outVals[orig] = rf.value.Value(pos)
+	for pos, orig := range perm {
+		outVals[orig] = result.Value(pos)
 	}
-	out, err := iseries.New(s.Name(), dtypes.Float64, outVals)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.Name(), DType: dtypes.Float64, Values: outVals})
 }
 
-func (s seriesFacade) rollingQuantileScatterBy(by Series, window int, q float64) (Series, error) {
-	if s.Len() != by.Len() {
-		return nil, fmt.Errorf("rolling_quantile_by: length mismatch")
-	}
-	perm := sortPermBy(by)
-	sortedVals := s.gatherValues(perm)
-	tmp, err := iseries.New(s.Name()+"_sorted", s.DataType(), sortedVals)
-	if err != nil {
-		return nil, err
-	}
-	inner := seriesFacade{value: tmp}
-	rolled := inner.rollingQuantile(window, q)
-	rf, ok := rolled.(seriesFacade)
-	if !ok {
-		return nil, fmt.Errorf("rolling_quantile_by: internal rolling failed")
-	}
-	inv := permInverse(perm)
-	outVals := make([]any, s.Len())
-	for orig := 0; orig < s.Len(); orig++ {
-		outVals[orig] = rf.value.Value(inv[orig])
-	}
-	out, err := iseries.New(s.Name(), dtypes.Float64, outVals)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+func (s seriesFacade) rollingScatterBy(by Series, window int, mode string) (Series, error) {
+	return s.applySortedBy(by, "rolling_by", func(sorted seriesFacade) Series {
+		return sorted.rolling(window, mode)
+	})
 }
 
 func (s seriesFacade) RollingMeanBy(by Series, window int) (Series, error) {
@@ -408,7 +329,9 @@ func (s seriesFacade) RollingMedianBy(by Series, window int) (Series, error) {
 }
 
 func (s seriesFacade) RollingQuantileBy(by Series, window int, q float64) (Series, error) {
-	return s.rollingQuantileScatterBy(by, window, q)
+	return s.applySortedBy(by, "rolling_quantile_by", func(sorted seriesFacade) Series {
+		return sorted.rollingQuantile(window, q)
+	})
 }
 
 func (s seriesFacade) RollingRank(window int) Series {
@@ -436,55 +359,20 @@ func (s seriesFacade) RollingMap(window int, fn func([]float64) float64) (Series
 	}
 	values := make([]any, s.Len())
 	for i := 0; i < s.Len(); i++ {
-		start := i - window + 1
-		if start < 0 {
-			start = 0
-		}
-		nums := make([]float64, 0, window)
-		for j := start; j <= i; j++ {
-			if f, ok := toFloat64(s.Value(j)); ok && !math.IsNaN(f) {
-				nums = append(nums, f)
-			}
-		}
+		nums := s.numericRange(max(i-window+1, 0), i+1)
 		if len(nums) == 0 {
 			values[i] = nil
 			continue
 		}
 		values[i] = fn(nums)
 	}
-	out, err := iseries.New(s.Name(), dtypes.Float64, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.Name(), DType: dtypes.Float64, Values: values})
 }
 
 func (s seriesFacade) EwmMeanBy(by Series, alpha float64) (Series, error) {
-	if s.Len() != by.Len() {
-		return nil, fmt.Errorf("ewm_mean_by: length mismatch")
-	}
-	perm := sortPermBy(by)
-	sortedVals := s.gatherValues(perm)
-	tmp, err := iseries.New(s.Name()+"_sorted", s.DataType(), sortedVals)
-	if err != nil {
-		return nil, err
-	}
-	inner := seriesFacade{value: tmp}
-	ewm := inner.EwmMean(alpha)
-	rf, ok := ewm.(seriesFacade)
-	if !ok {
-		return nil, fmt.Errorf("ewm_mean_by: internal ewm failed")
-	}
-	inv := permInverse(perm)
-	outVals := make([]any, s.Len())
-	for orig := 0; orig < s.Len(); orig++ {
-		outVals[orig] = rf.value.Value(inv[orig])
-	}
-	out, err := iseries.New(s.Name(), dtypes.Float64, outVals)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return s.applySortedBy(by, "ewm_mean_by", func(sorted seriesFacade) Series {
+		return sorted.EwmMean(alpha)
+	})
 }
 
 func requireInt64Series(name string, s Series) error {
@@ -534,11 +422,7 @@ func (s seriesFacade) bitwiseBinary(other Series, name string, intOp func(int64,
 	default:
 		return nil, fmt.Errorf("%s: expected int64 or bool dtype, got %s", name, dt)
 	}
-	out, err := iseries.New(s.Name(), dt, values)
-	if err != nil {
-		return nil, err
-	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.Name(), DType: dt, Values: values})
 }
 
 func (s seriesFacade) BitwiseAnd(other Series) (Series, error) {
@@ -563,20 +447,11 @@ func (s seriesFacade) int64UnaryBits(fn func(int64) int64) (Series, error) {
 	if err := requireInt64Series("bitwise_op", s); err != nil {
 		return nil, err
 	}
-	values := make([]any, s.Len())
-	for i := 0; i < s.Len(); i++ {
-		if s.value.IsNull(i) {
-			values[i] = nil
-			continue
-		}
-		v, _ := s.Value(i).(int64)
-		values[i] = fn(v)
-	}
-	out, err := iseries.New(s.Name(), dtypes.Int64, values)
+	values, err := mapValues(s, "bitwise_op", "int64", func(v int64) any { return fn(v) })
 	if err != nil {
 		return nil, err
 	}
-	return seriesFacade{value: out}, nil
+	return NewSeries(NewSeriesInput{Name: s.Name(), DType: dtypes.Int64, Values: values})
 }
 
 func (s seriesFacade) BitwiseCountOnes() (Series, error) {

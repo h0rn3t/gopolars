@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math"
 	"math/rand"
 	"runtime"
@@ -40,12 +41,8 @@ func (d DataFrame) WithContextColumns(cols map[string]series.Series) DataFrame {
 		return d
 	}
 	merged := make(map[string]series.Series, len(d.context)+len(cols))
-	for k, v := range d.context {
-		merged[k] = v
-	}
-	for k, v := range cols {
-		merged[k] = v
-	}
+	maps.Copy(merged, d.context)
+	maps.Copy(merged, cols)
 	out := d
 	out.context = merged
 	return out
@@ -194,19 +191,29 @@ func (d DataFrame) NUnique(columns ...string) (int, error) {
 	if len(keys) == 0 {
 		keys = d.order
 	}
-	keyColumns := make([]*chunk.Column, len(keys))
-	for j, c := range keys {
-		s, ok := d.cols[c]
-		if !ok {
-			return 0, fmt.Errorf("column %s not found", c)
-		}
-		keyColumns[j] = s.Column()
+	keyCols, err := keyColumns(d, keys, "column")
+	if err != nil {
+		return 0, err
 	}
-	return len(d.firstRows(keyColumns)), nil
+	return len(d.firstRows(keyCols)), nil
 }
 
 func (d DataFrame) ApproxNUnique(columns ...string) (int, error) {
 	return d.NUnique(columns...)
+}
+
+// keyColumns resolves the typed columns of df named by keys. A missing name is
+// reported as "<what> <name> not found".
+func keyColumns(df DataFrame, keys []string, what string) ([]*chunk.Column, error) {
+	cols := make([]*chunk.Column, len(keys))
+	for j, k := range keys {
+		s, ok := df.cols[k]
+		if !ok {
+			return nil, fmt.Errorf("%s %s not found", what, k)
+		}
+		cols[j] = s.Column()
+	}
+	return cols, nil
 }
 
 func (d DataFrame) Series(name string) (series.Series, bool) {
@@ -223,12 +230,7 @@ func (d DataFrame) GetColumn(name string) (series.Series, error) {
 }
 
 func (d DataFrame) GetColumnIndex(name string) int {
-	for i, col := range d.order {
-		if col == name {
-			return i
-		}
-	}
-	return -1
+	return slices.Index(d.order, name)
 }
 
 func (d DataFrame) GetColumns() []series.Series {
@@ -242,11 +244,13 @@ func (d DataFrame) GetColumns() []series.Series {
 func (d DataFrame) Flags() map[string]map[string]bool {
 	out := make(map[string]map[string]bool, len(d.order))
 	for _, name := range d.order {
+		s := d.cols[name]
+		sorted := isSeriesSortedAsc(s)
 		out[name] = map[string]bool{
-			"sorted_asc":   isSeriesSortedAsc(d.cols[name]),
-			"has_nulls":    hasSeriesNulls(d.cols[name]),
-			"has_nan":      hasSeriesNaN(d.cols[name]),
-			"is_monotonic": isSeriesSortedAsc(d.cols[name]),
+			"sorted_asc":   sorted,
+			"has_nulls":    hasSeriesNulls(s),
+			"has_nan":      hasSeriesNaN(s),
+			"is_monotonic": sorted,
 		}
 	}
 	return out
@@ -256,9 +260,7 @@ func (d DataFrame) Glimpse(maxRows int) string {
 	if maxRows <= 0 {
 		maxRows = 10
 	}
-	if maxRows > d.height {
-		maxRows = d.height
-	}
+	maxRows = min(maxRows, d.height)
 	var b strings.Builder
 	fmt.Fprintf(&b, "rows=%d cols=%d\n", d.height, len(d.order))
 	for _, f := range d.schema {
@@ -357,12 +359,7 @@ func (d DataFrame) structFieldNames(column string) []string {
 			}
 		}
 	}
-	out := make([]string, 0, len(keys))
-	for k := range keys {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(keys))
 }
 
 // allRowIndices returns [0,1,...,height-1] for whole-frame aggregation.
@@ -548,10 +545,7 @@ func (d DataFrame) Sort(input SortInput) (DataFrame, error) {
 		return New(NewInput{Series: d.takeColumns(idx)})
 	}
 
-	indexes := make([]int, d.height)
-	for i := range indexes {
-		indexes[i] = i
-	}
+	indexes := d.allRowIndices()
 	sortSeries := make([]series.Series, 0, len(input.By))
 	for _, by := range input.By {
 		s, ok := d.cols[by]
@@ -564,8 +558,8 @@ func (d DataFrame) Sort(input SortInput) (DataFrame, error) {
 	// directly instead of calling s.Value(i) (boxing) per comparison.
 	comparators := buildColumnComparators(sortSeries)
 	sort.Slice(indexes, func(i, j int) bool {
-		for colIdx, cmp := range comparators {
-			c := cmp(indexes[i], indexes[j], input.NullsLast)
+		for colIdx, compare := range comparators {
+			c := compare(indexes[i], indexes[j], input.NullsLast)
 			if c == 0 {
 				continue
 			}
@@ -648,11 +642,11 @@ func (d DataFrame) resolveSecondaryTies(idx []int, input SortInput, equalLead fu
 		secSeries = append(secSeries, s)
 	}
 	comps := buildColumnComparators(secSeries)
-	// cmp compares two rows by the remaining keys (respecting each key's
+	// compare orders two rows by the remaining keys (respecting each key's
 	// descending flag); hoisted out of the run loop so per-run stable sorts add no
 	// closure/boxing allocations. slices.SortStableFunc sorts the []int run in
 	// place without boxing it to any.
-	cmp := func(p, q int) int {
+	compare := func(p, q int) int {
 		for ci, c := range comps {
 			r := c(p, q, input.NullsLast)
 			if r == 0 {
@@ -670,7 +664,7 @@ func (d DataFrame) resolveSecondaryTies(idx []int, input SortInput, equalLead fu
 	for end := 1; end <= n; end++ {
 		if end == n || !equalLead(idx[start], idx[end]) {
 			if end-start > 1 {
-				slices.SortStableFunc(idx[start:end], cmp)
+				slices.SortStableFunc(idx[start:end], compare)
 			}
 			start = end
 		}
@@ -686,12 +680,7 @@ const radixSortThreshold = 256
 // (rank and sort): the LSD radix key transform is undefined for NaN, so a NaN
 // forces the fallback to the comparison path, which sorts NaN last.
 func anyNaN(f64s []float64) bool {
-	for _, v := range f64s {
-		if math.IsNaN(v) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(f64s, math.IsNaN)
 }
 
 // columnComparatorFn compares rows i and j, returning -1, 0, or 1.
@@ -706,62 +695,32 @@ func buildColumnComparators(cols []series.Series) []columnComparatorFn {
 		col := s.Column()
 		if f64s, ok := col.Float64s(); ok {
 			nulls := col.Nulls()
-			f64sCopy := f64s
-			nullsCopy := nulls
 			out[k] = func(i, j int, nullsLast bool) int {
-				ni := nullsCopy != nil && nullsCopy[i]
-				nj := nullsCopy != nil && nullsCopy[j]
+				ni := nulls != nil && nulls[i]
+				nj := nulls != nil && nulls[j]
 				if ni || nj {
 					return compareNulls(ni, nj, nullsLast)
 				}
-				lv, rv := f64sCopy[i], f64sCopy[j]
 				// NaN always sorts last, matching compareSortValues semantics.
-				lNaN, rNaN := math.IsNaN(lv), math.IsNaN(rv)
-				if lNaN && rNaN {
-					return 0
-				}
-				if lNaN {
-					return 1
-				}
-				if rNaN {
-					return -1
-				}
-				switch {
-				case lv < rv:
-					return -1
-				case lv > rv:
-					return 1
-				default:
-					return 0
-				}
+				return compareNaNLast(f64s[i], f64s[j])
 			}
 			continue
 		}
 		if i64s, ok := col.Int64s(); ok {
 			nulls := col.Nulls()
-			i64sCopy := i64s
-			nullsCopy := nulls
 			out[k] = func(i, j int, nullsLast bool) int {
-				ni := nullsCopy != nil && nullsCopy[i]
-				nj := nullsCopy != nil && nullsCopy[j]
+				ni := nulls != nil && nulls[i]
+				nj := nulls != nil && nulls[j]
 				if ni || nj {
 					return compareNulls(ni, nj, nullsLast)
 				}
-				switch {
-				case i64sCopy[i] < i64sCopy[j]:
-					return -1
-				case i64sCopy[i] > i64sCopy[j]:
-					return 1
-				default:
-					return 0
-				}
+				return compareOrdered(i64s[i], i64s[j])
 			}
 			continue
 		}
 		// Generic fallback for other dtypes.
-		sCopy := s
 		out[k] = func(i, j int, nullsLast bool) int {
-			return compareSortValues(sCopy.Value(i), sCopy.Value(j), nullsLast)
+			return compareSortValues(s.Value(i), s.Value(j), nullsLast)
 		}
 	}
 	return out
@@ -793,15 +752,8 @@ func compareNulls(ni, nj, nullsLast bool) int {
 // mutator exists today, so reads are always safe. A column without a typed chunk
 // falls back to an index Slice over the window.
 func (d DataFrame) viewRows(start, end int) DataFrame {
-	if start < 0 {
-		start = 0
-	}
-	if end > d.height {
-		end = d.height
-	}
-	if end < start {
-		end = start
-	}
+	start = max(start, 0)
+	end = max(min(end, d.height), start)
 	out := make([]series.Series, 0, len(d.order))
 	for _, name := range d.order {
 		s := d.cols[name]
@@ -827,9 +779,7 @@ func (d DataFrame) Limit(n int) DataFrame {
 	if n >= d.height {
 		return d
 	}
-	if n < 0 {
-		n = 0
-	}
+	n = max(n, 0)
 	return d.viewRows(0, n)
 }
 
@@ -837,9 +787,7 @@ func (d DataFrame) Tail(n int) DataFrame {
 	if n >= d.height {
 		return d
 	}
-	if n < 0 {
-		n = 0
-	}
+	n = max(n, 0)
 	return d.viewRows(d.height-n, d.height)
 }
 
@@ -853,13 +801,8 @@ func (d DataFrame) Slice(offset int, length int) DataFrame {
 	if offset < 0 {
 		offset = d.height + offset
 	}
-	end := offset + length
-	if offset < 0 {
-		offset = 0
-	}
-	if end > d.height {
-		end = d.height
-	}
+	end := min(offset+length, d.height)
+	offset = max(offset, 0)
 	if offset >= d.height || end <= offset {
 		return d.Limit(0)
 	}
@@ -917,12 +860,8 @@ func (d DataFrame) Rename(mapping map[string]string) (DataFrame, error) {
 }
 
 func (d DataFrame) GatherEvery(step int, offset int) DataFrame {
-	if step <= 0 {
-		step = 1
-	}
-	if offset < 0 {
-		offset = 0
-	}
+	step = max(step, 1)
+	offset = max(offset, 0)
 	indexes := make([]int, 0, d.height)
 	for i := offset; i < d.height; i += step {
 		indexes = append(indexes, i)
@@ -971,14 +910,7 @@ func (d DataFrame) DropInPlace(column string) (DataFrame, error) {
 	if _, ok := d.cols[column]; !ok {
 		return DataFrame{}, fmt.Errorf("column %s not found", column)
 	}
-	out := make([]series.Series, 0, len(d.order)-1)
-	for _, name := range d.order {
-		if name == column {
-			continue
-		}
-		out = append(out, d.cols[name].Clone())
-	}
-	return New(NewInput{Series: out})
+	return d.Drop(column)
 }
 
 func (d DataFrame) Extend(other DataFrame) (DataFrame, error) {
@@ -1007,29 +939,18 @@ func (d DataFrame) InsertColumn(index int, column series.Series) (DataFrame, err
 	if column.Len() != d.height {
 		return DataFrame{}, fmt.Errorf("column %s has invalid length", column.Name())
 	}
-	if index < 0 {
-		index = 0
-	}
-	if index > len(d.order) {
-		index = len(d.order)
-	}
+	index = min(max(index, 0), len(d.order))
 	out := d.clone()
 	if old, ok := out.cols[column.Name()]; ok && old.Len() == out.height {
-		for i, name := range out.order {
-			if name == column.Name() {
-				out.order = append(out.order[:i], out.order[i+1:]...)
-				break
-			}
+		if i := slices.Index(out.order, column.Name()); i >= 0 {
+			out.order = slices.Delete(out.order, i, i+1)
 		}
-		for i, f := range out.schema {
-			if f.Name == column.Name() {
-				out.schema = append(out.schema[:i], out.schema[i+1:]...)
-				break
-			}
+		if i := slices.IndexFunc(out.schema, func(f dtypes.Field) bool { return f.Name == column.Name() }); i >= 0 {
+			out.schema = slices.Delete(out.schema, i, i+1)
 		}
 	}
-	out.order = append(out.order[:index], append([]string{column.Name()}, out.order[index:]...)...)
-	out.schema = append(out.schema[:index], append([]dtypes.Field{{Name: column.Name(), Type: column.DataType()}}, out.schema[index:]...)...)
+	out.order = slices.Insert(out.order, index, column.Name())
+	out.schema = slices.Insert(out.schema, index, dtypes.Field{Name: column.Name(), Type: column.DataType()})
 	out.cols[column.Name()] = column.Clone()
 	return out, nil
 }
@@ -1038,13 +959,8 @@ func (d DataFrame) Sample(n int, seed int64) DataFrame {
 	if n <= 0 || d.height == 0 {
 		return d.Limit(0)
 	}
-	if n > d.height {
-		n = d.height
-	}
-	idx := make([]int, d.height)
-	for i := 0; i < d.height; i++ {
-		idx[i] = i
-	}
+	n = min(n, d.height)
+	idx := d.allRowIndices()
 	r := rand.New(rand.NewSource(seed))
 	r.Shuffle(len(idx), func(i, j int) {
 		idx[i], idx[j] = idx[j], idx[i]
@@ -1133,33 +1049,15 @@ func (d DataFrame) FillNull(value any) (DataFrame, error) {
 func (d DataFrame) FillNaN(value float64) (DataFrame, error) {
 	out := make([]series.Series, 0, len(d.order))
 	for _, f := range d.schema {
-		s := d.cols[f.Name]
-		col := s.Column()
+		col := d.cols[f.Name].Column()
 		// Typed fast path for float64 columns.
 		if c, ok := col.FillNaNFloat64(value); ok {
 			out = append(out, series.FromColumn(f.Name, c))
 			continue
 		}
 		// Non-float columns cannot contain NaN; reuse them by pointer (zero-copy).
-		if col != nil {
-			col.MarkShared()
-			out = append(out, series.FromColumn(f.Name, col))
-			continue
-		}
-		values := make([]any, 0, d.height)
-		for i := 0; i < d.height; i++ {
-			v := s.Value(i)
-			if fv, ok := v.(float64); ok && math.IsNaN(fv) {
-				values = append(values, value)
-				continue
-			}
-			values = append(values, v)
-		}
-		boxed, err := series.New(f.Name, f.Type, values)
-		if err != nil {
-			return DataFrame{}, err
-		}
-		out = append(out, boxed)
+		col.MarkShared()
+		out = append(out, series.FromColumn(f.Name, col))
 	}
 	return New(NewInput{Series: out})
 }
@@ -1188,7 +1086,7 @@ func (d DataFrame) Interpolate(columns ...string) (DataFrame, error) {
 		for i := 0; i < s.Len(); i++ {
 			values[i] = s.Value(i)
 		}
-		for i := 0; i < len(values); i++ {
+		for i := range values {
 			if values[i] != nil {
 				continue
 			}
@@ -1208,8 +1106,8 @@ func (d DataFrame) Interpolate(columns ...string) (DataFrame, error) {
 			}
 			switch {
 			case left >= 0 && right >= 0:
-				lv, lok := toFloat(values[left])
-				rv, rok := toFloat(values[right])
+				lv, lok := expr.ToFloat(values[left])
+				rv, rok := expr.ToFloat(values[right])
 				if lok && rok {
 					ratio := float64(i-left) / float64(right-left)
 					values[i] = lv + (rv-lv)*ratio
@@ -1256,7 +1154,7 @@ func (d DataFrame) gatherRows(keep []int) DataFrame {
 // clear.
 func keepFromDropped(dropped []bool, height int) []int {
 	keep := make([]int, 0, height)
-	for row := 0; row < height; row++ {
+	for row := range height {
 		if !dropped[row] {
 			keep = append(keep, row)
 		}
@@ -1396,15 +1294,11 @@ func (d DataFrame) buildKeepMask(targets []string, cols map[string]*chunk.Column
 // from column validity and gathers every column of that shard, so the gather runs
 // across all cores with no intermediate keep []int. Mirrors filterFused.
 func (d DataFrame) dropNullsFused(targets []string, cols map[string]*chunk.Column, workers int) DataFrame {
-	ordered := make([]*chunk.Column, len(d.order))
-	for i, name := range d.order {
-		ordered[i] = cols[name]
-	}
 	targetCols := make([]*chunk.Column, len(targets))
 	for i, name := range targets {
 		targetCols[i] = cols[name]
 	}
-	gathered, ok := chunk.FilterGatherColumns(ordered, d.height, workers, func(start, end int) (simd.Bitmap, bool) {
+	df, ok, _ := d.gatherFused(workers, func(start, end int) (simd.Bitmap, bool) {
 		// Local shard mask indexed from 0; FilterGatherColumns copies it into the
 		// global bitmap at global[start>>6:]. start is word-aligned, so bit j maps
 		// to row start+j and the null clears use the shard-local offset.
@@ -1415,14 +1309,8 @@ func (d DataFrame) dropNullsFused(targets []string, cols map[string]*chunk.Colum
 	if !ok {
 		// No shard declines a validity mask, but fall back defensively.
 		mask := d.buildKeepMask(targets, cols)
-		df, _ := New(NewInput{Series: d.takeColumnsBitmap(mask)})
-		return df
+		df, _ = New(NewInput{Series: d.takeColumnsBitmap(mask)})
 	}
-	out := make([]series.Series, len(d.order))
-	for i, name := range d.order {
-		out[i] = series.FromColumn(name, gathered[i])
-	}
-	df, _ := New(NewInput{Series: out})
 	return df
 }
 
@@ -1432,7 +1320,7 @@ func (d DataFrame) dropNullsFused(targets []string, cols map[string]*chunk.Colum
 func setKeepMaskShardLocal(local simd.Bitmap, targets []*chunk.Column, start, end int) {
 	n := end - start
 	fullWords := n >> 6
-	for i := 0; i < fullWords; i++ {
+	for i := range fullWords {
 		local[i] = ^uint64(0)
 	}
 	if rem := n & 63; rem != 0 {
@@ -1443,7 +1331,7 @@ func setKeepMaskShardLocal(local simd.Bitmap, targets []*chunk.Column, start, en
 			continue
 		}
 		nulls := col.Nulls()
-		for j := 0; j < n; j++ {
+		for j := range n {
 			if nulls[start+j] {
 				local[j>>6] &^= 1 << (uint(j) & 63)
 			}
@@ -1456,20 +1344,16 @@ func (d DataFrame) Unique(columns ...string) (DataFrame, error) {
 	if len(keys) == 0 {
 		keys = d.order
 	}
-	keyColumns := make([]*chunk.Column, len(keys))
-	for j, c := range keys {
-		s, ok := d.cols[c]
-		if !ok {
-			return DataFrame{}, fmt.Errorf("column %s not found", c)
-		}
-		keyColumns[j] = s.Column()
+	keyCols, err := keyColumns(d, keys, "column")
+	if err != nil {
+		return DataFrame{}, err
 	}
 	// keep holds the first-seen row index per distinct key, in encounter order —
 	// exactly the rows kept by unique() — via FirstRows, which (unlike GroupIDs)
 	// allocates no length-N ids array Unique would immediately discard. The
 	// per-column materialization rides the shared parallel gather (takeColumns),
 	// so a large unique() uses the idle cores instead of a serial column loop.
-	keep := d.firstRows(keyColumns)
+	keep := d.firstRows(keyCols)
 	return New(NewInput{Series: d.takeColumns(keep)})
 }
 
@@ -1517,7 +1401,7 @@ func (d DataFrame) Fold(op string, columns []string, alias string) (DataFrame, e
 				return DataFrame{}, fmt.Errorf("column %s not found", col)
 			}
 			v := s.Value(row)
-			num, ok := toFloat(v)
+			num, ok := expr.ToFloat(v)
 			if !ok {
 				continue
 			}
@@ -1527,8 +1411,6 @@ func (d DataFrame) Fold(op string, columns []string, alias string) (DataFrame, e
 				continue
 			}
 			switch op {
-			case "sum":
-				acc += num
 			case "max":
 				if num > acc {
 					acc = num
@@ -1537,13 +1419,11 @@ func (d DataFrame) Fold(op string, columns []string, alias string) (DataFrame, e
 				if num < acc {
 					acc = num
 				}
-			default:
+			default: // "sum" and unrecognized ops
 				acc += num
 			}
 		}
-		if !accSet {
-			values[row] = nil
-		} else {
+		if accSet {
 			values[row] = acc
 		}
 	}
@@ -1583,8 +1463,8 @@ func (d DataFrame) Corr(columnA string, columnB string) (float64, error) {
 	xs := make([]float64, 0, d.height)
 	ys := make([]float64, 0, d.height)
 	for i := 0; i < d.height; i++ {
-		x, okx := toFloat(a.Value(i))
-		y, oky := toFloat(b.Value(i))
+		x, okx := expr.ToFloat(a.Value(i))
+		y, oky := expr.ToFloat(b.Value(i))
 		if okx && oky {
 			xs = append(xs, x)
 			ys = append(ys, y)
@@ -1616,7 +1496,7 @@ func (d DataFrame) Describe() (DataFrame, error) {
 				nulls++
 				continue
 			}
-			if n, ok := toFloat(v); ok {
+			if n, ok := expr.ToFloat(v); ok {
 				numeric = append(numeric, n)
 			}
 		}
@@ -1663,11 +1543,7 @@ func (d DataFrame) Deserialize(payload []byte) (DataFrame, error) {
 	if len(records) == 0 {
 		return New(NewInput{Series: []series.Series{}})
 	}
-	order := make([]string, 0, len(records[0]))
-	for k := range records[0] {
-		order = append(order, k)
-	}
-	sort.Strings(order)
+	order := slices.Sorted(maps.Keys(records[0]))
 	seriesOut := make([]series.Series, 0, len(order))
 	for _, col := range order {
 		values := make([]any, 0, len(records))
@@ -1739,17 +1615,13 @@ func (d DataFrame) Explode(columns ...string) (DataFrame, error) {
 	seriesOut := make([]series.Series, 0, len(d.order))
 	for _, f := range d.schema {
 		values := make([]any, 0, len(outRows))
+		for _, r := range outRows {
+			values = append(values, r[f.Name])
+		}
 		dt := f.Type
 		if _, ok := targetSet[f.Name]; ok {
-			for _, r := range outRows {
-				values = append(values, r[f.Name])
-			}
 			if inferred, err := inferDataType(values); err == nil {
 				dt = inferred
-			}
-		} else {
-			for _, r := range outRows {
-				values = append(values, r[f.Name])
 			}
 		}
 		s, err := series.New(f.Name, dt, values)
@@ -1782,11 +1654,7 @@ func (d DataFrame) FlattenStruct(column string, prefix string) (DataFrame, error
 	}
 	// Emit field columns in a deterministic (sorted) order; map-backed structs
 	// don't preserve insertion order.
-	keyList := make([]string, 0, len(keys))
-	for k := range keys {
-		keyList = append(keyList, k)
-	}
-	sort.Strings(keyList)
+	keyList := slices.Sorted(maps.Keys(keys))
 	out := make([]series.Series, 0, len(d.order)+len(keys))
 	for _, name := range d.order {
 		if name == column {
@@ -1872,9 +1740,7 @@ func (d DataFrame) RollingMean(by string, value string, window time.Duration, mi
 	if output == "" {
 		output = "rolling_mean"
 	}
-	if minRows <= 0 {
-		minRows = 1
-	}
+	minRows = max(minRows, 1)
 	if window <= 0 {
 		return DataFrame{}, fmt.Errorf("rolling window must be positive")
 	}
@@ -1918,16 +1784,11 @@ func (d DataFrame) RollingMean(by string, value string, window time.Duration, mi
 		}
 		outValues[i] = sum / float64(cnt)
 	}
-	outSeries := make([]series.Series, 0, len(d.order)+1)
-	for _, name := range d.order {
-		outSeries = append(outSeries, d.cols[name].Clone())
-	}
 	roll, err := series.New(output, dtypes.Float64, outValues)
 	if err != nil {
 		return DataFrame{}, err
 	}
-	outSeries = append(outSeries, roll)
-	return New(NewInput{Series: outSeries})
+	return New(NewInput{Series: append(d.GetColumns(), roll)})
 }
 
 func (d DataFrame) GroupByDynamic(by string, every time.Duration, period time.Duration, offset time.Duration, closed string, label string, windowColumn string, aggExpr expr.Expr) (DataFrame, error) {
@@ -1973,16 +1834,11 @@ func (d DataFrame) GroupByDynamic(by string, every time.Duration, period time.Du
 			windows[i] = base
 		}
 	}
-	withWindow := make([]series.Series, 0, len(d.order)+1)
-	for _, name := range d.order {
-		withWindow = append(withWindow, d.cols[name].Clone())
-	}
 	windowSeries, err := series.New(windowColumn, dtypes.Datetime, windows)
 	if err != nil {
 		return DataFrame{}, err
 	}
-	withWindow = append(withWindow, windowSeries)
-	prepared, err := New(NewInput{Series: withWindow})
+	prepared, err := New(NewInput{Series: append(d.GetColumns(), windowSeries)})
 	if err != nil {
 		return DataFrame{}, err
 	}
@@ -1998,14 +1854,7 @@ func (d DataFrame) Melt(idVars []string, valueVars []string, variableCol string,
 	}
 	if len(valueVars) == 0 {
 		for _, c := range d.order {
-			found := false
-			for _, id := range idVars {
-				if c == id {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !slices.Contains(idVars, c) {
 				valueVars = append(valueVars, c)
 			}
 		}
@@ -2058,7 +1907,6 @@ func (d DataFrame) Pivot(index []string, columns string, values string, agg stri
 	if len(index) == 0 {
 		return DataFrame{}, fmt.Errorf("pivot requires index")
 	}
-	indexVals := make([][]any, d.height)
 	colSeries, ok := d.cols[columns]
 	if !ok {
 		return DataFrame{}, fmt.Errorf("column %s not found", columns)
@@ -2076,7 +1924,7 @@ func (d DataFrame) Pivot(index []string, columns string, values string, agg stri
 	groups := map[string]*bucket{}
 	rowOrder := []string{}
 	for row := 0; row < d.height; row++ {
-		key := ""
+		var keyBuf []byte
 		idx := make([]any, 0, len(index))
 		for _, c := range index {
 			s, ok := d.cols[c]
@@ -2085,9 +1933,9 @@ func (d DataFrame) Pivot(index []string, columns string, values string, agg stri
 			}
 			v := s.Value(row)
 			idx = append(idx, v)
-			key += fmt.Sprintf("|%v", v)
+			keyBuf = fmt.Appendf(keyBuf, "|%v", v)
 		}
-		indexVals[row] = idx
+		key := string(keyBuf)
 		pv := fmt.Sprintf("%v", colSeries.Value(row))
 		if _, ok := pivotSet[pv]; !ok {
 			pivotSet[pv] = struct{}{}
@@ -2176,31 +2024,18 @@ func (d DataFrame) shallowClone() DataFrame {
 	return out
 }
 
+// evalExprAsSeries resolves a column reference (an expr of KindCol) to its
+// column, renamed to the expr's output name.
 func (d DataFrame) evalExprAsSeries(e expr.Expr) (series.Series, error) {
-	if e.Kind() == expr.KindCol {
-		s, ok := d.cols[e.ColName()]
-		if !ok {
-			// Fall back to a with_context column (kept at its own length).
-			if cs, cok := d.contextColumn(e.ColName()); cok {
-				return cs.Rename(e.Name()), nil
-			}
-			return series.Series{}, fmt.Errorf("column %s not found", e.ColName())
+	s, ok := d.cols[e.ColName()]
+	if !ok {
+		// Fall back to a with_context column (kept at its own length).
+		if cs, cok := d.contextColumn(e.ColName()); cok {
+			return cs.Rename(e.Name()), nil
 		}
-		return s.Rename(e.Name()), nil
+		return series.Series{}, fmt.Errorf("column %s not found", e.ColName())
 	}
-	values := make([]any, d.height)
-	for i := 0; i < d.height; i++ {
-		v, err := expr.Eval(e, rowAccessor{df: d, row: i})
-		if err != nil {
-			return series.Series{}, err
-		}
-		values[i] = v
-	}
-	dt, err := inferDataType(values)
-	if err != nil {
-		return series.Series{}, err
-	}
-	return series.New(e.Name(), dt, values)
+	return s.Rename(e.Name()), nil
 }
 
 func (d DataFrame) evalExprAsSeriesVectorized(e expr.Expr) (series.Series, error) {
@@ -2264,7 +2099,7 @@ func (d DataFrame) evalCumulative(target expr.Expr, name string, mode string) (s
 		out := make([]int64, n)
 		nulls := col.Nulls()
 		count := int64(0)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if nulls == nil || !nulls[i] {
 				count++
 			}
@@ -2280,7 +2115,7 @@ func (d DataFrame) evalCumulative(target expr.Expr, name string, mode string) (s
 		out := make([]float64, n)
 		nulls := col.Nulls()
 		sum := float64(0)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if nulls != nil && nulls[i] {
 				out[i] = sum
 				continue
@@ -2294,7 +2129,7 @@ func (d DataFrame) evalCumulative(target expr.Expr, name string, mode string) (s
 		out := make([]float64, n)
 		nulls := col.Nulls()
 		sum := float64(0)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if nulls != nil && nulls[i] {
 				out[i] = sum
 				continue
@@ -2308,7 +2143,7 @@ func (d DataFrame) evalCumulative(target expr.Expr, name string, mode string) (s
 	// Fallback for non-numeric dtypes (preserves prior semantics).
 	values := make([]any, n)
 	sum := float64(0)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		switch t := base.Value(i).(type) {
 		case int64:
 			sum += float64(t)
@@ -2439,15 +2274,10 @@ func (d DataFrame) evalRolling(target expr.Expr, op string, name string) (series
 	if err != nil {
 		return series.Series{}, err
 	}
+	mode, spec, _ := strings.Cut(op, ":")
 	window := 1
-	if idx := strings.Index(op, ":"); idx >= 0 && idx+1 < len(op) {
-		if w, parseErr := strconv.Atoi(op[idx+1:]); parseErr == nil && w > 0 {
-			window = w
-		}
-	}
-	mode := op
-	if idx := strings.Index(mode, ":"); idx >= 0 {
-		mode = mode[:idx]
+	if w, parseErr := strconv.Atoi(spec); parseErr == nil && w > 0 {
+		window = w
 	}
 	// O(n) typed fast path for sum/mean/min/max: read the typed backing slice,
 	// run the linear kernel, and write a single typed output buffer (no per-step
@@ -2473,10 +2303,7 @@ func (d DataFrame) evalRolling(target expr.Expr, op string, name string) (series
 	}
 	out := make([]any, d.height)
 	for i := 0; i < d.height; i++ {
-		start := i - window + 1
-		if start < 0 {
-			start = 0
-		}
+		start := max(i-window+1, 0)
 		nums := make([]float64, 0, window)
 		for j := start; j <= i; j++ {
 			switch t := base.Value(j).(type) {
@@ -2491,35 +2318,32 @@ func (d DataFrame) evalRolling(target expr.Expr, op string, name string) (series
 			continue
 		}
 		switch mode {
-		case "rolling_sum":
+		case "rolling_sum", "rolling_mean":
 			sum := float64(0)
 			for _, n := range nums {
 				sum += n
+			}
+			if mode == "rolling_mean" {
+				sum /= float64(len(nums))
 			}
 			out[i] = sum
-		case "rolling_mean":
-			sum := float64(0)
-			for _, n := range nums {
-				sum += n
-			}
-			out[i] = sum / float64(len(nums))
 		case "rolling_min":
-			min := nums[0]
+			lo := nums[0]
 			for _, n := range nums[1:] {
-				if n < min {
-					min = n
+				if n < lo {
+					lo = n
 				}
 			}
-			out[i] = min
+			out[i] = lo
 		case "rolling_max":
-			max := nums[0]
+			hi := nums[0]
 			for _, n := range nums[1:] {
-				if n > max {
-					max = n
+				if n > hi {
+					hi = n
 				}
 			}
-			out[i] = max
-		case "rolling_std":
+			out[i] = hi
+		case "rolling_std", "rolling_var":
 			sum := float64(0)
 			for _, n := range nums {
 				sum += n
@@ -2531,19 +2355,10 @@ func (d DataFrame) evalRolling(target expr.Expr, op string, name string) (series
 				variance += diff * diff
 			}
 			variance /= float64(len(nums))
-			out[i] = math.Sqrt(variance)
-		case "rolling_var":
-			sum := float64(0)
-			for _, n := range nums {
-				sum += n
+			if mode == "rolling_std" {
+				variance = math.Sqrt(variance)
 			}
-			mean := sum / float64(len(nums))
-			variance := float64(0)
-			for _, n := range nums {
-				diff := n - mean
-				variance += diff * diff
-			}
-			out[i] = variance / float64(len(nums))
+			out[i] = variance
 		default:
 			out[i] = nums[len(nums)-1]
 		}
@@ -2552,18 +2367,12 @@ func (d DataFrame) evalRolling(target expr.Expr, op string, name string) (series
 }
 
 func (d DataFrame) evalOver(target expr.Expr, partitionSpec string, name string) (series.Series, error) {
-	partitions := []string{}
-	if strings.TrimSpace(partitionSpec) != "" {
-		partitions = strings.Split(partitionSpec, ",")
-	}
-	trimmed := make([]string, 0, len(partitions))
-	for _, p := range partitions {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			trimmed = append(trimmed, p)
+	var partitions []string
+	for p := range strings.SplitSeq(partitionSpec, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			partitions = append(partitions, p)
 		}
 	}
-	partitions = trimmed
 	base, err := d.evalExprAsSeriesVectorized(target)
 	if err != nil {
 		return series.Series{}, err
@@ -2576,13 +2385,9 @@ func (d DataFrame) evalOver(target expr.Expr, partitionSpec string, name string)
 		return series.FromColumn(name, baseCol), nil
 	}
 	// Typed partition ids via chunk.GroupIDs (no per-row fmt.Sprintf / boxing).
-	partCols := make([]*chunk.Column, len(partitions))
-	for j, c := range partitions {
-		s, ok := d.cols[c]
-		if !ok {
-			return series.Series{}, fmt.Errorf("partition column %s not found", c)
-		}
-		partCols[j] = s.Column()
+	partCols, err := keyColumns(d, partitions, "partition column")
+	if err != nil {
+		return series.Series{}, err
 	}
 	// A window aggregation only needs the partitioning, never the group numbering
 	// (cum_sum/cum_count accumulate into a per-id slot, and the rank variant fills
@@ -2591,12 +2396,16 @@ func (d DataFrame) evalOver(target expr.Expr, partitionSpec string, name string)
 	// in the sequential group build, so this is the dominant cost, not the scan.
 	ids, ngroups := chunk.GroupIDsUnordered(partCols, n)
 
-	if target.Kind() == expr.KindUnary && target.Op() == "cum_sum" {
+	if target.Kind() != expr.KindUnary {
+		return series.FromColumn(name, baseCol), nil
+	}
+	switch target.Op() {
+	case "cum_sum":
 		if f64s, ok := baseCol.Float64s(); ok {
 			nulls := baseCol.Nulls()
 			out := make([]float64, n)
 			sums := make([]float64, ngroups)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				g := ids[i]
 				if nulls == nil || !nulls[i] {
 					sums[g] += f64s[i]
@@ -2605,12 +2414,11 @@ func (d DataFrame) evalOver(target expr.Expr, partitionSpec string, name string)
 			}
 			return series.FromFloat64(name, out, nil), nil
 		}
-	}
-	if target.Kind() == expr.KindUnary && target.Op() == "cum_count" {
+	case "cum_count":
 		nulls := baseCol.Nulls()
 		out := make([]int64, n)
 		counts := make([]int64, ngroups)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			g := ids[i]
 			if nulls == nil || !nulls[i] {
 				counts[g]++
@@ -2618,8 +2426,7 @@ func (d DataFrame) evalOver(target expr.Expr, partitionSpec string, name string)
 			out[i] = counts[g]
 		}
 		return series.FromInt64(name, out, nil), nil
-	}
-	if target.Kind() == expr.KindUnary && target.Op() == "rank" {
+	case "rank":
 		buckets := make([][]int, ngroups)
 		for i, g := range ids {
 			buckets[g] = append(buckets[g], i)
@@ -2672,31 +2479,15 @@ func (d DataFrame) evalOver(target expr.Expr, partitionSpec string, name string)
 }
 
 func (d DataFrame) parallelForRows(run func(start int, end int) error) error {
-	if d.height == 0 {
-		return nil
-	}
-	workers := runtime.GOMAXPROCS(0)
-	if workers < 1 {
-		workers = 1
-	}
-	if workers > d.height {
-		workers = d.height
-	}
-	chunk := (d.height + workers - 1) / workers
-	errCh := make(chan error, workers)
+	ranges := partitionRanges(d.height, runtime.GOMAXPROCS(0))
+	errCh := make(chan error, len(ranges))
 	var wg sync.WaitGroup
-	for start := 0; start < d.height; start += chunk {
-		end := start + chunk
-		if end > d.height {
-			end = d.height
-		}
-		wg.Add(1)
-		go func(s int, e int) {
-			defer wg.Done()
-			if err := run(s, e); err != nil {
+	for _, rg := range ranges {
+		wg.Go(func() {
+			if err := run(rg[0], rg[1]); err != nil {
 				errCh <- err
 			}
-		}(start, end)
+		})
 	}
 	wg.Wait()
 	select {
@@ -2743,8 +2534,6 @@ func aggregateValues(values []any, agg string) any {
 		return nil
 	}
 	switch agg {
-	case "", "first":
-		return values[0]
 	case "sum", "mean":
 		total := float64(0)
 		count := 0
@@ -2774,16 +2563,14 @@ func aggregateValues(values []any, agg string) any {
 		return int64(len(values))
 	case "min", "max":
 		best := values[0]
-		for i := 1; i < len(values); i++ {
-			if compareAny(values[i], best) < 0 && agg == "min" {
-				best = values[i]
-			}
-			if compareAny(values[i], best) > 0 && agg == "max" {
-				best = values[i]
+		for _, v := range values[1:] {
+			c := compareAny(v, best)
+			if (agg == "min" && c < 0) || (agg == "max" && c > 0) {
+				best = v
 			}
 		}
 		return best
-	default:
+	default: // "", "first" and unrecognized aggs
 		return values[0]
 	}
 }
@@ -2798,12 +2585,7 @@ func isSeriesSortedAsc(s series.Series) bool {
 }
 
 func hasSeriesNulls(s series.Series) bool {
-	for i := 0; i < s.Len(); i++ {
-		if s.IsNull(i) {
-			return true
-		}
-	}
-	return false
+	return s.Column().NullCount() > 0
 }
 
 func hasSeriesNaN(s series.Series) bool {
@@ -2814,17 +2596,6 @@ func hasSeriesNaN(s series.Series) bool {
 		}
 	}
 	return false
-}
-
-func toFloat(v any) (float64, bool) {
-	switch t := v.(type) {
-	case int64:
-		return float64(t), true
-	case float64:
-		return t, true
-	default:
-		return 0, false
-	}
 }
 
 func castValueToType(v any, dt dtypes.DataType) (any, error) {
@@ -2935,6 +2706,22 @@ func compareOrdered[T cmp.Ordered](l T, r T) int {
 	return 0
 }
 
+// compareNaNLast orders two float64s like compareOrdered, except that NaN sorts
+// after every other value and compares equal to another NaN.
+func compareNaNLast(l, r float64) int {
+	lNaN, rNaN := math.IsNaN(l), math.IsNaN(r)
+	if lNaN && rNaN {
+		return 0
+	}
+	if lNaN {
+		return 1
+	}
+	if rNaN {
+		return -1
+	}
+	return compareOrdered(l, r)
+}
+
 func compareAny(left any, right any) int {
 	switch l := left.(type) {
 	case int64:
@@ -2955,16 +2742,14 @@ func compareAny(left any, right any) int {
 
 func inTemporalBounds(ts time.Time, start time.Time, end time.Time, closed string) bool {
 	switch closed {
-	case "left", "":
-		return (ts.Equal(start) || ts.After(start)) && ts.Before(end)
 	case "right":
-		return ts.After(start) && (ts.Before(end) || ts.Equal(end))
+		return ts.After(start) && !ts.After(end)
 	case "both":
-		return (ts.Equal(start) || ts.After(start)) && (ts.Before(end) || ts.Equal(end))
+		return !ts.Before(start) && !ts.After(end)
 	case "none":
 		return ts.After(start) && ts.Before(end)
-	default:
-		return (ts.Equal(start) || ts.After(start)) && ts.Before(end)
+	default: // "left", "" and unrecognized values
+		return !ts.Before(start) && ts.Before(end)
 	}
 }
 
@@ -3002,65 +2787,20 @@ func (r rowAccessor) ValueAt(row int, column string) (any, bool) {
 }
 
 func lessAny(left any, right any) bool {
-	switch l := left.(type) {
-	case int64:
-		r, ok := right.(int64)
-		if !ok {
-			return false
-		}
-		return l < r
-	case float64:
-		r, ok := right.(float64)
-		if !ok {
-			return false
-		}
-		return l < r
-	case string:
-		r, ok := right.(string)
-		if !ok {
-			return false
-		}
-		return l < r
-	case bool:
+	if l, ok := left.(bool); ok {
 		r, ok := right.(bool)
-		if !ok {
-			return false
-		}
-		return !l && r
-	default:
-		return false
+		return ok && !l && r
 	}
+	return compareAny(left, right) < 0
 }
 
 func compareSortValues(left any, right any, nullsLast bool) int {
-	if left == nil && right == nil {
-		return 0
+	if ln, rn := left == nil, right == nil; ln || rn {
+		return compareNulls(ln, rn, nullsLast)
 	}
-	if left == nil {
-		if nullsLast {
-			return 1
-		}
-		return -1
-	}
-	if right == nil {
-		if nullsLast {
-			return -1
-		}
-		return 1
-	}
-	lf, lok := left.(float64)
-	rf, rok := right.(float64)
-	if lok && rok {
-		lNaN := math.IsNaN(lf)
-		rNaN := math.IsNaN(rf)
-		if lNaN && rNaN {
-			return 0
-		}
-		if lNaN {
-			return 1
-		}
-		if rNaN {
-			return -1
+	if lf, ok := left.(float64); ok {
+		if rf, ok := right.(float64); ok {
+			return compareNaNLast(lf, rf)
 		}
 	}
 	if left == right {

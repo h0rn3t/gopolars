@@ -16,13 +16,13 @@ func TestIsNullAllNull(t *testing.T) {
 		t.Fatalf("series: %v", err)
 	}
 	isNull := s.IsNull()
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if v, ok := isNull.Value(i).(bool); !ok || !v {
 			t.Fatalf("is_null[%d]: got %v, want true", i, isNull.Value(i))
 		}
 	}
 	isNotNull := s.IsNotNull()
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if v, ok := isNotNull.Value(i).(bool); !ok || v {
 			t.Fatalf("is_not_null[%d]: got %v, want false", i, isNotNull.Value(i))
 		}
@@ -41,7 +41,7 @@ func TestIsNullInverse(t *testing.T) {
 	if isNull.NullCount() != 0 {
 		t.Fatalf("is_null has nulls: %d", isNull.NullCount())
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		n, _ := isNull.Value(i).(bool)
 		nn, _ := isNotNull.Value(i).(bool)
 		if n == nn {

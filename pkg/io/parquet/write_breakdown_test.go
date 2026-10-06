@@ -24,7 +24,7 @@ func benchWriteFrame(tb testing.TB, n int) frame.DataFrame {
 	nn := make([]any, n)
 	i := make([]any, n)
 	groups := []string{"a", "b", "c", "d", "e"}
-	for k := 0; k < n; k++ {
+	for k := range n {
 		g[k] = groups[k%len(groups)]
 		v[k] = float64(k%997) - 500
 		if k%10 == 0 {

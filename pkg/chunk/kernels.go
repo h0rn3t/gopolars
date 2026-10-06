@@ -28,16 +28,11 @@ func forEachShard(n int, fn func(lo, hi int)) {
 		fn(0, n)
 		return
 	}
-	if workers > n {
-		workers = n
-	}
+	workers = min(workers, n)
 	var wg sync.WaitGroup
-	wg.Add(workers)
-	for w := 0; w < workers; w++ {
-		go func(lo, hi int) {
-			defer wg.Done()
-			fn(lo, hi)
-		}(w*n/workers, (w+1)*n/workers)
+	for w := range workers {
+		lo, hi := w*n/workers, (w+1)*n/workers
+		wg.Go(func() { fn(lo, hi) })
 	}
 	wg.Wait()
 }
@@ -45,21 +40,11 @@ func forEachShard(n int, fn func(lo, hi int)) {
 // shardBounds returns workers+1 boundaries splitting [0,n) into balanced disjoint
 // ranges, collapsing to a single shard at or below parallelFillThreshold.
 func shardBounds(n int) []int {
-	workers := runtime.GOMAXPROCS(0)
-	if n <= parallelFillThreshold || workers < 1 {
-		workers = 1
+	workers := 1
+	if n > parallelFillThreshold {
+		workers = min(runtime.GOMAXPROCS(0), n)
 	}
-	if workers > n {
-		workers = n
-	}
-	if workers < 1 {
-		workers = 1
-	}
-	bounds := make([]int, workers+1)
-	for w := 0; w <= workers; w++ {
-		bounds[w] = w * n / workers
-	}
-	return bounds
+	return rangeBounds(n, workers)
 }
 
 // forEachBound runs fn(workerIndex, lo, hi) concurrently for each consecutive
@@ -67,19 +52,13 @@ func shardBounds(n int) []int {
 // worker it runs inline.
 func forEachBound(bounds []int, fn func(w, lo, hi int)) {
 	workers := len(bounds) - 1
-	if workers <= 1 {
-		if workers == 1 {
-			fn(0, bounds[0], bounds[1])
-		}
+	if workers == 1 {
+		fn(0, bounds[0], bounds[1])
 		return
 	}
 	var wg sync.WaitGroup
-	wg.Add(workers)
-	for w := 0; w < workers; w++ {
-		go func(w int) {
-			defer wg.Done()
-			fn(w, bounds[w], bounds[w+1])
-		}(w)
+	for w := range workers {
+		wg.Go(func() { fn(w, bounds[w], bounds[w+1]) })
 	}
 	wg.Wait()
 }
@@ -89,16 +68,16 @@ func forEachBound(bounds []int, fn func(w, lo, hi int)) {
 // the common "no NaN present" case costs one parallel scan rather than a full
 // allocate-and-copy.
 func hasFillableNaNFloat64(f64s []float64, nulls []bool) bool {
-	var found int32
+	var found atomic.Int32
 	forEachShard(len(f64s), func(lo, hi int) {
 		for i := lo; i < hi; i++ {
 			if math.IsNaN(f64s[i]) && (nulls == nil || !nulls[i]) {
-				atomic.StoreInt32(&found, 1)
+				found.Store(1)
 				return
 			}
 		}
 	})
-	return atomic.LoadInt32(&found) != 0
+	return found.Load() != 0
 }
 
 // stringifyBoxed renders a boxed value for use in a composite group key. Used
@@ -340,7 +319,7 @@ func (c *Column) DropNaNFloat64() (*Column, bool) {
 	// Exclusive prefix offsets + total survivor count.
 	offsets := make([]int, workers)
 	total := 0
-	for w := 0; w < workers; w++ {
+	for w := range workers {
 		offsets[w] = total
 		total += counts[w]
 	}
@@ -371,6 +350,15 @@ func (c *Column) DropNaNFloat64() (*Column, bool) {
 // row-wise key which renders every NaN as "NaN").
 const canonicalNaNBits = uint64(0x7ff8000000000000)
 
+// float64Key returns the bits of v for use as a group or join key, with every
+// NaN collapsed to canonicalNaNBits.
+func float64Key(v float64) uint64 {
+	if math.IsNaN(v) {
+		return canonicalNaNBits
+	}
+	return math.Float64bits(v)
+}
+
 // GroupIDs assigns each of the first n rows a dense group id derived from the
 // typed values of the given key columns, with no per-row interface boxing or
 // fmt.Sprintf. ids[row] is the group id in [0, len(firstRow)); firstRow[g] is
@@ -391,10 +379,7 @@ func GroupIDs(cols []*Column, n int) (ids []int, firstRow []int) {
 	var scratch []byte
 	next := 0
 	for row := range n {
-		scratch = scratch[:0]
-		for _, c := range cols {
-			scratch = appendRowKey(scratch, c, row)
-		}
+		scratch = AppendRowKey(scratch[:0], cols, row)
 		g, ok := idMap[string(scratch)]
 		if !ok {
 			g = next
@@ -423,10 +408,7 @@ func FirstRows(cols []*Column, n int) []int {
 	idMap := make(map[string]struct{})
 	var scratch []byte
 	for row := range n {
-		scratch = scratch[:0]
-		for _, c := range cols {
-			scratch = appendRowKey(scratch, c, row)
-		}
+		scratch = AppendRowKey(scratch[:0], cols, row)
 		if _, ok := idMap[string(scratch)]; !ok {
 			idMap[string(scratch)] = struct{}{}
 			firstRow = append(firstRow, row)
@@ -468,11 +450,7 @@ func firstRowsSingle(c *Column, n int) (firstRow []int, ok bool) {
 				assignNull(row)
 				continue
 			}
-			v := c.f64[row]
-			bits := math.Float64bits(v)
-			if math.IsNaN(v) {
-				bits = canonicalNaNBits
-			}
+			bits := float64Key(c.f64[row])
 			if _, seen := m[bits]; !seen {
 				m[bits] = struct{}{}
 				firstRow = append(firstRow, row)
@@ -563,11 +541,7 @@ func groupIDsSingle(c *Column, n int) (ids []int, firstRow []int, ok bool) {
 				ids[row] = assignNull(row)
 				continue
 			}
-			v := c.f64[row]
-			bits := math.Float64bits(v)
-			if math.IsNaN(v) {
-				bits = canonicalNaNBits
-			}
+			bits := float64Key(c.f64[row])
 			g, seen := m[bits]
 			if !seen {
 				g = next
@@ -658,11 +632,7 @@ func appendRowKey(dst []byte, c *Column, row int) []byte {
 		return appendUint64(dst, uint64(c.i64[row]))
 	case dtypes.Float64:
 		dst = append(dst, 2)
-		bits := math.Float64bits(c.f64[row])
-		if math.IsNaN(c.f64[row]) {
-			bits = canonicalNaNBits
-		}
-		return appendUint64(dst, bits)
+		return appendUint64(dst, float64Key(c.f64[row]))
 	case dtypes.String, dtypes.Categorical, dtypes.Enum:
 		dst = append(dst, 3)
 		s := c.str[row]
@@ -724,13 +694,7 @@ func PackKeyFunc(c *Column) (keyAt func(int) uint64, ok bool) {
 		return func(i int) uint64 { return uint64(v[i]) }, true
 	case dtypes.Float64:
 		v := c.f64
-		return func(i int) uint64 {
-			bits := math.Float64bits(v[i])
-			if math.IsNaN(v[i]) {
-				bits = canonicalNaNBits
-			}
-			return bits
-		}, true
+		return func(i int) uint64 { return float64Key(v[i]) }, true
 	case dtypes.Boolean:
 		v := c.bln
 		return func(i int) uint64 {

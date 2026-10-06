@@ -64,6 +64,7 @@ func foldAgg(spec *aggSpec, a *acc, row int) {
 	if spec.nulls != nil && spec.nulls[row] {
 		return
 	}
+	isMin := spec.kind == aggMin
 	if spec.colFloat {
 		v := spec.f64s[row]
 		if math.IsNaN(v) {
@@ -72,12 +73,8 @@ func foldAgg(spec *aggSpec, a *acc, row int) {
 		switch spec.kind {
 		case aggSum, aggMean:
 			a.fval += v
-		case aggMin:
-			if a.cnt == 0 || v < a.fval {
-				a.fval = v
-			}
-		case aggMax:
-			if a.cnt == 0 || v > a.fval {
+		case aggMin, aggMax:
+			if a.cnt == 0 || (isMin && v < a.fval) || (!isMin && v > a.fval) {
 				a.fval = v
 			}
 		}
@@ -86,12 +83,8 @@ func foldAgg(spec *aggSpec, a *acc, row int) {
 		switch spec.kind {
 		case aggSum, aggMean:
 			a.ival += v
-		case aggMin:
-			if a.cnt == 0 || v < a.ival {
-				a.ival = v
-			}
-		case aggMax:
-			if a.cnt == 0 || v > a.ival {
+		case aggMin, aggMax:
+			if a.cnt == 0 || (isMin && v < a.ival) || (!isMin && v > a.ival) {
 				a.ival = v
 			}
 		}
@@ -108,27 +101,15 @@ func mergeAgg(kind aggKind, colFloat bool, dst *acc, src acc) {
 		dst.cnt += src.cnt
 		dst.fval += src.fval
 		dst.ival += src.ival
-	case aggMin:
+	case aggMin, aggMax:
+		isMin := kind == aggMin
 		if src.cnt > 0 {
 			if colFloat {
-				if dst.cnt == 0 || src.fval < dst.fval {
+				if dst.cnt == 0 || (isMin && src.fval < dst.fval) || (!isMin && src.fval > dst.fval) {
 					dst.fval = src.fval
 				}
 			} else {
-				if dst.cnt == 0 || src.ival < dst.ival {
-					dst.ival = src.ival
-				}
-			}
-		}
-		dst.cnt += src.cnt
-	case aggMax:
-		if src.cnt > 0 {
-			if colFloat {
-				if dst.cnt == 0 || src.fval > dst.fval {
-					dst.fval = src.fval
-				}
-			} else {
-				if dst.cnt == 0 || src.ival > dst.ival {
+				if dst.cnt == 0 || (isMin && src.ival < dst.ival) || (!isMin && src.ival > dst.ival) {
 					dst.ival = src.ival
 				}
 			}
@@ -261,7 +242,7 @@ func newShardTable[K comparable](naggs int) *shardTable[K] {
 		firstRow: make([]int, 0, shardGroupHint),
 		accs:     make([][]acc, naggs),
 	}
-	for a := 0; a < naggs; a++ {
+	for a := range naggs {
 		st.accs[a] = make([]acc, 0, shardGroupHint)
 	}
 	return st
@@ -272,7 +253,7 @@ func (st *shardTable[K]) add(key K, isNull bool, row, naggs int) int {
 	st.firstRow = append(st.firstRow, row)
 	st.keys = append(st.keys, key)
 	st.isNull = append(st.isNull, isNull)
-	for a := 0; a < naggs; a++ {
+	for a := range naggs {
 		st.accs[a] = append(st.accs[a], acc{})
 	}
 	return gi
@@ -348,13 +329,13 @@ func mergeShardsTyped[K comparable](shards []*shardTable[K], specs []aggSpec) me
 	globalNull := -1
 	firstRow := make([]int, 0, shardGroupHint)
 	accs := make([][]acc, naggs)
-	for a := 0; a < naggs; a++ {
+	for a := range naggs {
 		accs[a] = make([]acc, 0, shardGroupHint)
 	}
 	addGlobal := func(fr int) int {
 		gi := len(firstRow)
 		firstRow = append(firstRow, fr)
-		for a := 0; a < naggs; a++ {
+		for a := range naggs {
 			accs[a] = append(accs[a], acc{})
 		}
 		return gi
@@ -382,7 +363,7 @@ func mergeShardsTyped[K comparable](shards []*shardTable[K], specs []aggSpec) me
 			if sh.firstRow[lg] < firstRow[gi] {
 				firstRow[gi] = sh.firstRow[lg]
 			}
-			for a := 0; a < naggs; a++ {
+			for a := range naggs {
 				mergeAgg(specs[a].kind, specs[a].colFloat, &accs[a][gi], sh.accs[a][lg])
 			}
 		}
@@ -461,11 +442,10 @@ func parScan[K comparable](ranges [][2]int, build func(start, end int) *shardTab
 	shards := make([]*shardTable[K], len(ranges))
 	var wg sync.WaitGroup
 	for i, rg := range ranges {
-		wg.Add(1)
-		go func(i, start, end int) {
-			defer wg.Done()
+		start, end := rg[0], rg[1]
+		wg.Go(func() {
 			shards[i] = build(start, end)
-		}(i, rg[0], rg[1])
+		})
 	}
 	wg.Wait()
 	return shards

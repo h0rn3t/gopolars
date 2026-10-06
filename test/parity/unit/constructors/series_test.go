@@ -151,7 +151,7 @@ func TestSeriesConstructionAllNulls(t *testing.T) {
 	if s.Len() != 3 {
 		t.Fatalf("len: got %d, want 3", s.Len())
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if s.Value(i) != nil {
 			t.Fatalf("value[%d]: should be nil, got %v", i, s.Value(i))
 		}

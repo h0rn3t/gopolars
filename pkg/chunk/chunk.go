@@ -424,51 +424,29 @@ func gatherSlice[T any, I indexInteger](dst, src []T, indices []I, needNulls boo
 // indices is generic over int / int32 so a join can gather over int32 pair
 // buffers (half the memory of []int) without first widening them to []int.
 func gatherTyped[I indexInteger](c *Column, indices []I, allowNullFill bool) *Column {
-	n := len(indices)
-	out := &Column{dtype: c.dtype, n: n, nullCount: unknownNullCount}
+	needNulls := gatherNeedsNulls(c, indices, allowNullFill)
+	out := allocGatherOut(c, len(indices), needNulls)
+	gatherRange(out, c, indices, 0, len(indices), needNulls)
+	return out
+}
 
-	// The gather can only introduce a null when the source actually has null
-	// rows or when a -1 sentinel is present. NullCount() is cached, so a
-	// null-free column (including one carrying an all-false validity slice from
-	// construction) takes the no-validity fast path. Probe for a sentinel only
-	// when null-fill is allowed and the source is otherwise null-free, so the
-	// common in-range gather stays a single pass.
-	needNulls := c.NullCount() != 0
-	if allowNullFill && !needNulls {
+// gatherNeedsNulls reports whether gathering indices from c can produce a null
+// row. NullCount() is cached, so a null-free column (including one carrying an
+// all-false validity slice from construction) takes the no-validity fast path.
+// The -1 sentinel probe runs only when null-fill is allowed and the source is
+// otherwise null-free, so the common in-range gather stays a single pass.
+func gatherNeedsNulls[I indexInteger](c *Column, indices []I, allowNullFill bool) bool {
+	if c.NullCount() != 0 {
+		return true
+	}
+	if allowNullFill {
 		for _, s := range indices {
 			if s < 0 {
-				needNulls = true
-				break
+				return true
 			}
 		}
 	}
-	if needNulls {
-		out.nulls = make([]bool, n)
-	} else {
-		out.nullCount = 0
-	}
-
-	switch c.dtype {
-	case dtypes.Int64:
-		out.i64 = make([]int64, n)
-		gatherSlice(out.i64, c.i64, indices, needNulls, out.nulls, c.nulls)
-	case dtypes.Float64:
-		out.f64 = make([]float64, n)
-		gatherSlice(out.f64, c.f64, indices, needNulls, out.nulls, c.nulls)
-	case dtypes.String, dtypes.Categorical, dtypes.Enum:
-		out.str = make([]string, n)
-		gatherSlice(out.str, c.str, indices, needNulls, out.nulls, c.nulls)
-	case dtypes.Boolean:
-		out.bln = make([]bool, n)
-		gatherSlice(out.bln, c.bln, indices, needNulls, out.nulls, c.nulls)
-	case dtypes.Datetime:
-		out.tim = make([]time.Time, n)
-		gatherSlice(out.tim, c.tim, indices, needNulls, out.nulls, c.nulls)
-	default:
-		out.boxed = make([]any, n)
-		gatherSlice(out.boxed, c.boxed, indices, needNulls, out.nulls, c.nulls)
-	}
-	return out
+	return false
 }
 
 // gatherTypedParallel is gatherTyped with the value/validity copy split across
@@ -483,47 +461,13 @@ func gatherTypedParallel[I indexInteger](c *Column, indices []I, allowNullFill b
 		return gatherTyped(c, indices, allowNullFill)
 	}
 
-	out := &Column{dtype: c.dtype, n: n, nullCount: unknownNullCount}
-	needNulls := c.NullCount() != 0
-	if allowNullFill && !needNulls {
-		for _, s := range indices {
-			if s < 0 {
-				needNulls = true
-				break
-			}
-		}
-	}
-	if needNulls {
-		out.nulls = make([]bool, n)
-	} else {
-		out.nullCount = 0
-	}
-	switch c.dtype {
-	case dtypes.Int64:
-		out.i64 = make([]int64, n)
-	case dtypes.Float64:
-		out.f64 = make([]float64, n)
-	case dtypes.String, dtypes.Categorical, dtypes.Enum:
-		out.str = make([]string, n)
-	case dtypes.Boolean:
-		out.bln = make([]bool, n)
-	case dtypes.Datetime:
-		out.tim = make([]time.Time, n)
-	default:
-		out.boxed = make([]any, n)
-	}
-
-	if workers > n {
-		workers = n
-	}
+	needNulls := gatherNeedsNulls(c, indices, allowNullFill)
+	out := allocGatherOut(c, n, needNulls)
+	workers = min(workers, n)
 	var wg sync.WaitGroup
-	wg.Add(workers)
-	for w := 0; w < workers; w++ {
+	for w := range workers {
 		lo, hi := w*n/workers, (w+1)*n/workers
-		go func(lo, hi int) {
-			defer wg.Done()
-			gatherRange(out, c, indices, lo, hi, needNulls)
-		}(lo, hi)
+		wg.Go(func() { gatherRange(out, c, indices, lo, hi, needNulls) })
 	}
 	wg.Wait()
 	return out
@@ -601,24 +545,8 @@ func (c *Column) Shift(periods int) *Column {
 	if periods == 0 {
 		return c.Clone()
 	}
-	out := &Column{dtype: c.dtype, n: c.n, nulls: make([]bool, c.n), nullCount: unknownNullCount}
-	switch c.dtype {
-	case dtypes.Int64:
-		out.i64 = make([]int64, c.n)
-	case dtypes.Float64:
-		out.f64 = make([]float64, c.n)
-	case dtypes.String, dtypes.Categorical, dtypes.Enum:
-		out.str = make([]string, c.n)
-	case dtypes.Boolean:
-		out.bln = make([]bool, c.n)
-	case dtypes.Datetime:
-		out.tim = make([]time.Time, c.n)
-	default:
-		out.boxed = make([]any, c.n)
-	}
-	for i := range out.nulls {
-		out.nulls[i] = true
-	}
+	out := allocGatherOut(c, c.n, true)
+	fillTrue(out.nulls)
 	if periods > 0 {
 		for src := 0; src < c.n-periods; src++ {
 			c.copyRow(out, src+periods, src)
@@ -668,69 +596,33 @@ func ConcatColumns(cols []*Column) *Column {
 	if len(cols) == 0 {
 		return &Column{nullCount: unknownNullCount}
 	}
-	dtype := cols[0].dtype
 	total := 0
 	for _, c := range cols {
 		total += c.n
 	}
-	nulls := make([]bool, total)
+	out := allocGatherOut(cols[0], total, true)
 	off := 0
 	for _, c := range cols {
 		if c.nulls != nil {
-			copy(nulls[off:], c.nulls)
+			copy(out.nulls[off:], c.nulls)
+		}
+		switch out.dtype {
+		case dtypes.Int64:
+			copy(out.i64[off:], c.i64)
+		case dtypes.Float64:
+			copy(out.f64[off:], c.f64)
+		case dtypes.String, dtypes.Categorical, dtypes.Enum:
+			copy(out.str[off:], c.str)
+		case dtypes.Boolean:
+			copy(out.bln[off:], c.bln)
+		case dtypes.Datetime:
+			copy(out.tim[off:], c.tim)
+		default:
+			copy(out.boxed[off:], c.boxed)
 		}
 		off += c.n
 	}
-	switch dtype {
-	case dtypes.Float64:
-		buf := make([]float64, total)
-		off = 0
-		for _, c := range cols {
-			copy(buf[off:], c.f64)
-			off += c.n
-		}
-		return &Column{dtype: dtype, n: total, f64: buf, nulls: nulls, nullCount: unknownNullCount}
-	case dtypes.Int64:
-		buf := make([]int64, total)
-		off = 0
-		for _, c := range cols {
-			copy(buf[off:], c.i64)
-			off += c.n
-		}
-		return &Column{dtype: dtype, n: total, i64: buf, nulls: nulls, nullCount: unknownNullCount}
-	case dtypes.String, dtypes.Categorical, dtypes.Enum:
-		buf := make([]string, total)
-		off = 0
-		for _, c := range cols {
-			copy(buf[off:], c.str)
-			off += c.n
-		}
-		return &Column{dtype: dtype, n: total, str: buf, nulls: nulls, nullCount: unknownNullCount}
-	case dtypes.Boolean:
-		buf := make([]bool, total)
-		off = 0
-		for _, c := range cols {
-			copy(buf[off:], c.bln)
-			off += c.n
-		}
-		return &Column{dtype: dtype, n: total, bln: buf, nulls: nulls, nullCount: unknownNullCount}
-	case dtypes.Datetime:
-		buf := make([]time.Time, total)
-		off = 0
-		for _, c := range cols {
-			copy(buf[off:], c.tim)
-			off += c.n
-		}
-		return &Column{dtype: dtype, n: total, tim: buf, nulls: nulls, nullCount: unknownNullCount}
-	default:
-		buf := make([]any, total)
-		off = 0
-		for _, c := range cols {
-			copy(buf[off:], c.boxed)
-			off += c.n
-		}
-		return &Column{dtype: dtype, n: total, boxed: buf, nulls: nulls, nullCount: unknownNullCount}
-	}
+	return out
 }
 
 // copyRow copies row src of c into row dst of out (same dtype), including null.

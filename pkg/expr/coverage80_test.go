@@ -1,6 +1,8 @@
 package expr
 
 import (
+	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -255,16 +257,16 @@ func TestCompareTimeAndMismatch(t *testing.T) {
 	}
 }
 
-// TestToFloatToInt64Default covers the default (non-numeric) branches of toFloat
+// TestToFloatToInt64Default covers the default (non-numeric) branches of ToFloat
 // and toInt64, which return ok=false.
 func TestToFloatToInt64Default(t *testing.T) {
 	t.Parallel()
 
-	if f, ok := toFloat("x"); ok || f != 0 {
-		t.Fatalf("toFloat(string) = (%v,%v), want (0,false)", f, ok)
+	if f, ok := ToFloat("x"); ok || f != 0 {
+		t.Fatalf("ToFloat(string) = (%v,%v), want (0,false)", f, ok)
 	}
-	if f, ok := toFloat(nil); ok || f != 0 {
-		t.Fatalf("toFloat(nil) = (%v,%v), want (0,false)", f, ok)
+	if f, ok := ToFloat(nil); ok || f != 0 {
+		t.Fatalf("ToFloat(nil) = (%v,%v), want (0,false)", f, ok)
 	}
 	if i, ok := toInt64("x"); ok || i != 0 {
 		t.Fatalf("toInt64(string) = (%v,%v), want (0,false)", i, ok)
@@ -340,3 +342,44 @@ func TestMapColumnNamesErrorAndStructure(t *testing.T) {
 type errSentinel struct{}
 
 func (errSentinel) Error() string { return "sentinel" }
+
+// TestMapColumnNamesChildOrder pins MapColumnNames' traversal: every child slot
+// is rewritten without touching the input, and the first failing slot in
+// target, left, right, extra order supplies the error.
+func TestMapColumnNamesChildOrder(t *testing.T) {
+	t.Parallel()
+
+	target, left, right, extra := Col("t"), Col("l"), Col("r"), Col("x")
+	e := Expr{kind: KindTern, op: "when", target: &target, left: &left, right: &right, extra: &extra}
+
+	out, err := MapColumnNames(e, func(name string) (string, error) { return name + "2", nil })
+	if err != nil {
+		t.Fatalf("MapColumnNames: %v", err)
+	}
+	if out.Target().ColName() != "t2" || out.Left().ColName() != "l2" || out.Right().ColName() != "r2" || out.Extra().ColName() != "x2" {
+		t.Fatalf("children not rewritten: %v %v %v %v", out.Target().ColName(), out.Left().ColName(), out.Right().ColName(), out.Extra().ColName())
+	}
+	if e.Target().ColName() != "t" || e.Extra().ColName() != "x" {
+		t.Fatal("MapColumnNames modified its input")
+	}
+
+	for _, tc := range []struct {
+		failing []string
+		want    string
+	}{
+		{[]string{"t", "l", "r", "x"}, "t"},
+		{[]string{"l", "r", "x"}, "l"},
+		{[]string{"r", "x"}, "r"},
+		{[]string{"x"}, "x"},
+	} {
+		out, err := MapColumnNames(e, func(name string) (string, error) {
+			if slices.Contains(tc.failing, name) {
+				return "", errors.New(name)
+			}
+			return name, nil
+		})
+		if err == nil || err.Error() != tc.want || out.Target() != nil || out.Extra() != nil {
+			t.Errorf("failing %v: got %+v, %v; want empty Expr and error %q", tc.failing, out, err, tc.want)
+		}
+	}
+}

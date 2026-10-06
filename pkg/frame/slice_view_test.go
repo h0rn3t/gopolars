@@ -11,7 +11,7 @@ func buildIntFrame(t *testing.T, height int) DataFrame {
 	t.Helper()
 	a := make([]int64, height)
 	b := make([]int64, height)
-	for i := 0; i < height; i++ {
+	for i := range height {
 		a[i] = int64(i)
 		b[i] = int64(i) * 10
 	}
@@ -125,7 +125,7 @@ func TestSliceViewAllocationIsSizeIndependent(t *testing.T) {
 func TestSliceViewIsZeroCopy(t *testing.T) {
 	df := buildIntFrame(t, 1_000)
 	view := df.Slice(500, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if got, want := mustInt64(t, view.cols["a"], i), int64(500+i); got != want {
 			t.Fatalf("view a[%d] = %d, want %d", i, got, want)
 		}

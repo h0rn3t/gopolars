@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -107,9 +108,7 @@ func evalExtraUnary(op string, v any) (out any, handled bool, err error) {
 			return nil, true, fmt.Errorf("str_reverse expects string")
 		}
 		runes := []rune(s)
-		for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
-			runes[i], runes[j] = runes[j], runes[i]
-		}
+		slices.Reverse(runes)
 		return string(runes), true, nil
 	case "str_to_title":
 		if v == nil {
@@ -217,12 +216,7 @@ func evalExtraBin(op string, left any, right any) (out any, handled bool, err er
 		if count < 0 {
 			count = len(runes) + count
 		}
-		if count < 0 {
-			count = 0
-		}
-		if count > len(runes) {
-			count = len(runes)
-		}
+		count = min(max(count, 0), len(runes))
 		if op == "str_left" {
 			return string(runes[:count]), true, nil
 		}
@@ -245,8 +239,8 @@ func evalExtraBin(op string, left any, right any) (out any, handled bool, err er
 		if left == nil || right == nil {
 			return nil, true, nil
 		}
-		y, yok := toFloat(left)
-		x, xok := toFloat(right)
+		y, yok := ToFloat(left)
+		x, xok := ToFloat(right)
 		if !yok || !xok {
 			return nil, true, fmt.Errorf("atan2 expects numeric")
 		}
@@ -277,10 +271,7 @@ func evalExtraTern(op string, target any, left any, right any) (out any, handled
 			fill = f
 		}
 		runes := []rune(s)
-		width := int(n)
-		if width < 0 {
-			width = 0
-		}
+		width := max(int(n), 0)
 		if len(runes) >= width {
 			return string(runes[:width]), true, nil
 		}
@@ -289,7 +280,7 @@ func evalExtraTern(op string, target any, left any, right any) (out any, handled
 		}
 		fillRunes := []rune(fill)
 		pad := make([]rune, 0, width-len(runes))
-		for i := 0; i < width-len(runes); i++ {
+		for i := range width - len(runes) {
 			pad = append(pad, fillRunes[i%len(fillRunes)])
 		}
 		if op == "str_pad_start" {

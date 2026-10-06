@@ -232,8 +232,8 @@ func TestDataFrameTransposeEmpty(t *testing.T) {
 	}
 }
 
-// TestDataFrameToDummiesSubset covers ToDummies on a subset, exercising
-// anySlice for the passthrough column.
+// TestDataFrameToDummiesSubset covers ToDummies on a subset, exercising the
+// passthrough of a non-target column.
 func TestDataFrameToDummiesSubset(t *testing.T) {
 	d, err := NewDataFrame(NewDataFrameInput{Columns: []frame.SeriesInput{
 		{Name: "id", Values: []any{int64(1), int64(2), int64(3)}},

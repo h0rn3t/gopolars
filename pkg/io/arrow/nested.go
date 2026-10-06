@@ -2,12 +2,13 @@ package arrow
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
 	goarrow "github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/decimal128"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/h0rn3t/gopolars/pkg/chunk"
@@ -69,15 +70,10 @@ func arrowValueAt(arr goarrow.Array, i int) any {
 	case *array.Decimal128:
 		dt := a.DataType().(*goarrow.Decimal128Type)
 		return a.Value(i).ToFloat64(dt.Scale)
-	case *array.List:
-		start, end := a.ValueOffsets(i)
-		return sliceValues(a.ListValues(), int(start), int(end))
-	case *array.LargeList:
-		start, end := a.ValueOffsets(i)
-		return sliceValues(a.ListValues(), int(start), int(end))
-	case *array.FixedSizeList:
-		start, end := a.ValueOffsets(i)
-		return sliceValues(a.ListValues(), int(start), int(end))
+	case *array.List, *array.LargeList, *array.FixedSizeList:
+		l := a.(array.ListLike)
+		start, end := l.ValueOffsets(i)
+		return sliceValues(l.ListValues(), int(start), int(end))
 	case *array.Struct:
 		st := a.DataType().(*goarrow.StructType)
 		m := make(map[string]any, a.NumField())
@@ -113,7 +109,7 @@ func sliceValues(child goarrow.Array, start, end int) []any {
 func nestedToColumn(arr goarrow.Array, n int, dtype dtypes.DataType) *chunk.Column {
 	nulls := buildNullMask(arr, n)
 	boxed := make([]any, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if arr.IsValid(i) {
 			boxed[i] = arrowValueAt(arr, i)
 		}
@@ -168,27 +164,23 @@ func flattenLists(values []any) []any {
 	return out
 }
 
-// inferStructType builds a StructType from the union of field names (ordered by
-// first appearance), inferring each field's type from its values across rows.
+// inferStructType builds a StructType from the union of field names (sorted, as
+// maps iterate randomly), inferring each field's type from its values across
+// rows.
 func inferStructType(values []any) (goarrow.DataType, error) {
-	var order []string
-	seen := map[string]bool{}
+	seen := map[string]struct{}{}
 	for _, v := range values {
 		m, ok := v.(map[string]any)
 		if !ok {
 			continue
 		}
 		for k := range m {
-			if !seen[k] {
-				seen[k] = true
-				order = append(order, k)
-			}
+			seen[k] = struct{}{}
 		}
 	}
-	// Stable field order: maps iterate randomly, so sort for determinism.
-	sortStrings(order)
-	fields := make([]goarrow.Field, 0, len(order))
-	for _, name := range order {
+	names := slices.Sorted(maps.Keys(seen))
+	fields := make([]goarrow.Field, 0, len(names))
+	for _, name := range names {
 		col := make([]any, 0, len(values))
 		for _, v := range values {
 			if m, ok := v.(map[string]any); ok {
@@ -204,27 +196,16 @@ func inferStructType(values []any) (goarrow.DataType, error) {
 	return goarrow.StructOf(fields...), nil
 }
 
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
-}
-
-// nestedColumnToArrow builds an Arrow array for a boxed List/Struct column.
-func nestedColumnToArrow(values []any, nulls []bool, mem memory.Allocator) (goarrow.Array, goarrow.DataType, error) {
+// nestedColumnToArrow builds an Arrow array for a boxed List/Struct column. A
+// nil value (a null row) appends a null.
+func nestedColumnToArrow(values []any, mem memory.Allocator) (goarrow.Array, goarrow.DataType, error) {
 	dt, err := inferArrowType(values)
 	if err != nil {
 		return nil, nil, err
 	}
 	b := array.NewBuilder(mem, dt)
 	defer b.Release()
-	for i, v := range values {
-		if nulls != nil && nulls[i] {
-			b.AppendNull()
-			continue
-		}
+	for _, v := range values {
 		if err := appendArrowValue(b, dt, v); err != nil {
 			return nil, nil, err
 		}
@@ -250,8 +231,6 @@ func appendArrowValue(b array.Builder, dt goarrow.DataType, v any) error {
 		bb.Append(v.(bool))
 	case *array.TimestampBuilder:
 		bb.Append(goarrow.Timestamp(v.(time.Time).UnixNano()))
-	case *array.Decimal128Builder:
-		bb.Append(decimal128.FromI64(toInt64(v)))
 	case *array.ListBuilder:
 		lst, ok := v.([]any)
 		if !ok {

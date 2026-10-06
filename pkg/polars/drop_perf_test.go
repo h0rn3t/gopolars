@@ -16,7 +16,7 @@ func buildDropFrame(t testing.TB, n, nullEvery int) DataFrame {
 	a := make([]any, n)
 	b := make([]any, n)
 	c := make([]any, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		b[i] = float64(i)
 		c[i] = "row"
 		if nullEvery > 0 && i%nullEvery == 0 {
@@ -46,7 +46,7 @@ func TestDropNullsSelectivityEquality(t *testing.T) {
 		got := df.DropNulls()
 
 		var wantB []float64
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if nullEvery == 0 || i%nullEvery != 0 {
 				wantB = append(wantB, float64(i))
 			}

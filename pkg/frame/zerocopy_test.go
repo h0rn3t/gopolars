@@ -153,7 +153,7 @@ func buildProjectionBenchFrame(b *testing.B, n int) DataFrame {
 	v := make([]float64, n)
 	w := make([]float64, n)
 	g := make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		v[i] = float64(i)
 		w[i] = float64(i) * 2
 		g[i] = []string{"a", "b", "c"}[i%3]

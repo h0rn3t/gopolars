@@ -17,7 +17,7 @@ func extendedFixtures() (map[string]*chunk.Column, int) {
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	ts := make([]time.Time, h)
 	ts2 := make([]time.Time, h)
-	for i := 0; i < h; i++ {
+	for i := range h {
 		ts[i] = t0.AddDate(0, 0, i)
 		ts2[i] = t0.AddDate(0, 0, h-1-i) // reversed so compares vary
 	}
@@ -71,7 +71,7 @@ func TestBatchMatchesRowWiseExtended(t *testing.T) {
 		// and/or fast path over two no-null boolean columns.
 		{"and_two_cols", expr.Col("flag").And(expr.Col("flag2"))},
 		{"or_two_cols", expr.Col("flag").Or(expr.Col("flag2"))},
-		{"and_lit", expr.Col("flag").And(expr.Lit(true))}, // per-row batchBin and
+		{"and_lit", expr.Col("flag").And(expr.Lit(true))}, // per-row expr.EvalBin and
 		{"not_flag2", expr.Col("flag2").Not()},
 
 		// NaN on the right operand of eq/ne (literal on the left).
@@ -96,7 +96,7 @@ func TestBatchMatchesRowWiseExtended(t *testing.T) {
 		{"cast_time_to_string", expr.Col("ts").Cast(dtypes.String)},
 		{"cast_time_identity", expr.Col("ts").Cast(dtypes.Datetime)},
 
-		// datetime comparisons (compareAny time branch).
+		// datetime comparisons (expr.EvalBin time branch).
 		{"time_gt", expr.Col("ts").Gt(expr.Col("ts2"))},
 		{"time_ge", expr.Col("ts").Ge(expr.Col("ts2"))},
 		{"time_lt", expr.Col("ts").Lt(expr.Col("ts2"))},
@@ -131,7 +131,7 @@ func TestBatchMatchesRowWiseExtended(t *testing.T) {
 			if err != nil {
 				t.Fatalf("batch Eval: %v", err)
 			}
-			for i := 0; i < height; i++ {
+			for i := range height {
 				want, werr := expr.Eval(tc.e, rowAcc{cols: cols, row: i})
 				if werr != nil {
 					t.Fatalf("row-wise eval row %d: %v", i, werr)
@@ -230,7 +230,7 @@ func TestEvalBitmapShapes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("EvalBool: %v", err)
 			}
-			for i := 0; i < height; i++ {
+			for i := range height {
 				want, werr := expr.Eval(tc.e, rowAcc{cols: cols, row: i})
 				if werr != nil {
 					// A nullable bool used as a predicate errors row-wise; the
@@ -241,6 +241,85 @@ func TestEvalBitmapShapes(t *testing.T) {
 				if simd.BitmapGet(mask, i) != (want != nil && wb) {
 					t.Fatalf("%s row %d: bit=%v want %v", tc.name, i, simd.BitmapGet(mask, i), wb)
 				}
+			}
+		})
+	}
+}
+
+// TestBatchBinRowWiseParity pins the per-row binary fallback (boolBinNode and
+// floatBinNode) against the row-wise evaluator: null propagation, Kleene logic
+// over nullable booleans, string ordering and NaN equality, and the exact error
+// text for every operand-type error.
+func TestBatchBinRowWiseParity(t *testing.T) {
+	cols, height := extendedFixtures()
+	cols["flagN"] = chunk.NewBool([]bool{true, false, true, false, true}, []bool{false, true, false, false, false})
+	cols["cityN"] = chunk.NewString([]string{"kyiv", "", "odesa", "lviv", "kyiv"}, []bool{false, true, false, false, false})
+
+	cases := []struct {
+		name string
+		e    expr.Expr
+	}{
+		{"and_nullable", expr.Col("flagN").And(expr.Col("flag"))},
+		{"or_nullable", expr.Col("flagN").Or(expr.Col("flag2"))},
+		{"and_null_lit", expr.Col("flag").And(expr.Lit(nil))},
+		{"or_null_lit", expr.Col("flag").Or(expr.Lit(nil))},
+		{"string_gt_nullable", expr.Col("cityN").Gt(expr.Lit("kyiv"))},
+		{"string_le_col", expr.Col("cityN").Le(expr.Col("city"))},
+		{"string_eq_nullable", expr.Col("cityN").Eq(expr.Lit("kyiv"))},
+		{"string_ne_nullable", expr.Col("cityN").Ne(expr.Lit("kyiv"))},
+		{"float_ne_nan", expr.Col("nanf").Ne(expr.Lit(3.0))},
+		{"float_eq_nan_col", expr.Col("nanf").Eq(expr.Col("nanf"))},
+		{"pow_int_float", expr.Col("c").Pow(expr.Lit(0.5))},
+		{"mod_float_int", expr.Col("d").Mod(expr.Lit(int64(3)))},
+		{"floordiv_nan", expr.Col("nanf").FloorDiv(expr.Lit(2.0))},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			plan, ok := Compile(tc.e)
+			if !ok {
+				t.Fatalf("Compile(%s) not supported", tc.name)
+			}
+			got, err := plan.Eval(cols, height)
+			if err != nil {
+				t.Fatalf("batch Eval: %v", err)
+			}
+			for i := range height {
+				want, werr := expr.Eval(tc.e, rowAcc{cols: cols, row: i})
+				if werr != nil {
+					t.Fatalf("row-wise eval row %d: %v", i, werr)
+				}
+				if gotV := got.ValueAt(i); (want == nil) != (gotV == nil) || (want != nil && !valuesEqual(gotV, want)) {
+					t.Fatalf("row %d: batch=%v (%T) row-wise=%v (%T)", i, gotV, gotV, want, want)
+				}
+			}
+		})
+	}
+
+	errCases := []struct {
+		name string
+		e    expr.Expr
+		want string
+	}{
+		{"and_int", expr.Col("a").And(expr.Col("c")), "and expects bool"},
+		{"or_int", expr.Col("c").Or(expr.Col("flag")), "or expects bool"},
+		{"string_gt_int", expr.Col("city").Gt(expr.Lit(int64(1))), "compare type mismatch"},
+		{"int_gt_string", expr.Col("c").Gt(expr.Lit("x")), "compare type mismatch"},
+		{"float_lt_string", expr.Col("d").Lt(expr.Lit("x")), "compare type mismatch"},
+		{"time_ge_int", expr.Col("ts").Ge(expr.Lit(int64(1))), "compare type mismatch"},
+		{"bool_gt_bool", expr.Col("flag").Gt(expr.Col("flag2")), "unsupported compare types"},
+		{"pow_null_operand", expr.Col("a").Pow(expr.Lit(2.0)), "pow expects numeric"},
+		{"pow_string", expr.Col("city").Pow(expr.Lit(2.0)), "pow expects numeric"},
+		{"mod_string", expr.Col("city").Mod(expr.Lit(2.0)), "mod expects numeric non-zero divisor"},
+		{"floordiv_zero", expr.Col("c").FloorDiv(expr.Lit(int64(0))), "floordiv expects numeric non-zero divisor"},
+	}
+	for _, tc := range errCases {
+		t.Run(tc.name, func(t *testing.T) {
+			plan, ok := Compile(tc.e)
+			if !ok {
+				t.Fatalf("Compile(%s) not supported", tc.name)
+			}
+			if _, err := plan.Eval(cols, height); err == nil || err.Error() != tc.want {
+				t.Fatalf("Eval error = %v, want %q", err, tc.want)
 			}
 		})
 	}

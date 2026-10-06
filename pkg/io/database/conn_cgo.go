@@ -5,6 +5,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	"github.com/apache/arrow-adbc/go/adbc/drivermgr"
 )
@@ -18,9 +19,7 @@ const driverManagerDriverKey = "driver"
 // driverOptions carry DSN/URI/auth passed through to the driver.
 func openByDriverName(ctx context.Context, driverName string, driverOptions map[string]string) (resolvedConn, error) {
 	opts := make(map[string]string, len(driverOptions)+1)
-	for k, v := range driverOptions {
-		opts[k] = v
-	}
+	maps.Copy(opts, driverOptions)
 	if _, ok := opts[driverManagerDriverKey]; !ok {
 		opts[driverManagerDriverKey] = driverName
 	}

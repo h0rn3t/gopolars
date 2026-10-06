@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
-	"github.com/h0rn3t/gopolars/pkg/exec"
+	"github.com/h0rn3t/gopolars/pkg/expr"
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
 	icsv "github.com/h0rn3t/gopolars/pkg/io/csv"
@@ -18,7 +18,6 @@ import (
 	iipc "github.com/h0rn3t/gopolars/pkg/io/ipc"
 	ijson "github.com/h0rn3t/gopolars/pkg/io/json"
 	iparquet "github.com/h0rn3t/gopolars/pkg/io/parquet"
-	"github.com/h0rn3t/gopolars/pkg/plan/logical"
 	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
@@ -87,11 +86,7 @@ func (d *df) IterSlices(size int) []DataFrame {
 	}
 	out := make([]DataFrame, 0, (d.Height()+size-1)/size)
 	for start := 0; start < d.Height(); start += size {
-		length := size
-		if start+length > d.Height() {
-			length = d.Height() - start
-		}
-		out = append(out, d.Slice(start, length))
+		out = append(out, d.Slice(start, size))
 	}
 	return out
 }
@@ -207,13 +202,11 @@ func (d *df) Series(name string) (Series, bool) {
 }
 
 func (d *df) Select(exprs ...Expr) (DataFrame, error) {
-	next, err := d.value.Select(exprs...)
-	return fromFrame(next, err)
+	return fromFrame(d.value.Select(exprs...))
 }
 
 func (d *df) Filter(predicate Expr) (DataFrame, error) {
-	next, err := d.value.Filter(predicate)
-	return fromFrame(next, err)
+	return fromFrame(d.value.Filter(predicate))
 }
 
 // FilterAggregateDirect evaluates pred and computes op over cols in a single
@@ -229,18 +222,15 @@ func (d *df) FilterAggregateDirect(pred Expr, op string, cols []string) (map[str
 }
 
 func (d *df) WithColumns(exprs ...Expr) (DataFrame, error) {
-	next, err := d.value.WithColumns(exprs...)
-	return fromFrame(next, err)
+	return fromFrame(d.value.WithColumns(exprs...))
 }
 
 func (d *df) WithRowCount(name string, offset int64) (DataFrame, error) {
-	next, err := d.value.WithRowCount(name, offset)
-	return fromFrame(next, err)
+	return fromFrame(d.value.WithRowCount(name, offset))
 }
 
 func (d *df) WithRowIndex(name string, offset int64) (DataFrame, error) {
-	next, err := d.value.WithRowCount(name, offset)
-	return fromFrame(next, err)
+	return fromFrame(d.value.WithRowCount(name, offset))
 }
 
 func (d *df) GroupBy(keys ...string) GroupBy {
@@ -248,7 +238,7 @@ func (d *df) GroupBy(keys ...string) GroupBy {
 }
 
 func (d *df) GroupByDynamic(input DynamicGroupInput) (DataFrame, error) {
-	next, err := d.value.GroupByDynamic(
+	return fromFrame(d.value.GroupByDynamic(
 		input.By,
 		input.Every,
 		input.Period,
@@ -257,8 +247,7 @@ func (d *df) GroupByDynamic(input DynamicGroupInput) (DataFrame, error) {
 		input.Label,
 		input.WindowColumn,
 		input.AggExpr,
-	)
-	return fromFrame(next, err)
+	))
 }
 
 func (d *df) Join(input JoinInput) (DataFrame, error) {
@@ -266,7 +255,7 @@ func (d *df) Join(input JoinInput) (DataFrame, error) {
 	if !ok {
 		return nil, fmt.Errorf("unsupported dataframe implementation")
 	}
-	next, err := d.value.Join(frame.JoinInput{
+	return fromFrame(d.value.Join(frame.JoinInput{
 		Other:         other.value,
 		LeftOn:        input.LeftOn,
 		RightOn:       input.RightOn,
@@ -274,8 +263,7 @@ func (d *df) Join(input JoinInput) (DataFrame, error) {
 		Suffix:        input.Suffix,
 		AsofDirection: input.AsofDirection,
 		AsofTolerance: input.AsofTolerance,
-	})
-	return fromFrame(next, err)
+	}))
 }
 
 func (d *df) JoinAsof(input JoinInput) (DataFrame, error) {
@@ -290,13 +278,12 @@ func (d *df) JoinWhere(predicate Expr) (DataFrame, error) {
 }
 
 func (d *df) Sort(input SortInput) (DataFrame, error) {
-	next, err := d.value.Sort(frame.SortInput{
+	return fromFrame(d.value.Sort(frame.SortInput{
 		By:            input.By,
 		Descending:    input.Descending,
 		NullsLast:     input.NullsLast,
 		MaintainOrder: input.MaintainOrder,
-	})
-	return fromFrame(next, err)
+	}))
 }
 
 func (d *df) Concat(input ConcatInput) (DataFrame, error) {
@@ -351,11 +338,11 @@ func (d *df) PartitionBy(columns ...string) ([]DataFrame, error) {
 	records := d.ToDicts()
 	groups := map[string][]int{}
 	for i, rec := range records {
-		key := ""
+		var key []byte
 		for _, c := range columns {
-			key += fmt.Sprintf("|%v", rec[c])
+			key = fmt.Appendf(key, "|%v", rec[c])
 		}
-		groups[key] = append(groups[key], i)
+		groups[string(key)] = append(groups[string(key)], i)
 	}
 	out := make([]DataFrame, 0, len(groups))
 	for _, idxs := range groups {
@@ -380,16 +367,17 @@ func (d *df) MatchToSchema(schema dtypes.Schema) (DataFrame, error) {
 		current[f.Name] = f.Type
 	}
 	for _, f := range schema {
-		if _, ok := current[f.Name]; !ok {
-			values := make([]any, out.Height())
-			col, err := NewSeries(NewSeriesInput{Name: f.Name, DType: f.Type, Values: values})
-			if err != nil {
-				return nil, err
-			}
-			out, err = out.Hstack(col)
-			if err != nil {
-				return nil, err
-			}
+		if _, ok := current[f.Name]; ok {
+			continue
+		}
+		values := make([]any, out.Height())
+		col, err := NewSeries(NewSeriesInput{Name: f.Name, DType: f.Type, Values: values})
+		if err != nil {
+			return nil, err
+		}
+		out, err = out.Hstack(col)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return out, nil
@@ -424,20 +412,7 @@ func (d *df) ReplaceColumn(index int, column Series) (DataFrame, error) {
 }
 
 func (d *df) Reverse() DataFrame {
-	indexes := make([]int, d.Height())
-	for i := 0; i < d.Height(); i++ {
-		indexes[i] = d.Height() - 1 - i
-	}
-	out := make([]series.Series, 0, d.Width())
-	for _, name := range d.Columns() {
-		s, _ := d.value.Series(name)
-		out = append(out, s.Slice(indexes))
-	}
-	next, err := frame.New(frame.NewInput{Series: out})
-	if err != nil {
-		return d
-	}
-	return &df{value: next}
+	return &df{value: d.value.Reverse()}
 }
 
 func (d *df) Rolling(by string, value string, window time.Duration, output string) (DataFrame, error) {
@@ -454,10 +429,7 @@ func (d *df) Row(index int) (map[string]any, error) {
 	names := d.Columns()
 	out := make(map[string]any, len(names))
 	for _, name := range names {
-		s, ok := d.value.Series(name)
-		if !ok {
-			return nil, fmt.Errorf("column %s not found", name)
-		}
+		s, _ := d.value.Series(name)
 		out[name] = s.Value(index)
 	}
 	return out, nil
@@ -530,7 +502,7 @@ func (d *df) MapRows(fn func(row map[string]any) (map[string]any, error)) (DataF
 	for k := range mapped[0] {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	cols := make([]frame.SeriesInput, 0, len(keys))
 	for _, k := range keys {
 		values := make([]any, len(mapped))
@@ -624,7 +596,7 @@ func (d *df) Upsample(by string, every time.Duration) (DataFrame, error) {
 		colSeries[i], _ = sorted.GetColumn(c)
 	}
 	idxByTime := make(map[time.Time]int, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if tv, ok := tcol.Value(i).(time.Time); ok {
 			if _, seen := idxByTime[tv]; !seen {
 				idxByTime[tv] = i
@@ -637,14 +609,14 @@ func (d *df) Upsample(by string, every time.Duration) (DataFrame, error) {
 			for ci := range cols {
 				newVals[ci] = append(newVals[ci], colSeries[ci].Value(ri))
 			}
-		} else {
-			for ci, c := range cols {
-				if c == by {
-					newVals[ci] = append(newVals[ci], ts)
-				} else {
-					newVals[ci] = append(newVals[ci], nil)
-				}
+			continue
+		}
+		for ci, c := range cols {
+			if c == by {
+				newVals[ci] = append(newVals[ci], ts)
+				continue
 			}
+			newVals[ci] = append(newVals[ci], nil)
 		}
 	}
 	inputs := make([]frame.SeriesInput, len(cols))
@@ -674,18 +646,15 @@ func (d *df) Tail(n int) DataFrame {
 }
 
 func (d *df) BottomK(k int, by string) (DataFrame, error) {
-	next, err := d.value.BottomK(k, by)
-	return fromFrame(next, err)
+	return fromFrame(d.value.BottomK(k, by))
 }
 
 func (d *df) Unique(columns ...string) (DataFrame, error) {
-	next, err := d.value.Unique(columns...)
-	return fromFrame(next, err)
+	return fromFrame(d.value.Unique(columns...))
 }
 
 func (d *df) Cast(mapping map[string]dtypes.DataType) (DataFrame, error) {
-	next, err := d.value.Cast(mapping)
-	return fromFrame(next, err)
+	return fromFrame(d.value.Cast(mapping))
 }
 
 func (d *df) Clear() DataFrame {
@@ -697,8 +666,7 @@ func (d *df) Clone() DataFrame {
 }
 
 func (d *df) DropInPlace(column string) (DataFrame, error) {
-	next, err := d.value.DropInPlace(column)
-	return fromFrame(next, err)
+	return fromFrame(d.value.DropInPlace(column))
 }
 
 func (d *df) Equals(other DataFrame) (bool, error) {
@@ -714,8 +682,7 @@ func (d *df) Extend(other DataFrame) (DataFrame, error) {
 	if !ok {
 		return nil, fmt.Errorf("unsupported dataframe implementation")
 	}
-	next, err := d.value.Extend(otherDF.value)
-	return fromFrame(next, err)
+	return fromFrame(d.value.Extend(otherDF.value))
 }
 
 func (d *df) Hstack(columns ...Series) (DataFrame, error) {
@@ -727,8 +694,7 @@ func (d *df) Hstack(columns ...Series) (DataFrame, error) {
 		}
 		internal = append(internal, v)
 	}
-	next, err := d.value.Hstack(internal...)
-	return fromFrame(next, err)
+	return fromFrame(d.value.Hstack(internal...))
 }
 
 func (d *df) InsertColumn(index int, column Series) (DataFrame, error) {
@@ -736,23 +702,19 @@ func (d *df) InsertColumn(index int, column Series) (DataFrame, error) {
 	if err != nil {
 		return nil, err
 	}
-	next, err := d.value.InsertColumn(index, internal)
-	return fromFrame(next, err)
+	return fromFrame(d.value.InsertColumn(index, internal))
 }
 
 func (d *df) FillNull(value any) (DataFrame, error) {
-	next, err := d.value.FillNull(value)
-	return fromFrame(next, err)
+	return fromFrame(d.value.FillNull(value))
 }
 
 func (d *df) FillNaN(value float64) (DataFrame, error) {
-	next, err := d.value.FillNaN(value)
-	return fromFrame(next, err)
+	return fromFrame(d.value.FillNaN(value))
 }
 
 func (d *df) Interpolate(columns ...string) (DataFrame, error) {
-	next, err := d.value.Interpolate(columns...)
-	return fromFrame(next, err)
+	return fromFrame(d.value.Interpolate(columns...))
 }
 
 func (d *df) DropNaNs(columns ...string) DataFrame {
@@ -764,8 +726,7 @@ func (d *df) DropNulls(columns ...string) DataFrame {
 }
 
 func (d *df) Fold(op string, columns []string, alias string) (DataFrame, error) {
-	next, err := d.value.Fold(op, columns, alias)
-	return fromFrame(next, err)
+	return fromFrame(d.value.Fold(op, columns, alias))
 }
 
 func (d *df) HashRows(seed uint64) ([]uint64, error) {
@@ -777,43 +738,32 @@ func (d *df) Corr(columnA string, columnB string) (float64, error) {
 }
 
 func (d *df) Describe() (DataFrame, error) {
-	next, err := d.value.Describe()
-	return fromFrame(next, err)
+	return fromFrame(d.value.Describe())
 }
 
 func (d *df) Max() map[string]any {
-	out := map[string]any{}
-	for _, col := range d.Columns() {
-		s, _ := d.value.Series(col)
-		var best any
-		has := false
-		for i := 0; i < s.Len(); i++ {
-			v := s.Value(i)
-			if v == nil {
-				continue
-			}
-			if !has || compareAnyLocal(v, best) > 0 {
-				best = v
-				has = true
-			}
-		}
-		out[col] = best
-	}
-	return out
+	return d.extreme(1)
 }
 
 func (d *df) Min() map[string]any {
+	return d.extreme(-1)
+}
+
+// extreme backs Max (want 1) and Min (want -1): per column, the non-null value
+// compareAnyLocal ranks highest or lowest, the first one on ties; nil when every
+// value is null.
+func (d *df) extreme(want int) map[string]any {
 	out := map[string]any{}
 	for _, col := range d.Columns() {
 		s, _ := d.value.Series(col)
 		var best any
 		has := false
-		for i := 0; i < s.Len(); i++ {
+		for i := range s.Len() {
 			v := s.Value(i)
 			if v == nil {
 				continue
 			}
-			if !has || compareAnyLocal(v, best) < 0 {
+			if !has || compareAnyLocal(v, best) == want {
 				best = v
 				has = true
 			}
@@ -846,16 +796,11 @@ func (d *df) Median() map[string]float64 {
 	out := map[string]float64{}
 	for _, col := range d.Columns() {
 		s, _ := d.value.Series(col)
-		vals := make([]float64, 0, s.Len())
-		for i := 0; i < s.Len(); i++ {
-			if v, ok := toFloatLocal(s.Value(i)); ok {
-				vals = append(vals, v)
-			}
-		}
+		vals := floatValues(s)
 		if len(vals) == 0 {
 			continue
 		}
-		sort.Float64s(vals)
+		slices.Sort(vals)
 		mid := len(vals) / 2
 		if len(vals)%2 == 0 {
 			out[col] = (vals[mid-1] + vals[mid]) / 2
@@ -895,16 +840,11 @@ func (d *df) Quantile(q float64) map[string]float64 {
 	out := map[string]float64{}
 	for _, col := range d.Columns() {
 		s, _ := d.value.Series(col)
-		vals := make([]float64, 0, s.Len())
-		for i := 0; i < s.Len(); i++ {
-			if v, ok := toFloatLocal(s.Value(i)); ok {
-				vals = append(vals, v)
-			}
-		}
+		vals := floatValues(s)
 		if len(vals) == 0 {
 			continue
 		}
-		sort.Float64s(vals)
+		slices.Sort(vals)
 		idx := int(math.Round(q * float64(len(vals)-1)))
 		out[col] = vals[idx]
 	}
@@ -915,20 +855,11 @@ func (d *df) Std() map[string]float64 {
 	out := map[string]float64{}
 	for _, col := range d.Columns() {
 		s, _ := d.value.Series(col)
-		vals := make([]float64, 0, s.Len())
-		for i := 0; i < s.Len(); i++ {
-			if v, ok := toFloatLocal(s.Value(i)); ok {
-				vals = append(vals, v)
-			}
-		}
+		vals := floatValues(s)
 		if len(vals) < 2 {
 			continue
 		}
-		mean := 0.0
-		for _, v := range vals {
-			mean += v
-		}
-		mean /= float64(len(vals))
+		mean := meanFloatSlice(vals)
 		sumSq := 0.0
 		for _, v := range vals {
 			diff := v - mean
@@ -987,18 +918,15 @@ func (d *df) Remove(column string) (DataFrame, error) {
 }
 
 func (d *df) Explode(columns ...string) (DataFrame, error) {
-	next, err := d.value.Explode(columns...)
-	return fromFrame(next, err)
+	return fromFrame(d.value.Explode(columns...))
 }
 
 func (d *df) FlattenStruct(column string, prefix string) (DataFrame, error) {
-	next, err := d.value.FlattenStruct(column, prefix)
-	return fromFrame(next, err)
+	return fromFrame(d.value.FlattenStruct(column, prefix))
 }
 
 func (d *df) Melt(input MeltInput) (DataFrame, error) {
-	next, err := d.value.Melt(input.IDVars, input.ValueVars, input.VariableCol, input.ValueCol)
-	return fromFrame(next, err)
+	return fromFrame(d.value.Melt(input.IDVars, input.ValueVars, input.VariableCol, input.ValueCol))
 }
 
 func (d *df) Unpivot(input MeltInput) (DataFrame, error) {
@@ -1033,7 +961,7 @@ func (d *df) Pivot(input PivotInput) (DataFrame, error) {
 	if input.ValueName != "" {
 		return (&df{value: next}).Rename(map[string]string{input.Values: input.ValueName})
 	}
-	return fromFrame(next, nil)
+	return &df{value: next}, nil
 }
 
 func (d *df) Transpose() (DataFrame, error) {
@@ -1052,10 +980,7 @@ func (d *df) Transpose() (DataFrame, error) {
 	stringify := false
 	anyFloat := false
 	for _, col := range cols {
-		s, err := d.GetColumn(col)
-		if err != nil {
-			return nil, err
-		}
+		s, _ := d.value.Series(col)
 		switch s.DataType() {
 		case dtypes.Int64:
 		case dtypes.Float64:
@@ -1072,7 +997,7 @@ func (d *df) Transpose() (DataFrame, error) {
 			return fmt.Sprint(v)
 		}
 		if anyFloat {
-			if f, ok := toFloat64(v); ok {
+			if f, ok := expr.ToFloat(v); ok {
 				return f
 			}
 		}
@@ -1129,13 +1054,11 @@ func (d *df) WithColumnsSeq(exprs ...Expr) (DataFrame, error) {
 }
 
 func (d *df) RollingMean(input RollingMeanInput) (DataFrame, error) {
-	next, err := d.value.RollingMean(input.By, input.Value, input.Window, input.MinRows, input.Output, input.Closed)
-	return fromFrame(next, err)
+	return fromFrame(d.value.RollingMean(input.By, input.Value, input.Window, input.MinRows, input.Output, input.Closed))
 }
 
 func (d *df) Deserialize(payload []byte) (DataFrame, error) {
-	next, err := d.value.Deserialize(payload)
-	return fromFrame(next, err)
+	return fromFrame(d.value.Deserialize(payload))
 }
 
 func (d *df) Drop(columns ...string) (DataFrame, error) {
@@ -1181,11 +1104,7 @@ func (d *df) Rename(mapping map[string]string) (DataFrame, error) {
 }
 
 func (d *df) Lazy() LazyFrame {
-	return &lf{
-		source: d.value,
-		engine: exec.New(),
-		nodes:  []logical.Node{},
-	}
+	return newLazy(d.value, nil)
 }
 
 func (d *df) WriteCSV(input WriteCSVInput) error {
@@ -1273,7 +1192,6 @@ func (d *df) WriteIceberg(path string) error {
 }
 
 func (d *df) ToArrow(input ToArrowInput) (iarrow.Table, error) {
-	_ = input
 	return iarrow.ToTable(d.value), nil
 }
 
@@ -1291,22 +1209,19 @@ func (d *df) ToDict() map[string][]any {
 }
 
 func (d *df) ToDummies(columns ...string) (DataFrame, error) {
-	targets := map[string]struct{}{}
 	if len(columns) == 0 {
-		for _, c := range d.Columns() {
-			targets[c] = struct{}{}
-		}
-	} else {
-		for _, c := range columns {
-			targets[c] = struct{}{}
-		}
+		columns = d.Columns()
+	}
+	targets := map[string]struct{}{}
+	for _, c := range columns {
+		targets[c] = struct{}{}
 	}
 	base := d.ToDict()
 	newCols := make([]frame.SeriesInput, 0)
 	for _, name := range d.Columns() {
 		values := base[name]
 		if _, ok := targets[name]; !ok {
-			newCols = append(newCols, frame.SeriesInput{Name: name, Values: anySlice(values)})
+			newCols = append(newCols, frame.SeriesInput{Name: name, Values: values})
 			continue
 		}
 		uniq := map[string]struct{}{}
@@ -1317,7 +1232,7 @@ func (d *df) ToDummies(columns ...string) (DataFrame, error) {
 		for k := range uniq {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		for _, k := range keys {
 			dummyVals := make([]any, len(values))
 			for i, v := range values {
@@ -1335,11 +1250,15 @@ func (d *df) ToInitRepr() string {
 }
 
 func (d *df) ToJax() [][]float64 {
+	names := d.Columns()
+	cols := make([]series.Series, len(names))
+	for i, name := range names {
+		cols[i], _ = d.value.Series(name)
+	}
 	out := make([][]float64, d.Height())
 	for i := 0; i < d.Height(); i++ {
 		row := make([]float64, 0, d.Width())
-		for _, c := range d.Columns() {
-			s, _ := d.value.Series(c)
+		for _, s := range cols {
 			if v, ok := toFloatLocal(s.Value(i)); ok {
 				row = append(row, v)
 			} else {
@@ -1355,11 +1274,15 @@ func (d *df) horizontalAgg(alias string, mode string) (DataFrame, error) {
 	if alias == "" {
 		alias = mode + "_horizontal"
 	}
+	names := d.Columns()
+	cols := make([]series.Series, len(names))
+	for i, name := range names {
+		cols[i], _ = d.value.Series(name)
+	}
 	values := make([]any, d.Height())
 	for row := 0; row < d.Height(); row++ {
 		nums := make([]float64, 0, d.Width())
-		for _, col := range d.Columns() {
-			s, _ := d.value.Series(col)
+		for _, s := range cols {
 			if v, ok := toFloatLocal(s.Value(row)); ok {
 				nums = append(nums, v)
 			}
@@ -1385,18 +1308,15 @@ func (d *df) horizontalAgg(alias string, mode string) (DataFrame, error) {
 				}
 			}
 			values[row] = best
-		case "sum":
-			sum := 0.0
-			for _, n := range nums {
-				sum += n
-			}
-			values[row] = sum
 		default:
 			sum := 0.0
 			for _, n := range nums {
 				sum += n
 			}
-			values[row] = sum / float64(len(nums))
+			if mode != "sum" {
+				sum /= float64(len(nums))
+			}
+			values[row] = sum
 		}
 	}
 	seriesOut, err := NewSeries(NewSeriesInput{Name: alias, DType: Float64, Values: values})
@@ -1406,10 +1326,16 @@ func (d *df) horizontalAgg(alias string, mode string) (DataFrame, error) {
 	return d.Hstack(seriesOut)
 }
 
-func anySlice(values []any) []any {
-	out := make([]any, len(values))
-	copy(out, values)
-	return out
+// floatValues returns the int64 and non-NaN float64 values of s as float64, in
+// row order.
+func floatValues(s series.Series) []float64 {
+	vals := make([]float64, 0, s.Len())
+	for i := range s.Len() {
+		if v, ok := toFloatLocal(s.Value(i)); ok {
+			vals = append(vals, v)
+		}
+	}
+	return vals
 }
 
 func toFloatLocal(v any) (float64, bool) {
@@ -1427,13 +1353,13 @@ func toFloatLocal(v any) (float64, bool) {
 }
 
 func compareAnyLocal(left any, right any) int {
-	lf, lok := toFloatLocal(left)
-	rf, rok := toFloatLocal(right)
+	lv, lok := toFloatLocal(left)
+	rv, rok := toFloatLocal(right)
 	if lok && rok {
 		switch {
-		case lf < rf:
+		case lv < rv:
 			return -1
-		case lf > rf:
+		case lv > rv:
 			return 1
 		default:
 			return 0

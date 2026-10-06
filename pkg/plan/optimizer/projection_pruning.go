@@ -7,7 +7,7 @@ func ProjectionPruning(nodes []logical.Node) []logical.Node {
 		return nodes
 	}
 	out := make([]logical.Node, 0, len(nodes))
-	for i := 0; i < len(nodes); i++ {
+	for i := range nodes {
 		current := nodes[i]
 		if current.Type == logical.NodeSelect && len(out) > 0 && out[len(out)-1].Type == logical.NodeSelect {
 			out[len(out)-1] = current

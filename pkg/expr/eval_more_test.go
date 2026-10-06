@@ -7,7 +7,7 @@ import (
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 )
 
-// TestEvalBinArithmetic exercises arith() through evalBin for both int and float
+// TestEvalBinArithmetic exercises arith() through EvalBin for both int and float
 // operands, including the division-by-zero and type-mismatch error paths.
 func TestEvalBinArithmetic(t *testing.T) {
 	t.Parallel()
@@ -31,7 +31,7 @@ func TestEvalBinArithmetic(t *testing.T) {
 		{"add", nil, int64(1), nil, false},     // null short-circuits to nil
 	}
 	for _, tc := range cases {
-		got, err := evalBin(tc.op, tc.l, tc.r)
+		got, err := EvalBin(tc.op, tc.l, tc.r)
 		if tc.isErr {
 			if err == nil {
 				t.Errorf("%s(%v,%v): expected error, got %v", tc.op, tc.l, tc.r, got)
@@ -48,7 +48,7 @@ func TestEvalBinArithmetic(t *testing.T) {
 	}
 }
 
-// TestEvalBinComparisons covers gt/ge/lt/le and eq/ne through evalBin, including
+// TestEvalBinComparisons covers gt/ge/lt/le and eq/ne through EvalBin, including
 // the null-yields-null rule and the NaN special cases.
 func TestEvalBinComparisons(t *testing.T) {
 	t.Parallel()
@@ -71,7 +71,7 @@ func TestEvalBinComparisons(t *testing.T) {
 		{"ne", math.NaN(), 1.0, true},  // NaN always not-equal
 	}
 	for _, tc := range cases {
-		got, err := evalBin(tc.op, tc.l, tc.r)
+		got, err := EvalBin(tc.op, tc.l, tc.r)
 		if err != nil {
 			t.Errorf("%s(%v,%v): unexpected error %v", tc.op, tc.l, tc.r, err)
 			continue
@@ -152,7 +152,7 @@ func TestCast(t *testing.T) {
 	}
 }
 
-// TestKleeneBool covers three-valued boolean logic through evalBin's and/or,
+// TestKleeneBool covers three-valued boolean logic through EvalBin's and/or,
 // plus the kleeneBool classifier directly.
 func TestKleeneBool(t *testing.T) {
 	t.Parallel()
@@ -169,7 +169,7 @@ func TestKleeneBool(t *testing.T) {
 	}
 
 	// AND truth table with nulls: F∧null=F, T∧null=null, null∧null=null.
-	and := func(l, r any) any { v, _ := evalBin("and", l, r); return v }
+	and := func(l, r any) any { v, _ := EvalBin("and", l, r); return v }
 	if got := and(false, nil); got != false {
 		t.Fatalf("F AND null = %v, want false", got)
 	}
@@ -184,7 +184,7 @@ func TestKleeneBool(t *testing.T) {
 	}
 
 	// OR truth table with nulls: T∨null=T, F∨null=null.
-	or := func(l, r any) any { v, _ := evalBin("or", l, r); return v }
+	or := func(l, r any) any { v, _ := EvalBin("or", l, r); return v }
 	if got := or(true, nil); got != true {
 		t.Fatalf("T OR null = %v, want true", got)
 	}
@@ -196,7 +196,7 @@ func TestKleeneBool(t *testing.T) {
 	}
 
 	// Non-bool operands error.
-	if _, err := evalBin("and", int64(1), true); err == nil {
+	if _, err := EvalBin("and", int64(1), true); err == nil {
 		t.Fatal("and with non-bool should error")
 	}
 }
@@ -272,6 +272,61 @@ func TestSubstrKernel(t *testing.T) {
 	for _, tc := range cases {
 		if got := substrKernel(tc.s, tc.start, tc.length); got != tc.want {
 			t.Errorf("substrKernel(%q,%d,%d) = %q, want %q", tc.s, tc.start, tc.length, got, tc.want)
+		}
+	}
+}
+
+// TestEvalBinNullAndListOps pins eq_missing/ne_missing, where/filter_expr,
+// index_of and list_get across null, matching and mismatched operands.
+func TestEvalBinNullAndListOps(t *testing.T) {
+	t.Parallel()
+
+	list := []any{int64(10), "a", nil}
+	cases := []struct {
+		op      string
+		l, r    any
+		want    any
+		wantErr string
+	}{
+		{op: "eq_missing", l: nil, r: nil, want: true},
+		{op: "eq_missing", l: nil, r: int64(1), want: false},
+		{op: "eq_missing", l: int64(1), r: nil, want: false},
+		{op: "eq_missing", l: int64(1), r: int64(1), want: true},
+		{op: "eq_missing", l: int64(1), r: 1.0, want: false},
+		{op: "ne_missing", l: nil, r: nil, want: false},
+		{op: "ne_missing", l: nil, r: int64(1), want: true},
+		{op: "ne_missing", l: int64(1), r: nil, want: true},
+		{op: "ne_missing", l: int64(1), r: int64(1), want: false},
+		{op: "ne_missing", l: int64(1), r: 1.0, want: true},
+		{op: "where", l: int64(5), r: true, want: int64(5)},
+		{op: "where", l: int64(5), r: false, want: nil},
+		{op: "where", l: int64(5), r: nil, want: int64(5)},
+		{op: "where", l: int64(5), r: "x", want: int64(5)},
+		{op: "filter_expr", l: int64(5), r: true, want: int64(5)},
+		{op: "filter_expr", l: int64(5), r: false, want: nil},
+		{op: "filter_expr", l: int64(5), r: nil, want: int64(5)},
+		{op: "filter_expr", l: int64(5), r: "x", want: int64(5)},
+		{op: "index_of", l: list, r: "a", want: int64(1)},
+		{op: "index_of", l: list, r: nil, want: int64(2)},
+		{op: "index_of", l: list, r: 10.0, want: int64(-1)},
+		{op: "index_of", l: int64(5), r: int64(5), want: int64(-1)},
+		{op: "list_get", l: list, r: int64(1), want: "a"},
+		{op: "list_get", l: list, r: 0.9, want: int64(10)},
+		{op: "list_get", l: list, r: int64(3), want: nil},
+		{op: "list_get", l: list, r: int64(-1), want: nil},
+		{op: "list_get", l: list, r: "0", wantErr: "list_get expects numeric index"},
+		{op: "list_get", l: int64(5), r: int64(0), wantErr: "list_get expects list"},
+	}
+	for _, tc := range cases {
+		got, err := Eval(bin(tc.op, Lit(tc.l), Lit(tc.r)), mapRow{})
+		if tc.wantErr != "" {
+			if got != nil || err == nil || err.Error() != tc.wantErr {
+				t.Errorf("%s(%v, %v) = %v, %v; want error %q", tc.op, tc.l, tc.r, got, err, tc.wantErr)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Errorf("%s(%v, %v) = %v, %v; want %v", tc.op, tc.l, tc.r, got, err, tc.want)
 		}
 	}
 }

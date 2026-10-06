@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
@@ -103,17 +104,7 @@ func fromRows(rows []map[string]any, schema dtypes.Schema, columns []string) (fr
 		order = append(order, k)
 	}
 	if len(columns) > 0 {
-		selected := map[string]struct{}{}
-		for _, c := range columns {
-			selected[c] = struct{}{}
-		}
-		kept := make([]string, 0, len(order))
-		for _, c := range order {
-			if _, ok := selected[c]; ok {
-				kept = append(kept, c)
-			}
-		}
-		order = kept
+		order = slices.DeleteFunc(order, func(c string) bool { return !slices.Contains(columns, c) })
 	}
 	valuesByCol := map[string][]any{}
 	for _, c := range order {

@@ -39,18 +39,15 @@ func join(left DataFrame, input JoinInput) (DataFrame, error) {
 	if input.How == "" {
 		input.How = JoinTypeInner
 	}
-	if input.Suffix == "" {
-		input.Suffix = "_right"
-	}
 	if input.How == JoinTypeAsof {
 		return asofJoin(left, input)
 	}
 
-	rightKeyCols, err := joinKeyColumns(input.Other, input.RightOn)
+	rightKeyCols, err := keyColumns(input.Other, input.RightOn, "join key")
 	if err != nil {
 		return DataFrame{}, err
 	}
-	leftKeyCols, err := joinKeyColumns(left, input.LeftOn)
+	leftKeyCols, err := keyColumns(left, input.LeftOn, "join key")
 	if err != nil {
 		return DataFrame{}, err
 	}
@@ -68,19 +65,6 @@ func join(left DataFrame, input JoinInput) (DataFrame, error) {
 
 	rightIncluded := input.How != JoinTypeSemi && input.How != JoinTypeAnti
 	return materializeJoinIdx(left, input.Other, leftIdx, rightIdx, input.Suffix, rightIncluded)
-}
-
-// joinKeyColumns resolves the typed key columns for the given key names.
-func joinKeyColumns(df DataFrame, keys []string) ([]*chunk.Column, error) {
-	cols := make([]*chunk.Column, len(keys))
-	for j, k := range keys {
-		s, ok := df.cols[k]
-		if !ok {
-			return nil, fmt.Errorf("join key %s not found", k)
-		}
-		cols[j] = s.Column()
-	}
-	return cols, nil
 }
 
 // probeTable indexes the right (build) side of an equi-join by join key, storing
@@ -373,9 +357,7 @@ func materializeJoinIdx(left, other DataFrame, leftIdx, rightIdx []int32, suffix
 		}
 		return New(NewInput{Series: out})
 	}
-	if workers > len(tasks) {
-		workers = len(tasks)
-	}
+	workers = min(workers, len(tasks))
 	var wg sync.WaitGroup
 	for w := range workers {
 		wg.Go(func() {
@@ -388,41 +370,17 @@ func materializeJoinIdx(left, other DataFrame, leftIdx, rightIdx []int32, suffix
 	return New(NewInput{Series: out})
 }
 
-// materializeJoin builds the joined output from []pair (the cross/asof join
-// representation), widening to the int32 pair buffers materializeJoinIdx expects.
-func materializeJoin(left, other DataFrame, pairs []pair, suffix string, rightIncluded bool) (DataFrame, error) {
-	leftIdx := make([]int32, len(pairs))
-	rightIdx := make([]int32, len(pairs))
-	for i, p := range pairs {
-		leftIdx[i] = int32(p.left)
-		rightIdx[i] = int32(p.right)
-	}
-	return materializeJoinIdx(left, other, leftIdx, rightIdx, suffix, rightIncluded)
-}
-
-type pair struct {
-	left  int
-	right int
-}
-
 func crossJoin(left DataFrame, input JoinInput) (DataFrame, error) {
-	if input.Suffix == "" {
-		input.Suffix = "_right"
-	}
-	if left.height == 0 || input.Other.height == 0 {
-		return materializePairs(left, input, nil, true)
-	}
-	pairs := make([]pair, 0, left.height*input.Other.height)
-	for i := range left.height {
-		for j := range input.Other.height {
-			pairs = append(pairs, pair{left: i, right: j})
+	n, m := left.height, input.Other.height
+	leftIdx := make([]int32, n*m)
+	rightIdx := make([]int32, n*m)
+	for i := range n {
+		for j := range m {
+			leftIdx[i*m+j] = int32(i)
+			rightIdx[i*m+j] = int32(j)
 		}
 	}
-	clone := input
-	clone.How = JoinTypeInner
-	clone.LeftOn = []string{left.order[0]}
-	clone.RightOn = []string{input.Other.order[0]}
-	return materializePairs(left, clone, pairs, true)
+	return materializeJoinIdx(left, input.Other, leftIdx, rightIdx, input.Suffix, true)
 }
 
 func asofJoin(left DataFrame, input JoinInput) (DataFrame, error) {
@@ -441,7 +399,8 @@ func asofJoin(left DataFrame, input JoinInput) (DataFrame, error) {
 	if direction == "" {
 		direction = "backward"
 	}
-	pairs := make([]pair, 0, left.height)
+	leftIdx := make([]int32, left.height)
+	rightIdx := make([]int32, left.height)
 	for i := 0; i < left.height; i++ {
 		lv := leftKey.Value(i)
 		best := -1
@@ -461,23 +420,15 @@ func asofJoin(left DataFrame, input JoinInput) (DataFrame, error) {
 			if direction == "forward" && diff > 0 {
 				continue
 			}
-			ad := abs64(diff)
-			if ad < bestDiff {
+			if ad := abs64(diff); ad < bestDiff {
 				bestDiff = ad
-				best = j
-				continue
-			}
-			if ad == bestDiff && direction == "nearest" && best >= 0 && j < best {
 				best = j
 			}
 		}
-		pairs = append(pairs, pair{left: i, right: best})
+		leftIdx[i] = int32(i)
+		rightIdx[i] = int32(best)
 	}
-	return materializePairs(left, input, pairs, true)
-}
-
-func materializePairs(left DataFrame, input JoinInput, pairs []pair, rightIncluded bool) (DataFrame, error) {
-	return materializeJoin(left, input.Other, pairs, input.Suffix, rightIncluded)
+	return materializeJoinIdx(left, input.Other, leftIdx, rightIdx, input.Suffix, true)
 }
 
 func asofDiff(left any, right any) (int64, bool) {

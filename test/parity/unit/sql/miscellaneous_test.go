@@ -151,7 +151,7 @@ func TestMiscInNoOps(t *testing.T) {
 func TestMiscLimitOffset(t *testing.T) {
 	a := make([]any, 11)
 	b := make([]any, 11)
-	for i := 0; i < 11; i++ {
+	for i := range 11 {
 		a[i] = int64(i)
 		b[i] = int64(10 - i)
 	}

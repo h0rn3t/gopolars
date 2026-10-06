@@ -244,7 +244,7 @@ func TestFilterAggregateDirectComparisonsMatchReference(t *testing.T) {
 	for _, op := range []string{"gt", "ge", "lt", "le"} {
 		var sum, min, max float64
 		var count int
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if isNull[i] || !keep(raw[i], lit, op) {
 				continue
 			}

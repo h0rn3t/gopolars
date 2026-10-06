@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/h0rn3t/gopolars/pkg/chunk"
@@ -98,28 +99,30 @@ func (d DataFrame) filterBatch(predicate expr.Expr) (DataFrame, bool, error) {
 // every column of that shard (chunk.FilterGatherColumns), instead of one mask
 // wave plus per-column gather waves.
 func (d DataFrame) filterFused(plan *evalbatch.Plan, cols map[string]*chunk.Column, workers int) (DataFrame, bool, error) {
-	ordered := make([]*chunk.Column, len(d.order))
-	for i, name := range d.order {
-		ordered[i] = d.cols[name].Column()
-	}
-	gathered, ok := chunk.FilterGatherColumns(ordered, d.height, workers, func(start, end int) (simd.Bitmap, bool) {
-		view := make(map[string]*chunk.Column, len(cols))
-		for name, c := range cols {
-			view[name] = c.View(start, end)
-		}
-		mask, nulls, err := plan.EvalBool(view, end-start)
+	return d.gatherFused(workers, func(start, end int) (simd.Bitmap, bool) {
+		mask, nulls, err := plan.EvalBool(columnViews(cols, start, end), end-start)
 		if err != nil {
 			debugFallback("filter", err)
 			return nil, false
 		}
-		for _, isNull := range nulls {
-			if isNull {
-				debugFallback("filter", "null predicate result")
-				return nil, false
-			}
+		if slices.Contains(nulls, true) {
+			debugFallback("filter", "null predicate result")
+			return nil, false
 		}
 		return mask, true
 	})
+}
+
+// gatherFused runs one chunk.FilterGatherColumns wave over every column in
+// frame order — evalShard builds each shard's keep mask, and the same workers
+// gather that shard — and wraps the gathered columns as a frame. ok is false
+// when a shard declined.
+func (d DataFrame) gatherFused(workers int, evalShard func(start, end int) (simd.Bitmap, bool)) (DataFrame, bool, error) {
+	ordered := make([]*chunk.Column, len(d.order))
+	for i, name := range d.order {
+		ordered[i] = d.cols[name].Column()
+	}
+	gathered, ok := chunk.FilterGatherColumns(ordered, d.height, workers, evalShard)
 	if !ok {
 		return DataFrame{}, false, nil
 	}
@@ -158,14 +161,12 @@ func (d DataFrame) takeColumns(keep []int) []series.Series {
 	if len(d.order) >= workers {
 		w := min(workers, len(d.order))
 		var wg sync.WaitGroup
-		wg.Add(w)
 		for k := range w {
-			go func(k int) {
-				defer wg.Done()
+			wg.Go(func() {
 				for i := k; i < len(d.order); i += w {
 					out[i] = d.cols[d.order[i]].Slice(keep)
 				}
-			}(k)
+			})
 		}
 		wg.Wait()
 		return out
@@ -187,16 +188,14 @@ func (d DataFrame) takeColumnsBitmap(mask simd.Bitmap) []series.Series {
 	if len(d.order) >= workers && workers > 1 && survivors >= parallelFilterThreshold {
 		w := min(workers, len(d.order))
 		var wg sync.WaitGroup
-		wg.Add(w)
 		for k := range w {
-			go func(k int) {
-				defer wg.Done()
+			wg.Go(func() {
 				for i := k; i < len(d.order); i += w {
 					name := d.order[i]
 					col := d.cols[name].Column().GatherBitmap(mask, d.height)
 					out[i] = series.FromColumn(name, col)
 				}
-			}(k)
+			})
 		}
 		wg.Wait()
 		return out
@@ -222,11 +221,9 @@ func (d DataFrame) filterMask(plan *evalbatch.Plan, cols map[string]*chunk.Colum
 			debugFallback("filter", err)
 			return nil, false
 		}
-		for _, isNull := range nulls {
-			if isNull {
-				debugFallback("filter", "null predicate result")
-				return nil, false
-			}
+		if slices.Contains(nulls, true) {
+			debugFallback("filter", "null predicate result")
+			return nil, false
 		}
 		return mask, true
 	}
@@ -246,26 +243,19 @@ func filterMaskParallel(plan *evalbatch.Plan, cols map[string]*chunk.Column, hei
 	results := make([]rangeResult, len(ranges))
 	var wg sync.WaitGroup
 	for i, rg := range ranges {
-		wg.Add(1)
-		go func(i, start, end int) {
-			defer wg.Done()
-			view := make(map[string]*chunk.Column, len(cols))
-			for name, c := range cols {
-				view[name] = c.View(start, end)
-			}
-			mask, nulls, err := plan.EvalBool(view, end-start)
+		start, end := rg[0], rg[1]
+		wg.Go(func() {
+			mask, nulls, err := plan.EvalBool(columnViews(cols, start, end), end-start)
 			if err != nil {
 				results[i].err = err
 				return
 			}
-			for _, isNull := range nulls {
-				if isNull {
-					results[i].declined = true
-					return
-				}
+			if slices.Contains(nulls, true) {
+				results[i].declined = true
+				return
 			}
 			copy(global[start>>6:], mask)
-		}(i, rg[0], rg[1])
+		})
 	}
 	wg.Wait()
 
@@ -282,8 +272,18 @@ func filterMaskParallel(plan *evalbatch.Plan, cols map[string]*chunk.Column, hei
 	return global, true
 }
 
+// columnViews returns a zero-copy View of every column over rows [start,end),
+// keyed like cols.
+func columnViews(cols map[string]*chunk.Column, start, end int) (view map[string]*chunk.Column) {
+	view = make(map[string]*chunk.Column, len(cols))
+	for name, c := range cols {
+		view[name] = c.View(start, end)
+	}
+	return view
+}
+
 // partitionRanges splits [0,n) into up to `workers` contiguous [start,end)
-// ranges, mirroring the chunking in DataFrame.parallelForRows.
+// ranges of equal length (the last may be shorter).
 func partitionRanges(n, workers int) [][2]int {
 	workers = max(1, min(workers, n))
 	chunkSize := (n + workers - 1) / workers
@@ -360,7 +360,6 @@ func (r *colReduction) merge(p colReduction) {
 // count, and mean over Float64 columns; the result matches
 // exec.aggregateFrame applied to d.Filter(predicate).
 func (d DataFrame) FilterAggregate(predicate expr.Expr, op string, args []string) (DataFrame, bool, error) {
-	_ = args
 	if !fusedAggOps[op] {
 		return DataFrame{}, false, nil
 	}
@@ -405,28 +404,20 @@ func (d DataFrame) FilterAggregate(predicate expr.Expr, op string, args []string
 // exec.aggregateFrame would produce for op over a Float64 column. A zero
 // contributing count yields a null, except count which is always Int64.
 func fusedResult(op string, r colReduction) (any, dtypes.DataType) {
-	switch op {
-	case "count":
+	if op == "count" {
 		return int64(r.count), dtypes.Int64
+	}
+	if r.count == 0 {
+		return nil, dtypes.Float64
+	}
+	switch op {
 	case "mean":
-		if r.count == 0 {
-			return nil, dtypes.Float64
-		}
 		return r.sum / float64(r.count), dtypes.Float64
 	case "min":
-		if r.count == 0 {
-			return nil, dtypes.Float64
-		}
 		return r.min, dtypes.Float64
 	case "max":
-		if r.count == 0 {
-			return nil, dtypes.Float64
-		}
 		return r.max, dtypes.Float64
 	default: // sum
-		if r.count == 0 {
-			return nil, dtypes.Float64
-		}
 		return r.sum, dtypes.Float64
 	}
 }
@@ -533,11 +524,9 @@ func (d DataFrame) fusedReduce(plan *evalbatch.Plan, cols map[string]*chunk.Colu
 			debugFallback("filter_agg", err)
 			return nil, false
 		}
-		for _, isNull := range nulls {
-			if isNull {
-				debugFallback("filter_agg", "null predicate result")
-				return nil, false
-			}
+		if slices.Contains(nulls, true) {
+			debugFallback("filter_agg", "null predicate result")
+			return nil, false
 		}
 		// Selectivity gate: with no survivors every column reduces to the empty
 		// (count 0) result, so skip the per-column MaskedReduceFloat64 kernel
@@ -570,23 +559,17 @@ func (d DataFrame) fusedReduceParallel(plan *evalbatch.Plan, cols map[string]*ch
 	results := make([]winResult, len(ranges))
 	var wg sync.WaitGroup
 	for i, rg := range ranges {
-		wg.Add(1)
-		go func(i, start, end int) {
-			defer wg.Done()
-			view := make(map[string]*chunk.Column, len(cols))
-			for name, c := range cols {
-				view[name] = c.View(start, end)
-			}
+		start, end := rg[0], rg[1]
+		wg.Go(func() {
+			view := columnViews(cols, start, end)
 			mask, nulls, err := plan.EvalBool(view, end-start)
 			if err != nil {
 				results[i].err = err
 				return
 			}
-			for _, isNull := range nulls {
-				if isNull {
-					results[i].declined = true
-					return
-				}
+			if slices.Contains(nulls, true) {
+				results[i].declined = true
+				return
 			}
 			red := make([]colReduction, len(names))
 			for j, name := range names {
@@ -596,7 +579,7 @@ func (d DataFrame) fusedReduceParallel(plan *evalbatch.Plan, cols map[string]*ch
 				red[j] = colReduction{sum: s, min: mn, max: mx, count: cnt}
 			}
 			results[i].red = red
-		}(i, rg[0], rg[1])
+		})
 	}
 	wg.Wait()
 
@@ -655,15 +638,14 @@ func (d DataFrame) reduceWhere(vals []float64, cmp simd.Cmp, lit float64, nulls 
 	partials := make([]colReduction, len(ranges))
 	var wg sync.WaitGroup
 	for i, rg := range ranges {
-		wg.Add(1)
-		go func(i, start, end int) {
-			defer wg.Done()
+		start, end := rg[0], rg[1]
+		wg.Go(func() {
 			var wn []bool
 			if nulls != nil {
 				wn = nulls[start:end]
 			}
 			partials[i] = reduceWhereSeq(vals[start:end], cmp, lit, wn, op)
-		}(i, rg[0], rg[1])
+		})
 	}
 	wg.Wait()
 	var out colReduction

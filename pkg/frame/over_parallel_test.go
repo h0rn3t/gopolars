@@ -15,7 +15,7 @@ func buildOverFrame(t testing.TB, n, cardinality, nullEvery int) DataFrame {
 	t.Helper()
 	g := make([]any, n)
 	v := make([]any, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		g[i] = fmt.Sprintf("g%d", i%cardinality)
 		if nullEvery > 0 && i%nullEvery == 0 {
 			v[i] = nil
@@ -112,7 +112,7 @@ func TestOverDoesNotLeakAcrossPartitions(t *testing.T) {
 		t.Fatalf("missing base column")
 	}
 	sums := make([]float64, cardinality)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		part := i % cardinality
 		sums[part] += baseCol.Value(i).(float64)
 		if got[i].(float64) != sums[part] {

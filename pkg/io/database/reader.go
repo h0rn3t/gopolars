@@ -26,7 +26,7 @@ type dfRecordReader struct {
 	pos  int
 	cur  arrow.RecordBatch
 	err  error
-	refs int64
+	refs atomic.Int64
 }
 
 // newDFRecordReader derives a stable Arrow schema from a zero-row slice (the
@@ -42,15 +42,17 @@ func newDFRecordReader(df frame.DataFrame, batchSize int) (*dfRecordReader, erro
 	}
 	schema := head.Schema()
 	head.Release()
-	return &dfRecordReader{df: df, schema: schema, height: df.Height(), batchSize: batchSize, refs: 1}, nil
+	r := &dfRecordReader{df: df, schema: schema, height: df.Height(), batchSize: batchSize}
+	r.refs.Store(1)
+	return r, nil
 }
 
 func (r *dfRecordReader) Schema() *arrow.Schema { return r.schema }
 
-func (r *dfRecordReader) Retain() { atomic.AddInt64(&r.refs, 1) }
+func (r *dfRecordReader) Retain() { r.refs.Add(1) }
 
 func (r *dfRecordReader) Release() {
-	if atomic.AddInt64(&r.refs, -1) == 0 && r.cur != nil {
+	if r.refs.Add(-1) == 0 && r.cur != nil {
 		r.cur.Release()
 		r.cur = nil
 	}
@@ -71,10 +73,7 @@ func (r *dfRecordReader) Next() bool {
 		r.cur.Release()
 		r.cur = nil
 	}
-	end := r.pos + r.batchSize
-	if end > r.height {
-		end = r.height
-	}
+	end := min(r.pos+r.batchSize, r.height)
 	rec, err := iarrow.ToArrowRecord(r.df.Slice(r.pos, end-r.pos))
 	if err != nil {
 		r.err = err

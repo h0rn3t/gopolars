@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
@@ -26,6 +27,10 @@ type lf struct {
 	engine exec.Engine
 	nodes  []logical.Node
 	scan   *scanSource
+}
+
+func newLazy(source frame.DataFrame, scan *scanSource) *lf {
+	return &lf{source: source, engine: exec.New(), nodes: []logical.Node{}, scan: scan}
 }
 
 func (l *lf) Select(exprs ...Expr) LazyFrame {
@@ -192,19 +197,19 @@ func (l *lf) FlattenStruct(column string, prefix string) LazyFrame {
 }
 
 func (l *lf) Melt(input MeltInput) LazyFrame {
-	return l.withNode(logical.Node{
-		Type:    logical.NodeMelt,
-		Columns: append(append([]string{}, input.IDVars...), input.ValueVars...),
-		Strings: []string{input.VariableCol, input.ValueCol, fmt.Sprintf("%d", len(input.IDVars))},
-	})
+	return l.withNode(meltNode(logical.NodeMelt, input))
 }
 
 func (l *lf) Unpivot(input MeltInput) LazyFrame {
-	return l.withNode(logical.Node{
-		Type:    logical.NodeUnpivot,
-		Columns: append(append([]string{}, input.IDVars...), input.ValueVars...),
-		Strings: []string{input.VariableCol, input.ValueCol, fmt.Sprintf("%d", len(input.IDVars))},
-	})
+	return l.withNode(meltNode(logical.NodeUnpivot, input))
+}
+
+func meltNode(t logical.NodeType, in MeltInput) logical.Node {
+	return logical.Node{
+		Type:    t,
+		Columns: append(append([]string{}, in.IDVars...), in.ValueVars...),
+		Strings: []string{in.VariableCol, in.ValueCol, fmt.Sprintf("%d", len(in.IDVars))},
+	}
 }
 
 func (l *lf) WithRowIndex(name string, offset int64) LazyFrame {
@@ -358,8 +363,8 @@ func (l *lf) MapBatches(fn func(DataFrame) (DataFrame, error)) LazyFrame {
 }
 
 func (l *lf) MatchToSchema(schema dtypes.Schema) LazyFrame {
-	return l.MapBatches(func(df DataFrame) (DataFrame, error) {
-		return df.MatchToSchema(schema)
+	return l.MapBatches(func(in DataFrame) (DataFrame, error) {
+		return in.MatchToSchema(schema)
 	})
 }
 
@@ -434,9 +439,7 @@ func (l *lf) WithContext(other LazyFrame) LazyFrame {
 	}
 	ctxCols := map[string]series.Series{}
 	for _, name := range od.value.Columns() {
-		if s, ok := od.value.Series(name); ok {
-			ctxCols[name] = s
-		}
+		ctxCols[name], _ = od.value.Series(name)
 	}
 	next := &lf{
 		source: l.source.WithContextColumns(ctxCols),
@@ -456,11 +459,11 @@ func (l *lf) TopK(k int, by string) LazyFrame {
 }
 
 func (l *lf) Show(maxRows int) string {
-	df, err := l.Collect(context.Background())
+	out, err := l.Collect(context.Background())
 	if err != nil {
 		return err.Error()
 	}
-	return df.Show(maxRows)
+	return out.Show(maxRows)
 }
 
 func (l *lf) Lazy() LazyFrame {
@@ -490,7 +493,6 @@ func (l *lf) Deserialize(payload []byte) (LazyFrame, error) {
 }
 
 func (l *lf) Remote(endpoint string) LazyFrame {
-	_ = endpoint
 	return l
 }
 
@@ -502,8 +504,8 @@ func (l *lf) CollectAsync(ctx context.Context) <-chan AsyncCollectResult {
 	ch := make(chan AsyncCollectResult, 1)
 	go func() {
 		defer close(ch)
-		df, err := l.Collect(ctx)
-		ch <- AsyncCollectResult{DataFrame: df, Error: err}
+		out, err := l.Collect(ctx)
+		ch <- AsyncCollectResult{DataFrame: out, Error: err}
 	}()
 	return ch
 }
@@ -515,23 +517,13 @@ func (l *lf) CollectBatches(ctx context.Context, chunkSize int) <-chan AsyncColl
 		if chunkSize <= 0 {
 			chunkSize = 1024
 		}
-		collected, err := l.Collect(ctx)
+		collected, err := l.collectFrame(ctx)
 		if err != nil {
 			ch <- AsyncCollectResult{Error: err}
 			return
 		}
-		current, ok := collected.(*df)
-		if !ok {
-			ch <- AsyncCollectResult{DataFrame: collected}
-			return
-		}
-		for start := 0; start < current.value.Height(); start += chunkSize {
-			length := chunkSize
-			if start+length > current.value.Height() {
-				length = current.value.Height() - start
-			}
-			part := &df{value: current.value.Slice(start, length)}
-			ch <- AsyncCollectResult{DataFrame: part}
+		for start := 0; start < collected.Height(); start += chunkSize {
+			ch <- AsyncCollectResult{DataFrame: &df{value: collected.Slice(start, chunkSize)}}
 		}
 	}()
 	return ch
@@ -547,29 +539,19 @@ func (l *lf) Profile(ctx context.Context) (DataFrame, map[string]any, error) {
 		return nil, nil, err
 	}
 	out, report, err := l.engine.ExecuteWithReport(ctx, source, nodes)
-	if err != nil {
-		return nil, map[string]any{
-			"schema_version": report.SchemaVersion,
-			"operators":      report.Operators,
-			"duration_ms":    report.DurationMS,
-			"memory_bytes":   report.MemoryBytes,
-			"temporal_ops":   report.TemporalOps,
-		}, err
-	}
 	profile := map[string]any{
 		"schema_version": report.SchemaVersion,
 		"operators":      report.Operators,
 		"duration_ms":    report.DurationMS,
 		"memory_bytes":   report.MemoryBytes,
 		"temporal_ops":   report.TemporalOps,
-		"source_rows":    report.SourceRows,
-		"output_rows":    report.OutputRows,
 	}
-	wrapped, wrapErr := fromFrame(out, nil)
-	if wrapErr != nil {
-		return nil, nil, wrapErr
+	if err != nil {
+		return nil, profile, err
 	}
-	return wrapped, profile, nil
+	profile["source_rows"] = report.SourceRows
+	profile["output_rows"] = report.OutputRows
+	return &df{value: out}, profile, nil
 }
 
 func (l *lf) JoinWhere(predicate Expr) LazyFrame {
@@ -578,20 +560,25 @@ func (l *lf) JoinWhere(predicate Expr) LazyFrame {
 
 func (l *lf) SinkNDJSON(ctx context.Context, input WriteJSONInput) error {
 	input.NDJSON = true
-	df, err := l.Collect(ctx)
+	out, err := l.Collect(ctx)
 	if err != nil {
 		return err
 	}
-	return df.WriteJSON(input)
+	return out.WriteJSON(input)
 }
 
 func (l *lf) Collect(ctx context.Context) (DataFrame, error) {
+	return fromFrame(l.collectFrame(ctx))
+}
+
+// collectFrame resolves the scan source and executes the plan, returning the
+// unwrapped frame.
+func (l *lf) collectFrame(ctx context.Context) (frame.DataFrame, error) {
 	source, nodes, err := l.resolveSource()
 	if err != nil {
-		return nil, err
+		return frame.DataFrame{}, err
 	}
-	df, err := l.engine.Execute(ctx, source, nodes)
-	return fromFrame(df, err)
+	return l.engine.Execute(ctx, source, nodes)
 }
 
 func (l *lf) CollectStreaming(ctx context.Context, chunkSize int) (DataFrame, error) {
@@ -599,41 +586,38 @@ func (l *lf) CollectStreaming(ctx context.Context, chunkSize int) (DataFrame, er
 	if err != nil {
 		return nil, err
 	}
-	df, err := l.engine.ExecuteStreaming(ctx, source, nodes, chunkSize)
-	return fromFrame(df, err)
+	return fromFrame(l.engine.ExecuteStreaming(ctx, source, nodes, chunkSize))
 }
 
 func (l *lf) SinkCSV(ctx context.Context, input WriteCSVInput) error {
-	df, err := l.Collect(ctx)
+	out, err := l.Collect(ctx)
 	if err != nil {
 		return err
 	}
-	return df.WriteCSV(input)
+	return out.WriteCSV(input)
 }
 
 func (l *lf) SinkParquet(ctx context.Context, input WriteParquetInput) error {
-	df, err := l.Collect(ctx)
+	out, err := l.Collect(ctx)
 	if err != nil {
 		return err
 	}
-	return df.WriteParquet(input)
+	return out.WriteParquet(input)
 }
 
 func (l *lf) SinkIPC(ctx context.Context, input WriteIPCInput) error {
-	df, err := l.Collect(ctx)
+	out, err := l.Collect(ctx)
 	if err != nil {
 		return err
 	}
-	return df.WriteIPC(input)
+	return out.WriteIPC(input)
 }
 
 func (l *lf) SinkDelta(ctx context.Context, path string) error {
-	_ = ctx
 	return fmt.Errorf("not supported: sink_delta %s", path)
 }
 
 func (l *lf) SinkIceberg(ctx context.Context, path string) error {
-	_ = ctx
 	return fmt.Errorf("not supported: sink_iceberg %s", path)
 }
 
@@ -642,65 +626,55 @@ func (l *lf) Explain(optimized bool) string {
 	if !optimized {
 		return "logical=[" + logicalStage + "]"
 	}
-	optimizedNodes := optimizer.Optimize(l.nodes)
-	optimizedStage := renderStage(optimizedNodes)
-	physicalStage := renderStage(optimizedNodes)
-	return "logical=[" + logicalStage + "] optimized=[" + optimizedStage + "] physical=[" + physicalStage + "]"
+	optimizedStage := renderStage(optimizer.Optimize(l.nodes))
+	return "logical=[" + logicalStage + "] optimized=[" + optimizedStage + "] physical=[" + optimizedStage + "]"
 }
 
 func (l *lf) ExplainDiagnostics(optimized bool) map[string]any {
+	optimizedNodes := l.nodes
+	if optimized {
+		optimizedNodes = optimizer.Optimize(l.nodes)
+	}
+	var stateful, windowNodes, window, reshape, setOps, temporal int
+	for _, n := range optimizedNodes {
+		switch n.Type {
+		case logical.NodeSort, logical.NodeJoin, logical.NodeAggregate, logical.NodeWindow, logical.NodePivot, logical.NodeSetOp, logical.NodeRolling, logical.NodeDynamic:
+			stateful++
+		}
+		switch n.Type {
+		case logical.NodeWindow:
+			window += len(n.Windows)
+			windowNodes++
+		case logical.NodeMelt, logical.NodePivot:
+			reshape++
+		case logical.NodeSetOp:
+			setOps++
+		case logical.NodeRolling, logical.NodeDynamic:
+			temporal++
+		}
+	}
 	diag := map[string]any{
-		"schema_version": "v2",
-		"logical_nodes":  len(l.nodes),
-		"scan_source":    "in_memory",
+		"schema_version":             "v2",
+		"logical_nodes":              len(l.nodes),
+		"scan_source":                "in_memory",
+		"optimized":                  optimized,
+		"optimized_nodes":            len(optimizedNodes),
+		"stateful_pipeline":          stateful > 0,
+		"window_expressions":         window,
+		"reshape_operations":         reshape,
+		"set_operations":             setOps,
+		"temporal_window_operations": temporal,
+		"performance_markers": map[string]any{
+			"stateful_nodes":        stateful,
+			"window_nodes":          windowNodes,
+			"temporal_window_nodes": temporal,
+		},
+		"plan": renderStage(optimizedNodes),
 	}
 	if l.scan != nil {
 		diag["scan_source"] = l.scan.format
 		diag["scan_path"] = l.scan.path
 	}
-	optimizedNodes := l.nodes
-	if optimized {
-		optimizedNodes = optimizer.Optimize(l.nodes)
-	}
-	stateful := false
-	window := 0
-	reshape := 0
-	setOps := 0
-	temporal := 0
-	perfMarkers := map[string]any{
-		"stateful_nodes":        0,
-		"window_nodes":          0,
-		"temporal_window_nodes": 0,
-	}
-	for _, n := range optimizedNodes {
-		if n.Type == logical.NodeSort || n.Type == logical.NodeJoin || n.Type == logical.NodeAggregate || n.Type == logical.NodeWindow || n.Type == logical.NodePivot || n.Type == logical.NodeSetOp || n.Type == logical.NodeRolling || n.Type == logical.NodeDynamic {
-			stateful = true
-			perfMarkers["stateful_nodes"] = perfMarkers["stateful_nodes"].(int) + 1
-		}
-		if n.Type == logical.NodeWindow {
-			window += len(n.Windows)
-			perfMarkers["window_nodes"] = perfMarkers["window_nodes"].(int) + 1
-		}
-		if n.Type == logical.NodeMelt || n.Type == logical.NodePivot {
-			reshape++
-		}
-		if n.Type == logical.NodeSetOp {
-			setOps++
-		}
-		if n.Type == logical.NodeRolling || n.Type == logical.NodeDynamic {
-			temporal++
-			perfMarkers["temporal_window_nodes"] = perfMarkers["temporal_window_nodes"].(int) + 1
-		}
-	}
-	diag["optimized"] = optimized
-	diag["optimized_nodes"] = len(optimizedNodes)
-	diag["stateful_pipeline"] = stateful
-	diag["window_expressions"] = window
-	diag["reshape_operations"] = reshape
-	diag["set_operations"] = setOps
-	diag["temporal_window_operations"] = temporal
-	diag["performance_markers"] = perfMarkers
-	diag["plan"] = renderStage(optimizedNodes)
 	return diag
 }
 
@@ -721,7 +695,6 @@ type scanSource struct {
 	path   string
 	csv    ScanCSVInput
 	json   ScanJSONInput
-	ips    ScanIPCInput
 	parq   ScanParquetInput
 }
 
@@ -739,9 +712,8 @@ func (l *lf) resolveSource() (frame.DataFrame, []logical.Node, error) {
 	switch l.scan.format {
 	case "csv":
 		c := l.scan.csv
-		c.Path = path
 		base, err = icsv.Read(icsv.ReadInput{
-			Path:      c.Path,
+			Path:      path,
 			HasHeader: c.HasHeader,
 			Separator: c.Separator,
 			Schema:    c.Schema,
@@ -749,9 +721,8 @@ func (l *lf) resolveSource() (frame.DataFrame, []logical.Node, error) {
 		})
 	case "json":
 		j := l.scan.json
-		j.Path = path
 		base, err = ijson.Read(ijson.ReadInput{
-			Path:    j.Path,
+			Path:    path,
 			NDJSON:  j.NDJSON,
 			Schema:  j.Schema,
 			Columns: columns,
@@ -760,11 +731,10 @@ func (l *lf) resolveSource() (frame.DataFrame, []logical.Node, error) {
 		base, err = iipc.Read(iipc.ReadInput{Path: path, Columns: columns})
 	case "parquet":
 		p := l.scan.parq
-		p.Path = path
 		if len(columns) > 0 {
 			p.Columns = columns
 		}
-		base, err = readParquetSource(p.Path, p.Columns, pushed)
+		base, err = readParquetSource(path, p.Columns, pushed)
 	default:
 		err = fmt.Errorf("unsupported scan source format %s", l.scan.format)
 	}
@@ -823,12 +793,12 @@ func readParquetSource(path string, columns []string, pushed []expr.Expr) (frame
 		if len(readCols) == 0 {
 			readCols = nil
 		}
-		df, err := iparquet.Read(iparquet.ReadInput{Path: f, Columns: readCols})
+		part, err := iparquet.Read(iparquet.ReadInput{Path: f, Columns: readCols})
 		if err != nil {
 			return frame.DataFrame{}, err
 		}
 		if len(meta) > 0 {
-			df, err = addPartitionColumns(df, meta)
+			part, err = addPartitionColumns(part, meta)
 			if err != nil {
 				return frame.DataFrame{}, err
 			}
@@ -836,18 +806,18 @@ func readParquetSource(path string, columns []string, pushed []expr.Expr) (frame
 		if len(columns) > 0 {
 			exprs := make([]expr.Expr, 0, len(columns))
 			for _, c := range columns {
-				if _, ok := meta[c]; ok || hasColumn(df, c) {
+				if _, ok := meta[c]; ok || hasColumn(part, c) {
 					exprs = append(exprs, expr.Col(c))
 				}
 			}
 			if len(exprs) > 0 {
-				df, err = df.Select(exprs...)
+				part, err = part.Select(exprs...)
 				if err != nil {
 					return frame.DataFrame{}, err
 				}
 			}
 		}
-		parts = append(parts, df)
+		parts = append(parts, part)
 	}
 	if len(parts) == 0 {
 		return frame.New(frame.NewInput{})
@@ -865,7 +835,7 @@ func partitionFromPath(root string, file string) map[string]string {
 	if err != nil || rel == "." {
 		return out
 	}
-	for _, part := range strings.Split(rel, string(os.PathSeparator)) {
+	for part := range strings.SplitSeq(rel, string(os.PathSeparator)) {
 		pair := strings.SplitN(part, "=", 2)
 		if len(pair) != 2 {
 			continue
@@ -901,21 +871,21 @@ func matchPartition(meta map[string]string, constraints map[string]string) bool 
 	return true
 }
 
-func addPartitionColumns(df frame.DataFrame, meta map[string]string) (frame.DataFrame, error) {
+func addPartitionColumns(f frame.DataFrame, meta map[string]string) (frame.DataFrame, error) {
 	existing := map[string]struct{}{}
-	for _, name := range df.Columns() {
+	for _, name := range f.Columns() {
 		existing[name] = struct{}{}
 	}
-	out := make([]series.Series, 0, df.Width()+len(meta))
-	for _, name := range df.Columns() {
-		s, _ := df.Series(name)
+	out := make([]series.Series, 0, f.Width()+len(meta))
+	for _, name := range f.Columns() {
+		s, _ := f.Series(name)
 		out = append(out, s.Clone())
 	}
 	for key, value := range meta {
 		if _, ok := existing[key]; ok {
 			continue
 		}
-		values := make([]any, df.Height())
+		values := make([]any, f.Height())
 		for i := range values {
 			values[i] = value
 		}
@@ -928,13 +898,8 @@ func addPartitionColumns(df frame.DataFrame, meta map[string]string) (frame.Data
 	return frame.New(frame.NewInput{Series: out})
 }
 
-func hasColumn(df frame.DataFrame, column string) bool {
-	for _, c := range df.Columns() {
-		if c == column {
-			return true
-		}
-	}
-	return false
+func hasColumn(f frame.DataFrame, column string) bool {
+	return slices.Contains(f.Columns(), column)
 }
 
 func projectedColumns(nodes []logical.Node) []string {
@@ -948,44 +913,26 @@ func projectedColumns(nodes []logical.Node) []string {
 				}
 			}
 		case logical.NodeFilter:
-			if len(n.Exprs) == 0 {
-				continue
+			if len(n.Exprs) > 0 {
+				addExprColumns(required, n.Exprs[0])
 			}
-			for _, c := range collectExprColumns(n.Exprs[0]) {
-				required[c] = struct{}{}
-			}
-		case logical.NodeSort, logical.NodeAggregate, logical.NodeJoin, logical.NodeUnique, logical.NodeDropNulls:
-			for _, c := range n.Columns {
-				required[c] = struct{}{}
-			}
-		case logical.NodeExplode, logical.NodeFlatten:
-			for _, c := range n.Columns {
-				required[c] = struct{}{}
-			}
-		case logical.NodeMelt, logical.NodePivot:
+		case logical.NodeSort, logical.NodeAggregate, logical.NodeJoin, logical.NodeUnique, logical.NodeDropNulls,
+			logical.NodeExplode, logical.NodeFlatten, logical.NodeMelt, logical.NodePivot:
 			for _, c := range n.Columns {
 				required[c] = struct{}{}
 			}
 		case logical.NodeRolling:
-			limit := len(n.Columns)
-			if limit > 2 {
-				limit = 2
-			}
-			for i := 0; i < limit; i++ {
-				c := n.Columns[i]
-				if c == "" {
-					continue
+			for _, c := range n.Columns[:min(len(n.Columns), 2)] {
+				if c != "" {
+					required[c] = struct{}{}
 				}
-				required[c] = struct{}{}
 			}
 		case logical.NodeDynamic:
 			if len(n.Columns) > 0 && n.Columns[0] != "" {
 				required[n.Columns[0]] = struct{}{}
 			}
 			for _, e := range n.Exprs {
-				for _, c := range collectExprColumns(e) {
-					required[c] = struct{}{}
-				}
+				addExprColumns(required, e)
 			}
 		case logical.NodeWindow:
 			for _, w := range n.Windows {
@@ -1011,32 +958,24 @@ func projectedColumns(nodes []logical.Node) []string {
 	return out
 }
 
-func collectExprColumns(e expr.Expr) []string {
-	out := map[string]struct{}{}
-	var walk func(x expr.Expr)
-	walk = func(x expr.Expr) {
-		if x.Kind() == expr.KindCol {
-			out[x.ColName()] = struct{}{}
-		}
-		if x.Left() != nil {
-			walk(*x.Left())
-		}
-		if x.Right() != nil {
-			walk(*x.Right())
-		}
-		if x.Target() != nil {
-			walk(*x.Target())
-		}
-		if x.Extra() != nil {
-			walk(*x.Extra())
-		}
+// addExprColumns adds the name of every column node in e's Left/Right/Target/Extra
+// tree to dst.
+func addExprColumns(dst map[string]struct{}, e expr.Expr) {
+	if e.Kind() == expr.KindCol {
+		dst[e.ColName()] = struct{}{}
 	}
-	walk(e)
-	values := make([]string, 0, len(out))
-	for c := range out {
-		values = append(values, c)
+	if e.Left() != nil {
+		addExprColumns(dst, *e.Left())
 	}
-	return values
+	if e.Right() != nil {
+		addExprColumns(dst, *e.Right())
+	}
+	if e.Target() != nil {
+		addExprColumns(dst, *e.Target())
+	}
+	if e.Extra() != nil {
+		addExprColumns(dst, *e.Extra())
+	}
 }
 
 func splitPushdownFilters(nodes []logical.Node) ([]expr.Expr, []logical.Node) {

@@ -2,6 +2,7 @@ package exec
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
@@ -221,5 +222,109 @@ func TestAggregateFrame(t *testing.T) {
 	stdCol, _ := stdOut.Series("v")
 	if math.Abs(stdCol.Value(0).(float64)-math.Sqrt(1.25)) > 1e-9 {
 		t.Fatalf("std = %v, want %v", stdCol.Value(0), math.Sqrt(1.25))
+	}
+}
+
+// TestAggregateFrameNullsAndOrder pins aggregateFrame on all-null and
+// non-numeric columns (every numeric aggregate is null) and on an
+// order-sensitive float column (sums run in row order, quantile hits exact and
+// interpolated ranks).
+func TestAggregateFrameNullsAndOrder(t *testing.T) {
+	t.Parallel()
+
+	empty := mustFrame(t,
+		frame.SeriesInput{Name: "n", DType: dtypes.Float64, Values: []any{nil, nil}},
+		frame.SeriesInput{Name: "s", Values: []any{"b", "a"}},
+	)
+	for _, op := range []string{"mean", "median", "std", "var", "quantile"} {
+		out, err := aggregateFrame(empty, op, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", op, err)
+		}
+		for _, name := range []string{"n", "s"} {
+			if col, _ := out.Series(name); col.Value(0) != nil || col.DataType() != dtypes.Float64 {
+				t.Errorf("%s(%s) = %v (%s), want null float64", op, name, col.Value(0), col.DataType())
+			}
+		}
+	}
+	for _, tc := range []struct {
+		op     string
+		n, s   any
+		nt, st dtypes.DataType
+	}{
+		{"max", nil, "b", dtypes.Float64, dtypes.String},
+		{"min", nil, "a", dtypes.Float64, dtypes.String},
+		{"count", int64(0), int64(2), dtypes.Int64, dtypes.Int64},
+		{"null_count", int64(2), int64(0), dtypes.Int64, dtypes.Int64},
+	} {
+		out, err := aggregateFrame(empty, tc.op, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.op, err)
+		}
+		n, _ := out.Series("n")
+		s, _ := out.Series("s")
+		if n.Value(0) != tc.n || s.Value(0) != tc.s || n.DataType() != tc.nt || s.DataType() != tc.st {
+			t.Errorf("%s = (%v %s, %v %s), want (%v %s, %v %s)", tc.op, n.Value(0), n.DataType(), s.Value(0), s.DataType(), tc.n, tc.nt, tc.s, tc.st)
+		}
+	}
+
+	// Leading null and ties for max/min.
+	ties := mustFrame(t, frame.SeriesInput{Name: "v", Values: []any{nil, int64(3), int64(1), int64(3), int64(1)}})
+	for op, want := range map[string]any{"max": int64(3), "min": int64(1)} {
+		out, err := aggregateFrame(ties, op, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", op, err)
+		}
+		if col, _ := out.Series("v"); col.Value(0) != want {
+			t.Errorf("%s = %v, want %v", op, col.Value(0), want)
+		}
+	}
+
+	vals := []any{1e16, 1.0, nil, -1e16, 3.0, 0.1}
+	df := mustFrame(t, frame.SeriesInput{Name: "f", Values: vals})
+	var nums []float64
+	for _, v := range vals {
+		if f, ok := v.(float64); ok {
+			nums = append(nums, f)
+		}
+	}
+	var sum float64
+	for _, f := range nums {
+		sum += f
+	}
+	mean := sum / float64(len(nums))
+	var variance float64
+	for _, f := range nums {
+		d := f - mean
+		variance += d * d
+	}
+	variance /= float64(len(nums))
+	sorted := slices.Clone(nums)
+	slices.Sort(sorted)
+	idx := float64(len(sorted)-1) * 0.3
+	w := idx - math.Floor(idx)
+	interpolated := sorted[1]*(1.0-w) + sorted[2]*w
+
+	for _, tc := range []struct {
+		op   string
+		args []string
+		want float64
+	}{
+		{"mean", nil, mean},
+		{"var", nil, variance},
+		{"std", nil, math.Sqrt(variance)},
+		{"median", nil, sorted[2]},
+		{"quantile", []string{"0.25"}, sorted[1]},
+		{"quantile", []string{"1"}, sorted[4]},
+		{"quantile", []string{"x"}, sorted[2]},
+		{"quantile", []string{"0.3"}, interpolated},
+	} {
+		out, err := aggregateFrame(df, tc.op, tc.args)
+		if err != nil {
+			t.Fatalf("%s%v: %v", tc.op, tc.args, err)
+		}
+		if col, _ := out.Series("f"); col.Value(0) != tc.want {
+			t.Errorf("%s%v = %v, want %v", tc.op, tc.args, col.Value(0), tc.want)
+		}
 	}
 }

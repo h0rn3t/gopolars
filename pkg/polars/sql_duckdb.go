@@ -8,6 +8,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	goarrow "github.com/apache/arrow-go/v18/arrow"
@@ -201,13 +202,7 @@ func nativeArrow(a goarrow.Array) bool {
 // into Int64/Float64. Truly unsupported types (e.g. list/struct) return an error.
 // Returns a record the caller must Release.
 func normalizeRecord(rec goarrow.RecordBatch) (goarrow.RecordBatch, error) {
-	needs := false
-	for i := 0; i < int(rec.NumCols()); i++ {
-		if !nativeArrow(rec.Column(i)) {
-			needs = true
-			break
-		}
-	}
+	needs := slices.ContainsFunc(rec.Columns(), func(a goarrow.Array) bool { return !nativeArrow(a) })
 	if !needs {
 		rec.Retain()
 		return rec, nil
@@ -216,7 +211,7 @@ func normalizeRecord(rec goarrow.RecordBatch) (goarrow.RecordBatch, error) {
 	schema := rec.Schema()
 	fields := make([]goarrow.Field, rec.NumCols())
 	cols := make([]goarrow.Array, rec.NumCols())
-	for i := 0; i < int(rec.NumCols()); i++ {
+	for i := range int(rec.NumCols()) {
 		field := schema.Field(i)
 		col := rec.Column(i)
 		if nativeArrow(col) {
@@ -282,7 +277,7 @@ func convertArray(mem memory.Allocator, a goarrow.Array) (goarrow.Array, goarrow
 // widenInt builds an Int64 array from a narrower integer source.
 func widenInt(mem memory.Allocator, n int, isNull func(int) bool, val func(int) int64) goarrow.Array {
 	b := array.NewInt64Builder(mem)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if isNull(i) {
 			b.AppendNull()
 		} else {
@@ -301,7 +296,7 @@ func decimalToNumeric(mem memory.Allocator, dec *array.Decimal128, scale int32) 
 	if scale == 0 {
 		ib := array.NewInt64Builder(mem)
 		fits := true
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if dec.IsNull(i) {
 				ib.AppendNull()
 				continue
@@ -321,7 +316,7 @@ func decimalToNumeric(mem memory.Allocator, dec *array.Decimal128, scale int32) 
 		ib.Release()
 	}
 	fb := array.NewFloat64Builder(mem)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if dec.IsNull(i) {
 			fb.AppendNull()
 			continue

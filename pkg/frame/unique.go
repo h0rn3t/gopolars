@@ -2,7 +2,7 @@ package frame
 
 import (
 	"runtime"
-	"sort"
+	"slices"
 
 	"github.com/h0rn3t/gopolars/pkg/chunk"
 )
@@ -37,6 +37,6 @@ func (d DataFrame) firstRowsParallel(keyColumns []*chunk.Column, workers int) []
 	merged := runShardedGroupBy(keyColumns, nil, ranges)
 	keep := make([]int, len(merged.firstRow))
 	copy(keep, merged.firstRow)
-	sort.Ints(keep)
+	slices.Sort(keep)
 	return keep
 }

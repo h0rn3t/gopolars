@@ -9,9 +9,6 @@ import (
 
 func ConcatVertical(base DataFrame, others ...DataFrame) (DataFrame, error) {
 	frames := append([]DataFrame{base}, others...)
-	if len(frames) == 0 {
-		return DataFrame{}, nil
-	}
 	columns := frames[0].Columns()
 	for _, f := range frames {
 		if len(f.Columns()) != len(columns) {
@@ -35,9 +32,6 @@ func ConcatVertical(base DataFrame, others ...DataFrame) (DataFrame, error) {
 
 func ConcatHorizontal(base DataFrame, others ...DataFrame) (DataFrame, error) {
 	frames := append([]DataFrame{base}, others...)
-	if len(frames) == 0 {
-		return DataFrame{}, nil
-	}
 	height := frames[0].Height()
 	out := make([]series.Series, 0)
 	seen := map[string]struct{}{}

@@ -113,10 +113,7 @@ const minMergePartLen = 1 << 14 // 16384
 // fork-join barrier, measured at ~200µs of parked-thread wakeup on darwin, while
 // phase 1 is only a few ms in total.
 func radixWorkers() (runs, budget int) {
-	budget = runtime.GOMAXPROCS(0)
-	if budget < 1 {
-		budget = 1
-	}
+	budget = max(runtime.GOMAXPROCS(0), 1)
 	// Largest power of two <= budget.
 	runs = 1 << (bits.Len(uint(budget)) - 1)
 	return runs, budget
@@ -230,14 +227,12 @@ func radixSortRangeInto(keys []uint64, idx, tmp []int, lo, hi int) {
 	b := tmp[lo:hi]
 	var count [256]int
 	for shift := uint(0); shift < 64; shift += 8 {
-		for i := range count {
-			count[i] = 0
-		}
+		clear(count[:])
 		for _, ix := range a {
 			count[(keys[ix]>>shift)&0xff]++
 		}
 		sum := 0
-		for i := 0; i < 256; i++ {
+		for i := range 256 {
 			c := count[i]
 			count[i] = sum
 			sum += c
@@ -401,27 +396,6 @@ func radixArgsort(keys []uint64) []int {
 	for i := range idx {
 		idx[i] = i
 	}
-	tmp := make([]int, n)
-	var count [256]int
-	for shift := uint(0); shift < 64; shift += 8 {
-		for i := range count {
-			count[i] = 0
-		}
-		for i := 0; i < n; i++ {
-			count[(keys[idx[i]]>>shift)&0xff]++
-		}
-		sum := 0
-		for i := 0; i < 256; i++ {
-			c := count[i]
-			count[i] = sum
-			sum += c
-		}
-		for i := 0; i < n; i++ {
-			d := (keys[idx[i]] >> shift) & 0xff
-			tmp[count[d]] = idx[i]
-			count[d]++
-		}
-		idx, tmp = tmp, idx
-	}
+	radixSortRangeInto(keys, idx, make([]int, n), 0, n)
 	return idx
 }

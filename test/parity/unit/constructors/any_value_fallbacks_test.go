@@ -113,7 +113,7 @@ func TestAnyValueFallbackNullOnly(t *testing.T) {
 	if s.Len() != 2 {
 		t.Fatalf("len: got %d, want 2", s.Len())
 	}
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if s.Value(i) != nil {
 			t.Fatalf("value[%d]: should be nil, got %v", i, s.Value(i))
 		}

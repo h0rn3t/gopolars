@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/bits"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -121,58 +122,12 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				return nil, fmt.Errorf("str_trim expects string")
 			}
 			return strings.TrimSpace(s), nil
-		case "dt_year":
-			t, ok := v.(time.Time)
-			if !ok {
-				return nil, fmt.Errorf("dt_year expects datetime")
-			}
-			return int64(t.Year()), nil
-		case "dt_month":
-			t, ok := v.(time.Time)
-			if !ok {
-				return nil, fmt.Errorf("dt_month expects datetime")
-			}
-			return int64(t.Month()), nil
-		case "dt_day":
-			t, ok := v.(time.Time)
-			if !ok {
-				return nil, fmt.Errorf("dt_day expects datetime")
-			}
-			return int64(t.Day()), nil
-		case "dt_hour":
-			t, ok := v.(time.Time)
-			if !ok {
-				return nil, fmt.Errorf("dt_hour expects datetime")
-			}
-			return int64(t.Hour()), nil
-		case "dt_weekday":
-			t, ok := v.(time.Time)
-			if !ok {
-				return nil, fmt.Errorf("dt_weekday expects datetime")
-			}
-			// Polars/ISO weekday: Monday=1 .. Sunday=7. Go's time.Weekday is
-			// Sunday=0 .. Saturday=6, so remap.
-			return int64((int(t.Weekday())+6)%7) + 1, nil
-		case "dt_minute":
-			t, ok := v.(time.Time)
-			if !ok {
-				return nil, fmt.Errorf("dt_minute expects datetime")
-			}
-			return int64(t.Minute()), nil
-		case "dt_second":
-			t, ok := v.(time.Time)
-			if !ok {
-				return nil, fmt.Errorf("dt_second expects datetime")
-			}
-			return int64(t.Second()), nil
 		case "list_len":
 			list, ok := v.([]any)
 			if !ok {
 				return nil, fmt.Errorf("list_len expects list")
 			}
 			return int64(len(list)), nil
-		case "cum_sum", "cum_count", "rank":
-			return v, nil
 		case "reverse":
 			if ra, ok := row.(RasterRowAccess); ok {
 				return Eval(*e.Target(), reverseRowCtx{base: ra})
@@ -187,27 +142,7 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 			default:
 				return nil, fmt.Errorf("round expects numeric")
 			}
-		case "log":
-			switch t := v.(type) {
-			case float64:
-				return math.Log(t), nil
-			case int64:
-				return math.Log(float64(t)), nil
-			default:
-				return nil, fmt.Errorf("log expects numeric")
-			}
-		case "sqrt":
-			switch t := v.(type) {
-			case float64:
-				return math.Sqrt(t), nil
-			case int64:
-				return math.Sqrt(float64(t)), nil
-			default:
-				return nil, fmt.Errorf("sqrt expects numeric")
-			}
-		case "dt", "str", "list", "struct":
-			return v, nil
-		case "agg_groups", "approx_n_unique", "arg_max", "arg_min", "arg_sort", "arg_true", "arg_unique", "arr", "backward_fill", "bin", "cat", "count", "cum_max", "cum_min", "cum_prod", "cumulative_eval", "cut", "deserialize", "diff", "drop_nans", "drop_nulls", "entropy", "ewm_mean", "ewm_std", "ewm_var", "explode", "ext", "first", "flatten", "forward_fill", "hash", "hist", "implode", "inspect", "interpolate", "is_duplicated", "is_first_distinct", "is_last_distinct", "is_unique", "item", "kurtosis", "last", "lower_bound", "map_batches", "map_elements", "max", "mean", "median", "meta", "min", "mode", "n_unique", "nan_max", "nan_min", "null_count", "pct_change", "peak_max", "peak_min", "pipe", "product", "qcut", "quantile", "rechunk", "reinterpret", "rle", "rle_id", "shrink_dtype", "skew", "std", "sum", "to_physical", "truncate", "unique", "unique_counts", "upper_bound", "value_counts", "var":
+		case "agg_groups", "approx_n_unique", "arg_max", "arg_min", "arg_sort", "arg_true", "arg_unique", "arr", "backward_fill", "bin", "cat", "count", "cum_count", "cum_max", "cum_min", "cum_prod", "cum_sum", "cumulative_eval", "cut", "deserialize", "diff", "drop_nans", "drop_nulls", "dt", "entropy", "ewm_mean", "ewm_std", "ewm_var", "explode", "ext", "first", "flatten", "forward_fill", "hash", "hist", "implode", "inspect", "interpolate", "is_duplicated", "is_first_distinct", "is_last_distinct", "is_unique", "item", "kurtosis", "last", "list", "lower_bound", "map_batches", "map_elements", "max", "mean", "median", "meta", "min", "mode", "n_unique", "nan_max", "nan_min", "null_count", "pct_change", "peak_max", "peak_min", "pipe", "product", "qcut", "quantile", "rank", "rechunk", "reinterpret", "rle", "rle_id", "shrink_dtype", "skew", "std", "str", "struct", "sum", "to_physical", "truncate", "unique", "unique_counts", "upper_bound", "value_counts", "var":
 			return v, nil
 		case "all":
 			if b, ok := v.(bool); ok {
@@ -234,132 +169,6 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				}
 			}
 			return false, nil
-		case "arccos":
-			if f, ok := toFloat(v); ok {
-				return math.Acos(f), nil
-			}
-			return nil, fmt.Errorf("arccos expects numeric")
-		case "arccosh":
-			if f, ok := toFloat(v); ok {
-				return math.Acosh(f), nil
-			}
-			return nil, fmt.Errorf("arccosh expects numeric")
-		case "arcsin":
-			if f, ok := toFloat(v); ok {
-				return math.Asin(f), nil
-			}
-			return nil, fmt.Errorf("arcsin expects numeric")
-		case "arcsinh":
-			if f, ok := toFloat(v); ok {
-				return math.Asinh(f), nil
-			}
-			return nil, fmt.Errorf("arcsinh expects numeric")
-		case "arctan":
-			if f, ok := toFloat(v); ok {
-				return math.Atan(f), nil
-			}
-			return nil, fmt.Errorf("arctan expects numeric")
-		case "arctanh":
-			if f, ok := toFloat(v); ok {
-				return math.Atanh(f), nil
-			}
-			return nil, fmt.Errorf("arctanh expects numeric")
-		case "bitwise_count_ones":
-			i, ok := toInt64(v)
-			if !ok {
-				return nil, fmt.Errorf("bitwise_count_ones expects int")
-			}
-			return int64(bits.OnesCount64(uint64(i))), nil
-		case "bitwise_count_zeros":
-			i, ok := toInt64(v)
-			if !ok {
-				return nil, fmt.Errorf("bitwise_count_zeros expects int")
-			}
-			return int64(bits.LeadingZeros64(uint64(i)) + bits.TrailingZeros64(uint64(i))), nil
-		case "bitwise_leading_ones":
-			i, ok := toInt64(v)
-			if !ok {
-				return nil, fmt.Errorf("bitwise_leading_ones expects int")
-			}
-			return int64(bits.LeadingZeros64(^uint64(i))), nil
-		case "bitwise_leading_zeros":
-			i, ok := toInt64(v)
-			if !ok {
-				return nil, fmt.Errorf("bitwise_leading_zeros expects int")
-			}
-			return int64(bits.LeadingZeros64(uint64(i))), nil
-		case "bitwise_trailing_ones":
-			i, ok := toInt64(v)
-			if !ok {
-				return nil, fmt.Errorf("bitwise_trailing_ones expects int")
-			}
-			return int64(bits.TrailingZeros64(^uint64(i))), nil
-		case "bitwise_trailing_zeros":
-			i, ok := toInt64(v)
-			if !ok {
-				return nil, fmt.Errorf("bitwise_trailing_zeros expects int")
-			}
-			return int64(bits.TrailingZeros64(uint64(i))), nil
-		case "cbrt":
-			if f, ok := toFloat(v); ok {
-				return math.Cbrt(f), nil
-			}
-			return nil, fmt.Errorf("cbrt expects numeric")
-		case "ceil":
-			if f, ok := toFloat(v); ok {
-				return math.Ceil(f), nil
-			}
-			return nil, fmt.Errorf("ceil expects numeric")
-		case "cos":
-			if f, ok := toFloat(v); ok {
-				return math.Cos(f), nil
-			}
-			return nil, fmt.Errorf("cos expects numeric")
-		case "sin":
-			if f, ok := toFloat(v); ok {
-				return math.Sin(f), nil
-			}
-			return nil, fmt.Errorf("sin expects numeric")
-		case "cosh":
-			if f, ok := toFloat(v); ok {
-				return math.Cosh(f), nil
-			}
-			return nil, fmt.Errorf("cosh expects numeric")
-		case "sinh":
-			if f, ok := toFloat(v); ok {
-				return math.Sinh(f), nil
-			}
-			return nil, fmt.Errorf("sinh expects numeric")
-		case "cot":
-			if f, ok := toFloat(v); ok {
-				return 1 / math.Tan(f), nil
-			}
-			return nil, fmt.Errorf("cot expects numeric")
-		case "tan":
-			if f, ok := toFloat(v); ok {
-				return math.Tan(f), nil
-			}
-			return nil, fmt.Errorf("tan expects numeric")
-		case "tanh":
-			if f, ok := toFloat(v); ok {
-				return math.Tanh(f), nil
-			}
-			return nil, fmt.Errorf("tanh expects numeric")
-		case "degrees":
-			if f, ok := toFloat(v); ok {
-				return f * 180 / math.Pi, nil
-			}
-			return nil, fmt.Errorf("degrees expects numeric")
-		case "radians":
-			if f, ok := toFloat(v); ok {
-				return f * math.Pi / 180, nil
-			}
-			return nil, fmt.Errorf("radians expects numeric")
-		case "floor":
-			if f, ok := toFloat(v); ok {
-				return math.Floor(f), nil
-			}
-			return nil, fmt.Errorf("floor expects numeric")
 		case "from_json":
 			if s, ok := v.(string); ok {
 				var out any
@@ -380,47 +189,25 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 			}
 			return v == nil, nil
 		case "is_finite":
-			if f, ok := toFloat(v); ok {
+			if f, ok := ToFloat(v); ok {
 				return !math.IsNaN(f) && !math.IsInf(f, 0), nil
 			}
 			return false, nil
 		case "is_infinite":
-			if f, ok := toFloat(v); ok {
+			if f, ok := ToFloat(v); ok {
 				return math.IsInf(f, 0), nil
 			}
 			return false, nil
 		case "is_nan":
-			if f, ok := toFloat(v); ok {
+			if f, ok := ToFloat(v); ok {
 				return math.IsNaN(f), nil
 			}
 			return false, nil
 		case "is_not_nan":
-			if f, ok := toFloat(v); ok {
+			if f, ok := ToFloat(v); ok {
 				return !math.IsNaN(f), nil
 			}
 			return v != nil, nil
-		case "log10":
-			if f, ok := toFloat(v); ok {
-				return math.Log10(f), nil
-			}
-			return nil, fmt.Errorf("log10 expects numeric")
-		case "log1p":
-			if f, ok := toFloat(v); ok {
-				return math.Log1p(f), nil
-			}
-			return nil, fmt.Errorf("log1p expects numeric")
-		case "sign":
-			if f, ok := toFloat(v); ok {
-				switch {
-				case f < 0:
-					return float64(-1), nil
-				case f > 0:
-					return float64(1), nil
-				default:
-					return float64(0), nil
-				}
-			}
-			return nil, fmt.Errorf("sign expects numeric")
 		case "neg":
 			switch t := v.(type) {
 			case int64:
@@ -446,138 +233,32 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 			default:
 				return nil, fmt.Errorf("abs expects numeric")
 			}
-		case "exp":
-			switch t := v.(type) {
-			case float64:
-				return math.Exp(t), nil
-			case int64:
-				return math.Exp(float64(t)), nil
-			default:
-				return nil, fmt.Errorf("exp expects numeric")
-			}
 		default:
-			if strings.HasPrefix(e.Op(), "over:") {
-				return v, nil
-			}
-			if strings.HasPrefix(e.Op(), "bottom_k:") {
-				return v, nil
-			}
-			if strings.HasPrefix(e.Op(), "exclude:") || strings.HasPrefix(e.Op(), "gather_every:") || strings.HasPrefix(e.Op(), "head:") || strings.HasPrefix(e.Op(), "limit:") || strings.HasPrefix(e.Op(), "repeat_by:") || strings.HasPrefix(e.Op(), "sample:") || strings.HasPrefix(e.Op(), "set_sorted:") || strings.HasPrefix(e.Op(), "shift:") || strings.HasPrefix(e.Op(), "shuffle:") || strings.HasPrefix(e.Op(), "slice:") || strings.HasPrefix(e.Op(), "sort:") || strings.HasPrefix(e.Op(), "tail:") || strings.HasPrefix(e.Op(), "top_k:") || strings.HasPrefix(e.Op(), "reshape:") {
-				return v, nil
-			}
-			if strings.HasPrefix(e.Op(), "rolling_min:") || strings.HasPrefix(e.Op(), "rolling_max:") || strings.HasPrefix(e.Op(), "rolling_mean:") || strings.HasPrefix(e.Op(), "rolling_sum:") || strings.HasPrefix(e.Op(), "rolling_std:") || strings.HasPrefix(e.Op(), "rolling_var:") || strings.HasPrefix(e.Op(), "rolling_median:") || strings.HasPrefix(e.Op(), "rolling_quantile:") || strings.HasPrefix(e.Op(), "rolling_skew:") || strings.HasPrefix(e.Op(), "rolling_kurtosis:") || strings.HasPrefix(e.Op(), "rolling_map:") || strings.HasPrefix(e.Op(), "rolling:") || strings.HasPrefix(e.Op(), "rolling_rank:") {
-				return v, nil
-			}
-			if strings.HasPrefix(e.Op(), "round_sig_figs:") {
-				f, ok := toFloat(v)
+			if fn, ok := floatUnaryOps[e.Op()]; ok {
+				f, ok := ToFloat(v)
 				if !ok {
-					return nil, fmt.Errorf("round_sig_figs expects numeric")
+					return nil, fmt.Errorf("%s expects numeric", e.Op())
 				}
-				digits := 3
-				if parsed, err := strconv.Atoi(strings.TrimPrefix(e.Op(), "round_sig_figs:")); err == nil && parsed > 0 {
-					digits = parsed
-				}
-				return roundToSigFigs(f, digits), nil
+				return fn(f), nil
 			}
-			if strings.HasPrefix(e.Op(), "str_replace_all:") {
-				spec := strings.TrimPrefix(e.Op(), "str_replace_all:")
-				parts := strings.SplitN(spec, ":", 2)
-				if len(parts) != 2 {
-					return nil, fmt.Errorf("invalid str_replace_all configuration")
-				}
-				s, ok := v.(string)
+			if fn, ok := dtUnaryOps[e.Op()]; ok {
+				t, ok := v.(time.Time)
 				if !ok {
-					return nil, fmt.Errorf("str_replace_all expects string")
+					return nil, fmt.Errorf("%s expects datetime", e.Op())
 				}
-				re, err := regexp.Compile(parts[0])
-				if err != nil {
-					return nil, fmt.Errorf("str_replace_all invalid pattern %q: %w", parts[0], err)
-				}
-				// Replacement is taken literally (no $-group expansion), matching the
-				// common Polars str.replace_all(pattern, value) usage.
-				return re.ReplaceAllLiteralString(s, parts[1]), nil
+				return fn(t), nil
 			}
-			if strings.HasPrefix(e.Op(), "str_replace:") {
-				spec := strings.TrimPrefix(e.Op(), "str_replace:")
-				parts := strings.SplitN(spec, ":", 2)
-				if len(parts) != 2 {
-					return nil, fmt.Errorf("invalid str_replace configuration")
-				}
-				s, ok := v.(string)
+			if fn, ok := bitwiseUnaryOps[e.Op()]; ok {
+				i, ok := toInt64(v)
 				if !ok {
-					return nil, fmt.Errorf("str_replace expects string")
+					return nil, fmt.Errorf("%s expects int", e.Op())
 				}
-				// Polars str.replace replaces only the FIRST match, with the pattern
-				// treated as a regex (literal=False default).
-				re, err := regexp.Compile(parts[0])
-				if err != nil {
-					return nil, fmt.Errorf("str_replace invalid pattern %q: %w", parts[0], err)
-				}
-				loc := re.FindStringIndex(s)
-				if loc == nil {
-					return s, nil
-				}
-				return s[:loc[0]] + parts[1] + s[loc[1]:], nil
+				return int64(fn(uint64(i))), nil
 			}
-			if strings.HasPrefix(e.Op(), "str_like:") {
-				if v == nil {
-					return nil, nil
+			if name, arg, ok := strings.Cut(e.Op(), ":"); ok {
+				if out, handled, err := evalParamUnary(name, arg, v); handled {
+					return out, err
 				}
-				s, ok := v.(string)
-				if !ok {
-					return nil, fmt.Errorf("str_like expects string")
-				}
-				re, err := compileLikePattern(strings.TrimPrefix(e.Op(), "str_like:"))
-				if err != nil {
-					return nil, err
-				}
-				return re.MatchString(s), nil
-			}
-			if strings.HasPrefix(e.Op(), "str_substr:") {
-				if v == nil {
-					return nil, nil
-				}
-				s, ok := v.(string)
-				if !ok {
-					return nil, fmt.Errorf("str_substr expects string")
-				}
-				spec := strings.TrimPrefix(e.Op(), "str_substr:")
-				parts := strings.SplitN(spec, ":", 2)
-				if len(parts) != 2 {
-					return nil, fmt.Errorf("invalid str_substr configuration")
-				}
-				start, err1 := strconv.Atoi(parts[0])
-				length, err2 := strconv.Atoi(parts[1])
-				if err1 != nil || err2 != nil {
-					return nil, fmt.Errorf("invalid str_substr configuration")
-				}
-				return substrKernel(s, start, length), nil
-			}
-			if strings.HasPrefix(e.Op(), "round_dp:") {
-				if v == nil {
-					return nil, nil
-				}
-				decimals, err := strconv.Atoi(strings.TrimPrefix(e.Op(), "round_dp:"))
-				if err != nil {
-					return nil, fmt.Errorf("invalid round_dp configuration")
-				}
-				switch t := v.(type) {
-				case float64:
-					scale := math.Pow(10, float64(decimals))
-					return math.Round(t*scale) / scale, nil
-				case int64:
-					return t, nil
-				default:
-					return nil, fmt.Errorf("round_dp expects numeric")
-				}
-			}
-			if strings.HasPrefix(e.Op(), "struct_field:") {
-				key := strings.TrimPrefix(e.Op(), "struct_field:")
-				m, ok := v.(map[string]any)
-				if !ok {
-					return nil, fmt.Errorf("struct_field expects struct")
-				}
-				return m[key], nil
 			}
 			if out, handled, err := evalExtraUnary(e.Op(), v); handled {
 				return out, err
@@ -585,38 +266,33 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 			return nil, fmt.Errorf("unsupported unary op %s", e.Op())
 		}
 	case KindTern:
-		if e.Op() == "str_pad_start" || e.Op() == "str_pad_end" || e.Op() == "str_split_part" {
-			target, err := Eval(*e.Target(), row)
-			if err != nil {
-				return nil, err
+		op := e.Op()
+		// Pass-through ops return the target without evaluating their other operands
+		// (such as the `by` column); the parameterized ones carry an argument after ":".
+		if name, _, ok := strings.Cut(op, ":"); ok {
+			switch name {
+			case "bottom_k_by", "top_k_by", "sort_by", "rolling_max_by", "rolling_mean_by", "rolling_min_by", "rolling_sum_by", "rolling_std_by", "rolling_var_by", "rolling_median_by", "rolling_quantile_by", "rolling_rank_by":
+				return Eval(*e.Target(), row)
 			}
-			left, err := Eval(*e.Left(), row)
-			if err != nil {
-				return nil, err
-			}
-			right, err := Eval(*e.Right(), row)
-			if err != nil {
-				return nil, err
-			}
-			out, _, err := evalExtraTern(e.Op(), target, left, right)
-			return out, err
 		}
-		if e.Op() == "clip" {
-			current, err := Eval(*e.Target(), row)
+		switch op {
+		case "ewm_mean_by", "extend_constant", "max_by", "min_by", "interpolate_by":
+			return Eval(*e.Target(), row)
+		case "str_pad_start", "str_pad_end", "str_split_part":
+			target, left, right, err := evalTernOperands(e, row)
 			if err != nil {
 				return nil, err
 			}
-			minValue, err := Eval(*e.Left(), row)
+			out, _, err := evalExtraTern(op, target, left, right)
+			return out, err
+		case "clip":
+			current, minValue, maxValue, err := evalTernOperands(e, row)
 			if err != nil {
 				return nil, err
 			}
-			maxValue, err := Eval(*e.Right(), row)
-			if err != nil {
-				return nil, err
-			}
-			cur, cok := toFloat(current)
-			minv, mok := toFloat(minValue)
-			maxv, xok := toFloat(maxValue)
+			cur, cok := ToFloat(current)
+			minv, mok := ToFloat(minValue)
+			maxv, xok := ToFloat(maxValue)
 			if !cok || !mok || !xok {
 				return nil, fmt.Errorf("clip expects numeric")
 			}
@@ -627,17 +303,8 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				return maxv, nil
 			}
 			return cur, nil
-		}
-		if e.Op() == "replace" || e.Op() == "replace_strict" {
-			current, err := Eval(*e.Target(), row)
-			if err != nil {
-				return nil, err
-			}
-			oldValue, err := Eval(*e.Left(), row)
-			if err != nil {
-				return nil, err
-			}
-			newValue, err := Eval(*e.Right(), row)
+		case "replace", "replace_strict":
+			current, oldValue, newValue, err := evalTernOperands(e, row)
 			if err != nil {
 				return nil, err
 			}
@@ -645,39 +312,18 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 				return newValue, nil
 			}
 			return current, nil
-		}
-		if strings.HasPrefix(e.Op(), "bottom_k_by:") || strings.HasPrefix(e.Op(), "top_k_by:") || strings.HasPrefix(e.Op(), "sort_by:") {
-			return Eval(*e.Target(), row)
-		}
-		if e.Op() == "is_between" {
-			current, err := Eval(*e.Target(), row)
+		case "is_between":
+			current, lower, upper, err := evalTernOperands(e, row)
 			if err != nil {
 				return nil, err
 			}
-			lower, err := Eval(*e.Left(), row)
-			if err != nil {
-				return nil, err
-			}
-			upper, err := Eval(*e.Right(), row)
-			if err != nil {
-				return nil, err
-			}
-			cv, cok := toFloat(current)
-			lv, lok := toFloat(lower)
-			uv, uok := toFloat(upper)
+			cv, cok := ToFloat(current)
+			lv, lok := ToFloat(lower)
+			uv, uok := ToFloat(upper)
 			if !cok || !lok || !uok {
 				return nil, fmt.Errorf("is_between expects numeric")
 			}
 			return cv >= lv && cv <= uv, nil
-		}
-		if e.Op() == "ewm_mean_by" || e.Op() == "extend_constant" || e.Op() == "max_by" || e.Op() == "min_by" {
-			return Eval(*e.Target(), row)
-		}
-		if e.Op() == "interpolate_by" {
-			return Eval(*e.Target(), row)
-		}
-		if strings.HasPrefix(e.Op(), "rolling_max_by:") || strings.HasPrefix(e.Op(), "rolling_mean_by:") || strings.HasPrefix(e.Op(), "rolling_min_by:") || strings.HasPrefix(e.Op(), "rolling_sum_by:") || strings.HasPrefix(e.Op(), "rolling_std_by:") || strings.HasPrefix(e.Op(), "rolling_var_by:") || strings.HasPrefix(e.Op(), "rolling_median_by:") || strings.HasPrefix(e.Op(), "rolling_quantile_by:") || strings.HasPrefix(e.Op(), "rolling_rank_by:") {
-			return Eval(*e.Target(), row)
 		}
 		cond, err := Eval(*e.Left(), row)
 		if err != nil {
@@ -703,10 +349,204 @@ func Eval(e Expr, row RowValueGetter) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return evalBin(e.Op(), l, r)
+		return EvalBin(e.Op(), l, r)
 	default:
 		return nil, fmt.Errorf("unsupported expr kind %s", e.Kind())
 	}
+}
+
+// evalTernOperands evaluates a ternary expression's target, left and right
+// operands, in that order, stopping at the first error.
+func evalTernOperands(e Expr, row RowValueGetter) (target, left, right any, err error) {
+	if target, err = Eval(*e.Target(), row); err != nil {
+		return nil, nil, nil, err
+	}
+	if left, err = Eval(*e.Left(), row); err != nil {
+		return nil, nil, nil, err
+	}
+	if right, err = Eval(*e.Right(), row); err != nil {
+		return nil, nil, nil, err
+	}
+	return target, left, right, nil
+}
+
+// floatUnaryOps are the unary ops that convert an int64 or float64 operand to
+// float64 and apply one function to it. Any other operand, null included, is
+// an "<op> expects numeric" error.
+var floatUnaryOps = map[string]func(float64) float64{
+	"arccos":  math.Acos,
+	"arccosh": math.Acosh,
+	"arcsin":  math.Asin,
+	"arcsinh": math.Asinh,
+	"arctan":  math.Atan,
+	"arctanh": math.Atanh,
+	"cbrt":    math.Cbrt,
+	"ceil":    math.Ceil,
+	"cos":     math.Cos,
+	"sin":     math.Sin,
+	"cosh":    math.Cosh,
+	"sinh":    math.Sinh,
+	"cot":     func(f float64) float64 { return 1 / math.Tan(f) },
+	"tan":     math.Tan,
+	"tanh":    math.Tanh,
+	"degrees": func(f float64) float64 { return f * 180 / math.Pi },
+	"radians": func(f float64) float64 { return f * math.Pi / 180 },
+	"floor":   math.Floor,
+	"log":     math.Log,
+	"log10":   math.Log10,
+	"log1p":   math.Log1p,
+	"sqrt":    math.Sqrt,
+	"exp":     math.Exp,
+	"sign": func(f float64) float64 {
+		switch {
+		case f < 0:
+			return -1
+		case f > 0:
+			return 1
+		default:
+			return 0
+		}
+	},
+}
+
+// dtUnaryOps are the unary ops that extract one field of a datetime operand as
+// int64. Any other operand, null included, is an "<op> expects datetime" error.
+var dtUnaryOps = map[string]func(time.Time) int64{
+	"dt_year":  func(t time.Time) int64 { return int64(t.Year()) },
+	"dt_month": func(t time.Time) int64 { return int64(t.Month()) },
+	"dt_day":   func(t time.Time) int64 { return int64(t.Day()) },
+	"dt_hour":  func(t time.Time) int64 { return int64(t.Hour()) },
+	// Polars/ISO weekday: Monday=1 .. Sunday=7. Go's time.Weekday is
+	// Sunday=0 .. Saturday=6, so remap.
+	"dt_weekday": func(t time.Time) int64 { return int64((int(t.Weekday())+6)%7) + 1 },
+	"dt_minute":  func(t time.Time) int64 { return int64(t.Minute()) },
+	"dt_second":  func(t time.Time) int64 { return int64(t.Second()) },
+}
+
+// bitwiseUnaryOps are the unary ops that count bits of an operand truncated to
+// int64. Any other operand, null included, is an "<op> expects int" error.
+var bitwiseUnaryOps = map[string]func(uint64) int{
+	"bitwise_count_ones":     bits.OnesCount64,
+	"bitwise_count_zeros":    func(u uint64) int { return bits.LeadingZeros64(u) + bits.TrailingZeros64(u) },
+	"bitwise_leading_ones":   func(u uint64) int { return bits.LeadingZeros64(^u) },
+	"bitwise_leading_zeros":  bits.LeadingZeros64,
+	"bitwise_trailing_ones":  func(u uint64) int { return bits.TrailingZeros64(^u) },
+	"bitwise_trailing_zeros": bits.TrailingZeros64,
+}
+
+// evalParamUnary evaluates the unary ops encoded as "name:arg". handled is
+// false when name is not one of them.
+func evalParamUnary(name, arg string, v any) (out any, handled bool, err error) {
+	switch name {
+	case "over", "bottom_k",
+		"exclude", "gather_every", "head", "limit", "repeat_by", "sample", "set_sorted",
+		"shift", "shuffle", "slice", "sort", "tail", "top_k", "reshape",
+		"rolling_min", "rolling_max", "rolling_mean", "rolling_sum", "rolling_std",
+		"rolling_var", "rolling_median", "rolling_quantile", "rolling_skew",
+		"rolling_kurtosis", "rolling_map", "rolling", "rolling_rank":
+		return v, true, nil
+	case "round_sig_figs":
+		f, ok := ToFloat(v)
+		if !ok {
+			return nil, true, fmt.Errorf("round_sig_figs expects numeric")
+		}
+		digits := 3
+		if parsed, err := strconv.Atoi(arg); err == nil && parsed > 0 {
+			digits = parsed
+		}
+		return roundToSigFigs(f, digits), true, nil
+	case "str_replace_all":
+		pattern, repl, ok := strings.Cut(arg, ":")
+		if !ok {
+			return nil, true, fmt.Errorf("invalid str_replace_all configuration")
+		}
+		s, ok := v.(string)
+		if !ok {
+			return nil, true, fmt.Errorf("str_replace_all expects string")
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, true, fmt.Errorf("str_replace_all invalid pattern %q: %w", pattern, err)
+		}
+		// Replacement is taken literally (no $-group expansion), matching the
+		// common Polars str.replace_all(pattern, value) usage.
+		return re.ReplaceAllLiteralString(s, repl), true, nil
+	case "str_replace":
+		pattern, repl, ok := strings.Cut(arg, ":")
+		if !ok {
+			return nil, true, fmt.Errorf("invalid str_replace configuration")
+		}
+		s, ok := v.(string)
+		if !ok {
+			return nil, true, fmt.Errorf("str_replace expects string")
+		}
+		// Polars str.replace replaces only the FIRST match, with the pattern
+		// treated as a regex (literal=False default).
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, true, fmt.Errorf("str_replace invalid pattern %q: %w", pattern, err)
+		}
+		loc := re.FindStringIndex(s)
+		if loc == nil {
+			return s, true, nil
+		}
+		return s[:loc[0]] + repl + s[loc[1]:], true, nil
+	case "str_like":
+		if v == nil {
+			return nil, true, nil
+		}
+		s, ok := v.(string)
+		if !ok {
+			return nil, true, fmt.Errorf("str_like expects string")
+		}
+		re, err := compileLikePattern(arg)
+		if err != nil {
+			return nil, true, err
+		}
+		return re.MatchString(s), true, nil
+	case "str_substr":
+		if v == nil {
+			return nil, true, nil
+		}
+		s, ok := v.(string)
+		if !ok {
+			return nil, true, fmt.Errorf("str_substr expects string")
+		}
+		startArg, lengthArg, ok := strings.Cut(arg, ":")
+		if !ok {
+			return nil, true, fmt.Errorf("invalid str_substr configuration")
+		}
+		start, err1 := strconv.Atoi(startArg)
+		length, err2 := strconv.Atoi(lengthArg)
+		if err1 != nil || err2 != nil {
+			return nil, true, fmt.Errorf("invalid str_substr configuration")
+		}
+		return substrKernel(s, start, length), true, nil
+	case "round_dp":
+		if v == nil {
+			return nil, true, nil
+		}
+		decimals, err := strconv.Atoi(arg)
+		if err != nil {
+			return nil, true, fmt.Errorf("invalid round_dp configuration")
+		}
+		switch t := v.(type) {
+		case float64:
+			scale := math.Pow(10, float64(decimals))
+			return math.Round(t*scale) / scale, true, nil
+		case int64:
+			return t, true, nil
+		default:
+			return nil, true, fmt.Errorf("round_dp expects numeric")
+		}
+	case "struct_field":
+		m, ok := v.(map[string]any)
+		if !ok {
+			return nil, true, fmt.Errorf("struct_field expects struct")
+		}
+		return m[arg], true, nil
+	}
+	return nil, false, nil
 }
 
 func roundToSigFigs(v float64, digits int) float64 {
@@ -729,7 +569,9 @@ func kleeneBool(v any) (b bool, isNull bool, ok bool) {
 	return false, false, false
 }
 
-func evalBin(op string, left any, right any) (any, error) {
+// EvalBin applies the binary operator op to two already-evaluated operands,
+// with the null, NaN and type rules Eval uses for a KindBin expression.
+func EvalBin(op string, left any, right any) (any, error) {
 	switch op {
 	case "eq":
 		// A comparison with null yields null (Polars semantics). Null-aware
@@ -763,8 +605,8 @@ func evalBin(op string, left any, right any) (any, error) {
 	case "add", "sub", "mul", "div":
 		return arith(op, left, right)
 	case "pow":
-		lf, lok := toFloat(left)
-		rf, rok := toFloat(right)
+		lf, lok := ToFloat(left)
+		rf, rok := ToFloat(right)
 		if !lok || !rok {
 			return nil, fmt.Errorf("pow expects numeric")
 		}
@@ -828,24 +670,14 @@ func evalBin(op string, left any, right any) (any, error) {
 		if !ok {
 			return nil, fmt.Errorf("list_contains expects list")
 		}
-		for _, v := range l {
-			if v == right {
-				return true, nil
-			}
-		}
-		return false, nil
+		return slices.Contains(l, right), nil
 	case "list_get":
 		list, ok := left.([]any)
 		if !ok {
 			return nil, fmt.Errorf("list_get expects list")
 		}
-		var idx int64
-		switch i := right.(type) {
-		case int64:
-			idx = i
-		case float64:
-			idx = int64(i)
-		default:
+		idx, ok := toInt64(right)
+		if !ok {
 			return nil, fmt.Errorf("list_get expects numeric index")
 		}
 		if idx < 0 || int(idx) >= len(list) {
@@ -882,32 +714,26 @@ func evalBin(op string, left any, right any) (any, error) {
 		}
 		return li ^ ri, nil
 	case "dot":
-		if lf, lok := toFloat(left); lok {
-			if rf, rok := toFloat(right); rok {
+		if lf, lok := ToFloat(left); lok {
+			if rf, rok := ToFloat(right); rok {
 				return lf * rf, nil
 			}
 		}
 		return nil, fmt.Errorf("dot expects numeric")
 	case "eq_missing":
-		if left == nil || right == nil {
-			return left == right, nil
-		}
 		return left == right, nil
 	case "ne_missing":
-		if left == nil || right == nil {
-			return left != right, nil
-		}
 		return left != right, nil
 	case "floordiv":
-		lf, lok := toFloat(left)
-		rf, rok := toFloat(right)
+		lf, lok := ToFloat(left)
+		rf, rok := ToFloat(right)
 		if !lok || !rok || rf == 0 {
 			return nil, fmt.Errorf("floordiv expects numeric non-zero divisor")
 		}
 		return math.Floor(lf / rf), nil
 	case "mod":
-		lf, lok := toFloat(left)
-		rf, rok := toFloat(right)
+		lf, lok := ToFloat(left)
+		rf, rok := ToFloat(right)
 		if !lok || !rok || rf == 0 {
 			return nil, fmt.Errorf("mod expects numeric non-zero divisor")
 		}
@@ -924,7 +750,7 @@ func evalBin(op string, left any, right any) (any, error) {
 			return list[idx], nil
 		}
 		return left, nil
-	case "filter_expr":
+	case "filter_expr", "where":
 		if keep, ok := right.(bool); ok {
 			if keep {
 				return left, nil
@@ -933,30 +759,20 @@ func evalBin(op string, left any, right any) (any, error) {
 		}
 		return left, nil
 	case "is_close":
-		lf, lok := toFloat(left)
-		rf, rok := toFloat(right)
+		lf, lok := ToFloat(left)
+		rf, rok := ToFloat(right)
 		if !lok || !rok {
 			return nil, fmt.Errorf("is_close expects numeric")
 		}
 		return math.Abs(lf-rf) <= 1e-9, nil
 	case "is_in":
 		if list, ok := right.([]any); ok {
-			for _, item := range list {
-				if item == left {
-					return true, nil
-				}
-			}
-			return false, nil
+			return slices.Contains(list, left), nil
 		}
 		return left == right, nil
 	case "index_of":
 		if list, ok := left.([]any); ok {
-			for i, item := range list {
-				if item == right {
-					return int64(i), nil
-				}
-			}
-			return int64(-1), nil
+			return int64(slices.Index(list, right)), nil
 		}
 		return int64(-1), nil
 	case "fill_null_expr":
@@ -967,14 +783,6 @@ func evalBin(op string, left any, right any) (any, error) {
 	case "fill_nan_expr":
 		if lf, ok := left.(float64); ok && math.IsNaN(lf) {
 			return right, nil
-		}
-		return left, nil
-	case "where":
-		if keep, ok := right.(bool); ok {
-			if keep {
-				return left, nil
-			}
-			return nil, nil
 		}
 		return left, nil
 	case "xor":
@@ -1154,7 +962,9 @@ func cast(v any, dt dtypes.DataType) (any, error) {
 	return nil, fmt.Errorf("cannot cast value")
 }
 
-func toFloat(v any) (float64, bool) {
+// ToFloat converts an int64 or float64 value to float64. ok is false for any
+// other value, including nil.
+func ToFloat(v any) (float64, bool) {
 	switch t := v.(type) {
 	case int64:
 		return float64(t), true
@@ -1223,9 +1033,6 @@ func substrKernel(s string, start int, length int) string {
 	if from >= len(runes) || length <= 0 {
 		return ""
 	}
-	to := from + length
-	if to > len(runes) {
-		to = len(runes)
-	}
+	to := min(from+length, len(runes))
 	return string(runes[from:to])
 }

@@ -8,7 +8,7 @@ package expr
 func MapColumnNames(e Expr, fn func(name string) (string, error)) (Expr, error) {
 	switch e.kind {
 	case KindCol:
-		if e.name == "*" {
+		if e.name == selectorAll {
 			return e, nil
 		}
 		nn, err := fn(e.name)
@@ -22,33 +22,14 @@ func MapColumnNames(e Expr, fn func(name string) (string, error)) (Expr, error) 
 		return e, nil
 	}
 	out := e
-	if e.target != nil {
-		t, err := MapColumnNames(*e.target, fn)
-		if err != nil {
-			return Expr{}, err
+	for _, slot := range []**Expr{&out.target, &out.left, &out.right, &out.extra} {
+		if *slot != nil {
+			child, err := MapColumnNames(**slot, fn)
+			if err != nil {
+				return Expr{}, err
+			}
+			*slot = &child
 		}
-		out.target = &t
-	}
-	if e.left != nil {
-		l, err := MapColumnNames(*e.left, fn)
-		if err != nil {
-			return Expr{}, err
-		}
-		out.left = &l
-	}
-	if e.right != nil {
-		r, err := MapColumnNames(*e.right, fn)
-		if err != nil {
-			return Expr{}, err
-		}
-		out.right = &r
-	}
-	if e.extra != nil {
-		x, err := MapColumnNames(*e.extra, fn)
-		if err != nil {
-			return Expr{}, err
-		}
-		out.extra = &x
 	}
 	return out, nil
 }

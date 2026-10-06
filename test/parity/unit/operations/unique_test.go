@@ -3,7 +3,7 @@ package operations
 // Ported from py-polars/tests/unit/operations/unique/test_unique.py (py-1.28.1, representative subset)
 
 import (
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/h0rn3t/gopolars/pkg/frame"
@@ -24,7 +24,7 @@ func TestUniqueSeries(t *testing.T) {
 			got = append(got, v)
 		}
 	}
-	sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
+	slices.Sort(got)
 	want := []int64{1, 2, 3}
 	if len(got) != len(want) {
 		t.Fatalf("unique count: got %v, want %v", got, want)

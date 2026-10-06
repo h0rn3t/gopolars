@@ -12,6 +12,7 @@ import (
 	"cmp"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/h0rn3t/gopolars/pkg/chunk"
@@ -231,20 +232,20 @@ func cmpBitmap(op string, e expr.Expr, cols map[string]*chunk.Column, height int
 	if err != nil {
 		return nil, false
 	}
-	lr, lt := numericReader(l)
-	rr, rt := numericReader(r)
-	if lt == "other" || rt == "other" {
+	lr, lTag := numericReader(l)
+	rr, rTag := numericReader(r)
+	if lTag == "other" || rTag == "other" {
 		return nil, false
 	}
 	if lr.isLit || !rr.isLit {
 		return nil, false
 	}
 	switch {
-	case op == "gt" && lt == "float64" && rt == "float64":
+	case op == "gt" && lTag == "float64" && rTag == "float64":
 		b := simd.CompareGTFloat64Bitmap(lr.f, rr.litF)
 		clearNullBits(b, lr.nulls, height)
 		return b, true
-	case op == "eq" && lt == "int64" && rt == "int64":
+	case op == "eq" && lTag == "int64" && rTag == "int64":
 		b := simd.CompareEQInt64Bitmap(lr.i, rr.litI)
 		clearNullBits(b, lr.nulls, height)
 		return b, true
@@ -254,7 +255,7 @@ func cmpBitmap(op string, e expr.Expr, cols map[string]*chunk.Column, height int
 	}
 	// General gt/ge/lt/le over numeric column vs literal.
 	b := simd.BitmapNew(height)
-	useFloat := lt == "float64" || rt == "float64"
+	useFloat := lTag == "float64" || rTag == "float64"
 	for i := range height {
 		if lr.nullAt(i) || rr.nullAt(i) {
 			continue
@@ -297,7 +298,7 @@ func packBoolColumn(c *chunk.Column, height int) simd.Bitmap {
 	b := simd.BitmapNew(height)
 	for i := range height {
 		if bln[i] && (nulls == nil || !nulls[i]) {
-			b[i>>6] |= 1 << (uint(i) & 63)
+			simd.BitmapSet(b, i)
 		}
 	}
 	return b
@@ -365,9 +366,9 @@ func evalBinNode(e expr.Expr, cols map[string]*chunk.Column, height int) (vresul
 	case "add", "sub", "mul", "div":
 		return arithNode(op, l, r, height)
 	case "gt", "ge", "lt", "le":
-		if lr, lt := numericReader(l); lt != "other" {
-			if rr, rt := numericReader(r); rt != "other" {
-				return numericCompare(op, lr, lt, rr, rt, height), nil
+		if lr, lTag := numericReader(l); lTag != "other" {
+			if rr, rTag := numericReader(r); rTag != "other" {
+				return numericCompare(op, lr, lTag, rr, rTag, height), nil
 			}
 		}
 		return boolBinNode(op, l, r, height)
@@ -443,13 +444,13 @@ func (n numericReaderT) floatAt(i int) float64 {
 // float64+float64 stays float64, any other type combination is an error, a null
 // operand yields null, and division by zero is an error.
 func arithNode(op string, l, r vresult, height int) (vresult, error) {
-	lr, lt := numericReader(l)
-	rr, rt := numericReader(r)
+	lr, lTag := numericReader(l)
+	rr, rTag := numericReader(r)
 	switch {
-	case lt == "int64" && rt == "int64":
+	case lTag == "int64" && rTag == "int64":
 		out := make([]int64, height)
 		nulls := make([]bool, height)
-		for i := 0; i < height; i++ {
+		for i := range height {
 			if lr.nullAt(i) || rr.nullAt(i) {
 				nulls[i] = true
 				continue
@@ -470,10 +471,10 @@ func arithNode(op string, l, r vresult, height int) (vresult, error) {
 			}
 		}
 		return vresult{col: chunk.NewInt64(out, nulls)}, nil
-	case lt == "float64" && rt == "float64":
+	case lTag == "float64" && rTag == "float64":
 		out := make([]float64, height)
 		nulls := make([]bool, height)
-		for i := 0; i < height; i++ {
+		for i := range height {
 			if lr.nullAt(i) || rr.nullAt(i) {
 				nulls[i] = true
 				continue
@@ -500,26 +501,17 @@ func arithNode(op string, l, r vresult, height int) (vresult, error) {
 }
 
 // numericCompare evaluates gt/ge/lt/le on numeric operands. A null operand
-// yields null (matching expr.compare/evalBin), carried in the result's null mask.
-func numericCompare(op string, lr numericReaderT, lt string, rr numericReaderT, rt string, height int) vresult {
+// yields null (matching expr.EvalBin), carried in the result's null mask.
+func numericCompare(op string, lr numericReaderT, lTag string, rr numericReaderT, rTag string, height int) vresult {
 	// SIMD fast path: float64 column compared to a float64 literal threshold.
-	if op == "gt" && lt == "float64" && rt == "float64" && !lr.isLit && rr.isLit {
+	if op == "gt" && lTag == "float64" && rTag == "float64" && !lr.isLit && rr.isLit {
 		mask := simd.CompareGTFloat64(lr.f, rr.litF)
-		nulls := make([]bool, height)
-		if lr.nulls != nil {
-			for i := range mask {
-				if lr.nulls[i] {
-					mask[i] = false
-					nulls[i] = true
-				}
-			}
-		}
-		return vresult{col: chunk.NewBool(mask, nulls)}
+		return vresult{col: nullMaskedBool(mask, lr.nulls, height)}
 	}
 	out := make([]bool, height)
 	nulls := make([]bool, height)
-	useFloat := lt == "float64" || rt == "float64"
-	for i := 0; i < height; i++ {
+	useFloat := lTag == "float64" || rTag == "float64"
+	for i := range height {
 		if lr.nullAt(i) || rr.nullAt(i) {
 			nulls[i] = true
 			continue
@@ -537,8 +529,23 @@ func numericCompare(op string, lr numericReaderT, lt string, rr numericReaderT, 
 	return vresult{col: chunk.NewBool(out, nulls)}
 }
 
-// boolBinNode handles eq/ne/and/or and non-numeric gt/ge/lt/le by replicating
-// expr.evalBin per row. Comparisons propagate nulls (a null operand yields null)
+// nullMaskedBool adopts a SIMD comparison mask as a bool column in which every
+// row null in operandNulls is null with a false value.
+func nullMaskedBool(mask, operandNulls []bool, height int) *chunk.Column {
+	nulls := make([]bool, height)
+	if operandNulls != nil {
+		for i := range mask {
+			if operandNulls[i] {
+				mask[i] = false
+				nulls[i] = true
+			}
+		}
+	}
+	return chunk.NewBool(mask, nulls)
+}
+
+// boolBinNode handles eq/ne/and/or and non-numeric gt/ge/lt/le by applying
+// expr.EvalBin per row. Comparisons propagate nulls (a null operand yields null)
 // and and/or use three-valued Kleene logic, matching the row-wise evaluator.
 func boolBinNode(op string, l, r vresult, height int) (vresult, error) {
 	// SIMD fast path: int64 column == int64 literal (null operand -> null).
@@ -546,16 +553,7 @@ func boolBinNode(op string, l, r vresult, height int) (vresult, error) {
 		if lit, ok := r.lit.(int64); ok {
 			vals, _ := l.col.Int64s()
 			mask := simd.CompareEQInt64(vals, lit)
-			nulls := make([]bool, height)
-			if cn := l.col.Nulls(); cn != nil {
-				for i := range mask {
-					if cn[i] {
-						mask[i] = false
-						nulls[i] = true
-					}
-				}
-			}
-			return vresult{col: chunk.NewBool(mask, nulls)}, nil
+			return vresult{col: nullMaskedBool(mask, l.col.Nulls(), height)}, nil
 		}
 	}
 	// SIMD fast path: AND of two boolean columns with no nulls.
@@ -568,10 +566,10 @@ func boolBinNode(op string, l, r vresult, height int) (vresult, error) {
 	}
 	out := make([]bool, height)
 	nulls := make([]bool, height)
-	for i := 0; i < height; i++ {
+	for i := range height {
 		lv := readScalar(l, i)
 		rv := readScalar(r, i)
-		res, err := batchBin(op, lv, rv)
+		res, err := expr.EvalBin(op, lv, rv)
 		if err != nil {
 			return vresult{}, err
 		}
@@ -592,10 +590,10 @@ func boolBinNode(op string, l, r vresult, height int) (vresult, error) {
 // a null/non-numeric operand (matching the row-wise evaluator).
 func floatBinNode(op string, l, r vresult, height int) (vresult, error) {
 	out := make([]float64, height)
-	for i := 0; i < height; i++ {
+	for i := range height {
 		lv := readScalar(l, i)
 		rv := readScalar(r, i)
-		res, err := batchBin(op, lv, rv)
+		res, err := expr.EvalBin(op, lv, rv)
 		if err != nil {
 			return vresult{}, err
 		}
@@ -615,7 +613,7 @@ func evalNot(e expr.Expr, cols map[string]*chunk.Column, height int) (vresult, e
 	}
 	out := make([]bool, height)
 	nulls := make([]bool, height)
-	for i := 0; i < height; i++ {
+	for i := range height {
 		sv := readScalar(child, i)
 		if sv == nil {
 			nulls[i] = true
@@ -696,16 +694,7 @@ func evalCast(e expr.Expr, cols map[string]*chunk.Column, height int) (vresult, 
 }
 
 func hasNulls(c *chunk.Column) bool {
-	nulls := c.Nulls()
-	if nulls == nil {
-		return false
-	}
-	for _, n := range nulls {
-		if n {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.Nulls(), true)
 }
 
 func readScalar(v vresult, i int) any {
@@ -719,35 +708,15 @@ func broadcast(lit any, height int) *chunk.Column {
 	nulls := make([]bool, height)
 	switch x := lit.(type) {
 	case int64:
-		out := make([]int64, height)
-		for i := range out {
-			out[i] = x
-		}
-		return chunk.NewInt64(out, nulls)
+		return chunk.NewInt64(slices.Repeat([]int64{x}, height), nulls)
 	case float64:
-		out := make([]float64, height)
-		for i := range out {
-			out[i] = x
-		}
-		return chunk.NewFloat64(out, nulls)
+		return chunk.NewFloat64(slices.Repeat([]float64{x}, height), nulls)
 	case string:
-		out := make([]string, height)
-		for i := range out {
-			out[i] = x
-		}
-		return chunk.NewString(out, nulls)
+		return chunk.NewString(slices.Repeat([]string{x}, height), nulls)
 	case bool:
-		out := make([]bool, height)
-		for i := range out {
-			out[i] = x
-		}
-		return chunk.NewBool(out, nulls)
+		return chunk.NewBool(slices.Repeat([]bool{x}, height), nulls)
 	case time.Time:
-		out := make([]time.Time, height)
-		for i := range out {
-			out[i] = x
-		}
-		return chunk.NewTime(out, nulls)
+		return chunk.NewTime(slices.Repeat([]time.Time{x}, height), nulls)
 	default:
 		// nil or unknown literal -> all-null float column (matches all-nil infer)
 		for i := range nulls {
@@ -758,146 +727,6 @@ func broadcast(lit any, height int) *chunk.Column {
 }
 
 // --- replicas of pkg/expr eval helpers (keep in sync with eval.go) ---
-
-// kleeneBool interprets a value as a three-valued boolean (mirrors expr.kleeneBool):
-// ok=false when neither bool nor null; isNull=true for a null (nil) operand.
-func kleeneBool(v any) (b bool, isNull bool, ok bool) {
-	if v == nil {
-		return false, true, true
-	}
-	if bb, isb := v.(bool); isb {
-		return bb, false, true
-	}
-	return false, false, false
-}
-
-func batchBin(op string, left, right any) (any, error) {
-	switch op {
-	case "eq":
-		// Comparison with null yields null (Polars), mirroring expr.evalBin.
-		if left == nil || right == nil {
-			return nil, nil
-		}
-		if lf, ok := left.(float64); ok && math.IsNaN(lf) {
-			return false, nil
-		}
-		if rf, ok := right.(float64); ok && math.IsNaN(rf) {
-			return false, nil
-		}
-		return left == right, nil
-	case "ne":
-		if left == nil || right == nil {
-			return nil, nil
-		}
-		if lf, ok := left.(float64); ok && math.IsNaN(lf) {
-			return true, nil
-		}
-		if rf, ok := right.(float64); ok && math.IsNaN(rf) {
-			return true, nil
-		}
-		return left != right, nil
-	case "gt", "ge", "lt", "le":
-		if left == nil || right == nil {
-			return nil, nil
-		}
-		return compareAny(op, left, right)
-	case "and", "and_":
-		// Three-valued (Kleene) AND, mirroring expr.evalBin.
-		lb, ln, lok := kleeneBool(left)
-		rb, rn, rok := kleeneBool(right)
-		if !lok || !rok {
-			return nil, fmt.Errorf("and expects bool")
-		}
-		if (!ln && !lb) || (!rn && !rb) {
-			return false, nil
-		}
-		if ln || rn {
-			return nil, nil
-		}
-		return true, nil
-	case "or", "or_":
-		lb, ln, lok := kleeneBool(left)
-		rb, rn, rok := kleeneBool(right)
-		if !lok || !rok {
-			return nil, fmt.Errorf("or expects bool")
-		}
-		if (!ln && lb) || (!rn && rb) {
-			return true, nil
-		}
-		if ln || rn {
-			return nil, nil
-		}
-		return false, nil
-	case "floordiv":
-		lf, lok := toFloat(left)
-		rf, rok := toFloat(right)
-		if !lok || !rok || rf == 0 {
-			return nil, fmt.Errorf("floordiv expects numeric non-zero divisor")
-		}
-		return math.Floor(lf / rf), nil
-	case "mod":
-		lf, lok := toFloat(left)
-		rf, rok := toFloat(right)
-		if !lok || !rok || rf == 0 {
-			return nil, fmt.Errorf("mod expects numeric non-zero divisor")
-		}
-		return math.Mod(lf, rf), nil
-	case "pow":
-		lf, lok := toFloat(left)
-		rf, rok := toFloat(right)
-		if !lok || !rok {
-			return nil, fmt.Errorf("pow expects numeric")
-		}
-		return math.Pow(lf, rf), nil
-	default:
-		return nil, fmt.Errorf("unsupported binary op %s", op)
-	}
-}
-
-func compareAny(op string, left, right any) (any, error) {
-	if left == nil || right == nil {
-		return false, nil
-	}
-	switch l := left.(type) {
-	case int64:
-		r, ok := right.(int64)
-		if !ok {
-			return false, fmt.Errorf("compare type mismatch")
-		}
-		return cmpOrdered(op, l, r), nil
-	case float64:
-		r, ok := right.(float64)
-		if !ok {
-			return false, fmt.Errorf("compare type mismatch")
-		}
-		if math.IsNaN(l) || math.IsNaN(r) {
-			return false, nil
-		}
-		return cmpOrdered(op, l, r), nil
-	case string:
-		r, ok := right.(string)
-		if !ok {
-			return false, fmt.Errorf("compare type mismatch")
-		}
-		return cmpOrdered(op, l, r), nil
-	case time.Time:
-		r, ok := right.(time.Time)
-		if !ok {
-			return false, fmt.Errorf("compare type mismatch")
-		}
-		switch op {
-		case "gt":
-			return l.After(r), nil
-		case "ge":
-			return l.After(r) || l.Equal(r), nil
-		case "lt":
-			return l.Before(r), nil
-		case "le":
-			return l.Before(r) || l.Equal(r), nil
-		}
-	}
-	return false, fmt.Errorf("unsupported compare types")
-}
 
 func batchCast(v any, dt dtypes.DataType) (any, error) {
 	if v == nil {
@@ -930,17 +759,6 @@ func batchCast(v any, dt dtypes.DataType) (any, error) {
 		}
 	}
 	return nil, fmt.Errorf("cannot cast value")
-}
-
-func toFloat(v any) (float64, bool) {
-	switch t := v.(type) {
-	case int64:
-		return float64(t), true
-	case float64:
-		return t, true
-	default:
-		return 0, false
-	}
 }
 
 // cmpOrdered applies one of the four ordering operators. An op outside the set

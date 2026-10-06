@@ -179,7 +179,7 @@ func buildGroupBenchFrame(b *testing.B, n, groups int) DataFrame {
 	for i := range labels {
 		labels[i] = "grp" + string(rune('A'+i%26)) + string(rune('0'+i/26))
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		g[i] = labels[i%groups]
 		v[i] = float64(i)
 	}

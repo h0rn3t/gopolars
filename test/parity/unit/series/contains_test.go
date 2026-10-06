@@ -62,7 +62,7 @@ func TestIsInNoMatch(t *testing.T) {
 	if result.Len() != 3 {
 		t.Fatalf("is_in len: got %d, want 3", result.Len())
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		v, ok := result.Value(i).(bool)
 		if !ok || v != false {
 			t.Fatalf("is_in[%d]: got %v, want false", i, result.Value(i))

@@ -2,7 +2,9 @@ package ipc
 
 import (
 	"encoding/gob"
+	"maps"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/h0rn3t/gopolars/pkg/frame"
@@ -50,16 +52,8 @@ func Read(input ReadInput) (frame.DataFrame, error) {
 	if len(input.Columns) == 0 {
 		return iarrow.FromTable(table)
 	}
-	selected := map[string]struct{}{}
-	for _, c := range input.Columns {
-		selected[c] = struct{}{}
-	}
-	cols := map[string][]any{}
-	for name, values := range table.Columns {
-		if _, ok := selected[name]; !ok {
-			continue
-		}
-		cols[name] = values
-	}
-	return iarrow.FromTable(iarrow.Table{Columns: cols})
+	maps.DeleteFunc(table.Columns, func(name string, _ []any) bool {
+		return !slices.Contains(input.Columns, name)
+	})
+	return iarrow.FromTable(table)
 }

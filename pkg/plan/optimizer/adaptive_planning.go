@@ -24,9 +24,6 @@ func AdaptivePlanning(nodes []logical.Node) []logical.Node {
 }
 
 func hasWindowAliasRef(filter logical.Node, windows []logical.WindowSpec) bool {
-	if len(filter.Exprs) == 0 {
-		return false
-	}
 	aliases := map[string]struct{}{}
 	for _, w := range windows {
 		aliases[w.Alias] = struct{}{}

@@ -82,7 +82,7 @@ func TestDFRecordReaderBatching(t *testing.T) {
 	}
 
 	idCol, _ := combined.GetColumn("id")
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if got := idCol.Value(i); got != int64(i+1) {
 			t.Fatalf("id[%d] = %v, want %d", i, got, i+1)
 		}

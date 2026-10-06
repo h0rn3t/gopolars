@@ -104,13 +104,13 @@ func SelectorColumns(e Expr, available []string) (cols []string, ok bool) {
 		}
 		return nil, false
 	case KindUnary:
-		if strings.HasPrefix(e.op, "exclude:") && e.target != nil {
+		if list, isExclude := strings.CutPrefix(e.op, "exclude:"); isExclude && e.target != nil {
 			base, isSel := SelectorColumns(*e.target, available)
 			if !isSel {
 				return nil, false
 			}
 			excluded := map[string]struct{}{}
-			for _, n := range strings.Split(strings.TrimPrefix(e.op, "exclude:"), ",") {
+			for n := range strings.SplitSeq(list, ",") {
 				if n != "" {
 					excluded[n] = struct{}{}
 				}
@@ -206,12 +206,12 @@ func (e Expr) StrUpper() Expr {
 	return Expr{kind: KindUnary, op: "str_upper", target: &e}
 }
 
-func (e Expr) StrReplace(old string, new string) Expr {
-	return Expr{kind: KindUnary, op: "str_replace:" + old + ":" + new, target: &e}
+func (e Expr) StrReplace(old string, replacement string) Expr {
+	return Expr{kind: KindUnary, op: "str_replace:" + old + ":" + replacement, target: &e}
 }
 
-func (e Expr) StrReplaceAll(old string, new string) Expr {
-	return Expr{kind: KindUnary, op: "str_replace_all:" + old + ":" + new, target: &e}
+func (e Expr) StrReplaceAll(old string, replacement string) Expr {
+	return Expr{kind: KindUnary, op: "str_replace_all:" + old + ":" + replacement, target: &e}
 }
 
 func (e Expr) StrTrim() Expr {
@@ -278,10 +278,8 @@ func (e Expr) Over(partitionBy ...string) Expr {
 	return Expr{kind: KindUnary, op: "over:" + strings.Join(partitionBy, ","), target: &e}
 }
 
-func (e Expr) Replace(old Expr, new Expr) Expr {
-	oldCopy := old
-	newCopy := new
-	return Expr{kind: KindTern, op: "replace", target: &e, left: &oldCopy, right: &newCopy}
+func (e Expr) Replace(old Expr, replacement Expr) Expr {
+	return Expr{kind: KindTern, op: "replace", target: &e, left: &old, right: &replacement}
 }
 
 func (e Expr) FillNull(value Expr) Expr {
@@ -316,8 +314,8 @@ func (e Expr) RollingVar(window int) Expr {
 	return Expr{kind: KindUnary, op: "rolling_var:" + strconv.Itoa(window), target: &e}
 }
 
-func (e Expr) Clip(min Expr, max Expr) Expr {
-	return Expr{kind: KindTern, op: "clip", target: &e, left: &min, right: &max}
+func (e Expr) Clip(lower Expr, upper Expr) Expr {
+	return Expr{kind: KindTern, op: "clip", target: &e, left: &lower, right: &upper}
 }
 
 func (e Expr) Round() Expr {
@@ -988,10 +986,8 @@ func (e Expr) RepeatBy(n int) Expr {
 	return Expr{kind: KindUnary, op: "repeat_by:" + strconv.Itoa(n), target: &e}
 }
 
-func (e Expr) ReplaceStrict(old Expr, new Expr) Expr {
-	oldCopy := old
-	newCopy := new
-	return Expr{kind: KindTern, op: "replace_strict", target: &e, left: &oldCopy, right: &newCopy}
+func (e Expr) ReplaceStrict(old Expr, replacement Expr) Expr {
+	return Expr{kind: KindTern, op: "replace_strict", target: &e, left: &old, right: &replacement}
 }
 
 func (e Expr) Reshape(dims ...int) Expr {

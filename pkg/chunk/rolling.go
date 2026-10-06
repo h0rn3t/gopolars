@@ -97,7 +97,7 @@ func RollingSum(values []float64, nulls []bool, window, minPeriods int, skipNaN 
 	outNulls := make([]bool, n)
 	var st rollSumState
 	isNull := func(i int) bool { return nulls != nil && nulls[i] }
-	for i := 0; i < n; i++ {
+	for i := range n {
 		st = st.add(values[i], isNull(i))
 		if i >= window {
 			st = st.remove(values[i-window], isNull(i-window))
@@ -127,7 +127,7 @@ func RollingMean(values []float64, nulls []bool, window, minPeriods int, skipNaN
 	outNulls := make([]bool, n)
 	var st rollSumState
 	isNull := func(i int) bool { return nulls != nil && nulls[i] }
-	for i := 0; i < n; i++ {
+	for i := range n {
 		st = st.add(values[i], isNull(i))
 		if i >= window {
 			st = st.remove(values[i-window], isNull(i-window))
@@ -172,7 +172,7 @@ func rollingExtreme(values []float64, nulls []bool, window, minPeriods int, isMi
 	isValid := func(i int) bool {
 		return (nulls == nil || !nulls[i]) && !math.IsNaN(values[i])
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if isValid(i) {
 			validCount++
 			for len(deque) > head {
@@ -188,10 +188,7 @@ func rollingExtreme(values []float64, nulls []bool, window, minPeriods int, isMi
 		if i >= window && isValid(i-window) {
 			validCount--
 		}
-		lo := i - window + 1
-		if lo < 0 {
-			lo = 0
-		}
+		lo := max(i-window+1, 0)
 		for len(deque) > head && deque[head] < lo {
 			head++
 		}

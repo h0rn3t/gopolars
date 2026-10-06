@@ -3,6 +3,7 @@ package operations
 // Ported from py-polars/tests/unit/operations/test_top_k.py (py-1.28.1, representative subset)
 
 import (
+	"slices"
 	"sort"
 	"testing"
 
@@ -50,7 +51,7 @@ func TestBottomK(t *testing.T) {
 	t.Parallel()
 	out := topKSeries(t).BottomK(2)
 	got := collectInts(out)
-	sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
+	slices.Sort(got)
 	want := []int64{1, 2}
 	if len(got) != 2 {
 		t.Fatalf("bottom_k count: got %v, want 2 values", got)

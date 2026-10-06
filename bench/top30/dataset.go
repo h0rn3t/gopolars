@@ -27,7 +27,7 @@ func GenerateDataset(n int, seed int64) dataset {
 
 	groups := []string{"a", "b", "c", "d", "e"}
 
-	for idx := 0; idx < n; idx++ {
+	for idx := range n {
 		g[idx] = groups[r.Intn(len(groups))]
 		v[idx] = r.Float64()*100 - 50
 		if r.Float32() < 0.1 {

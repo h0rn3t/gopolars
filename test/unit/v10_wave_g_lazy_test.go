@@ -32,7 +32,6 @@ func TestV10WaveGLazySurface(t *testing.T) {
 		"SinkDelta", "SinkIceberg",
 	}
 	for _, name := range methods {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if !reflect.ValueOf(lf).MethodByName(name).IsValid() {

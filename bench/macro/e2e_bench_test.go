@@ -12,7 +12,7 @@ func BenchmarkE2ELazyGroupBySortLimit(b *testing.B) {
 	n := 50000
 	city := make([]any, n)
 	value := make([]any, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		switch i % 3 {
 		case 0:
 			city[i] = "kyiv"

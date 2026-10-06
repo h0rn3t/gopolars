@@ -77,7 +77,7 @@ func buildUniqueFrame(t *testing.T, n, gCard, iCard int) DataFrame {
 	i := make([]any, n)
 	s := make([]any, n)
 	tags := []string{"a", "b", "c", "d"}
-	for r := 0; r < n; r++ {
+	for r := range n {
 		g[r] = int64(r % gCard)
 		i[r] = int64(r % iCard)
 		s[r] = tags[r%len(tags)]

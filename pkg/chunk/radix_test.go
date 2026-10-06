@@ -12,7 +12,7 @@ func TestOrderPreservingFloatTransform(t *testing.T) {
 	sorted := append([]float64(nil), vals...)
 	sort.Float64s(sorted)
 	// The transform must be monotonic: a <= b  <=>  key(a) <= key(b).
-	for i := 0; i < len(sorted); i++ {
+	for i := range sorted {
 		for j := i; j < len(sorted); j++ {
 			ki := orderPreservingFloat(sorted[i])
 			kj := orderPreservingFloat(sorted[j])

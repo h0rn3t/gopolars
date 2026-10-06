@@ -58,13 +58,22 @@ func Write(df frame.DataFrame, input WriteInput) error {
 	// A string column the dictionary pays off for is dictionary-encoded here
 	// instead of by arrow-go, whose encoder allocates twice for every value it
 	// hashes; pqarrow writes a dictionary array's dictionary and indices as is.
+	// Every column that is not lowCardinality has dictionary encoding turned
+	// off: arrow-go dictionary-encodes every column by default and, for such
+	// columns, builds a hash table only to fall back to plain encoding once the
+	// dictionary outgrows its page.
 	fields := rec.Schema().Fields()
 	columns := make([]goarrow.Column, len(fields))
+	var dictionaryOff []aparquet.WriterProperty
 	for i, field := range fields {
 		s, _ := df.Series(field.Name)
 		col := s.Column()
+		low := lowCardinality(col)
+		if !low {
+			dictionaryOff = append(dictionaryOff, aparquet.WithDictionaryFor(field.Name, false))
+		}
 		values, ok := col.Strings()
-		if !ok || !lowCardinality(col) {
+		if !ok || !low {
 			columns[i] = goarrow.NewColumnFromArr(field, rec.Column(i))
 			continue
 		}
@@ -86,7 +95,7 @@ func Write(df frame.DataFrame, input WriteInput) error {
 	props := aparquet.NewWriterProperties(append([]aparquet.WriterProperty{
 		aparquet.WithCompression(codec),
 		aparquet.WithMaxRowGroupLength(rowGroup),
-	}, dictionaryChoices(df)...)...)
+	}, dictionaryOff...)...)
 
 	f, err := os.Create(input.Path)
 	if err != nil {
@@ -103,21 +112,6 @@ func Write(df frame.DataFrame, input WriteInput) error {
 // dictSampleSize bounds how many non-null values per column are sampled to
 // estimate cardinality before choosing dictionary encoding.
 const dictSampleSize = 4096
-
-// dictionaryChoices turns dictionary encoding off for every column that is not
-// [lowCardinality]. arrow-go dictionary-encodes every column by default and,
-// for such columns, builds a hash table only to fall back to plain encoding
-// once the dictionary outgrows its page.
-func dictionaryChoices(df frame.DataFrame) []aparquet.WriterProperty {
-	var props []aparquet.WriterProperty
-	for _, name := range df.Columns() {
-		s, _ := df.Series(name)
-		if !lowCardinality(s.Column()) {
-			props = append(props, aparquet.WithDictionaryFor(name, false))
-		}
-	}
-	return props
-}
 
 // lowCardinality reports whether at most half of a sample of an Int64,
 // Float64, Datetime or string-backed column's values are distinct. Other
@@ -350,16 +344,10 @@ func readLegacy(input ReadInput) (frame.DataFrame, error) {
 }
 
 func payloadToFrame(payload parquetPayload, columns []string) (frame.DataFrame, error) {
-	selected := make(map[string]struct{}, len(columns))
-	for _, c := range columns {
-		selected[c] = struct{}{}
-	}
 	out := make([]frame.SeriesInput, 0, len(payload.Columns))
 	for _, c := range payload.Columns {
-		if len(selected) > 0 {
-			if _, ok := selected[c.Name]; !ok {
-				continue
-			}
+		if len(columns) > 0 && !slices.Contains(columns, c.Name) {
+			continue
 		}
 		values, err := decodeValues(c.Values, c.Type)
 		if err != nil {

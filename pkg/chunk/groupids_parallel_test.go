@@ -61,7 +61,7 @@ func groupTestCases() []struct {
 		for _, cardinality := range []int{1, 5, 997} {
 			i64 := make([]int64, n)
 			str := make([]string, n)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				i64[i] = int64(i % cardinality)
 				str[i] = fmt.Sprintf("g%d", i%cardinality)
 			}
@@ -70,7 +70,7 @@ func groupTestCases() []struct {
 
 			// Same keys, but every 7th row null: nulls must collapse into one group.
 			nulls := make([]bool, n)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				nulls[i] = i%7 == 0
 			}
 			i64n := make([]int64, n)
@@ -84,7 +84,7 @@ func groupTestCases() []struct {
 		// Fully unique keys: the high-cardinality guard must send this to the
 		// sequential build, and the result must still be correct.
 		unique := make([]int64, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			unique[i] = int64(i)
 		}
 		add(fmt.Sprintf("int64/unique/n=%d", n), NewInt64(unique, nil), n)
@@ -122,7 +122,7 @@ func TestGroupIDsUnorderedIndependentOfWorkerCount(t *testing.T) {
 	const n = 40000
 	vals := make([]int64, n)
 	nulls := make([]bool, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		vals[i] = int64(i % 11)
 		nulls[i] = i%13 == 0
 	}
@@ -157,7 +157,7 @@ func TestGroupIDsUnorderedFallsBackForCompositeAndFloatKeys(t *testing.T) {
 	const n = 20000
 
 	f := make([]float64, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if i%2 == 0 {
 			f[i] = 0.0
 		} else {
@@ -176,7 +176,7 @@ func TestGroupIDsUnorderedFallsBackForCompositeAndFloatKeys(t *testing.T) {
 
 	a := make([]int64, n)
 	b := make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		a[i] = int64(i % 3)
 		b[i] = fmt.Sprintf("k%d", i%4)
 	}

@@ -15,7 +15,6 @@ func TestV10WaveFExprTrigSurface(t *testing.T) {
 	e := polars.Col("x")
 	methods := []string{"Sin", "Sinh", "Tan", "Tanh", "Sign", "Radians", "RoundSigFigs"}
 	for _, name := range methods {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if !reflect.ValueOf(e).MethodByName(name).IsValid() {
@@ -72,7 +71,6 @@ func TestV10WaveFExprRollingSurface(t *testing.T) {
 		"RollingSkew", "RollingKurtosis", "RollingMap", "Rolling", "RollingRank", "RollingRankBy",
 	}
 	for _, name := range methods {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if !reflect.ValueOf(e).MethodByName(name).IsValid() {
@@ -93,7 +91,6 @@ func TestV10WaveFExprTailSurface(t *testing.T) {
 		"ToPhysical", "TopK", "TopKBy", "Truncate", "TrueDiv", "UpperBound",
 	}
 	for _, name := range methods {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if !reflect.ValueOf(e).MethodByName(name).IsValid() {

@@ -3,7 +3,7 @@ package frame
 import (
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 
 	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
@@ -23,23 +23,19 @@ func (g GroupBy) Agg(exprs ...expr.Expr) (DataFrame, error) {
 	// Build group buckets from the typed backing slices of the key columns via
 	// chunk.GroupIDs — no per-row interface boxing or fmt.Sprintf. Allocation
 	// scales with the number of distinct groups, not the row count.
-	keyColumns := make([]*chunk.Column, len(g.keys))
-	for j, key := range g.keys {
-		s, ok := g.df.cols[key]
-		if !ok {
-			return DataFrame{}, fmt.Errorf("group key %s not found", key)
-		}
-		keyColumns[j] = s.Column()
+	keyCols, err := keyColumns(g.df, g.keys, "group key")
+	if err != nil {
+		return DataFrame{}, err
 	}
 	// Parallel typed fast path for large frames with associative aggregates;
 	// declines (ok=false) to the sequential path below for small frames,
 	// non-associative aggregates (n_unique), or disabled typed storage.
-	if df, ok, err := g.aggParallel(keyColumns, exprs); err != nil {
+	if df, ok, err := g.aggParallel(keyCols, exprs); err != nil {
 		return DataFrame{}, err
 	} else if ok {
 		return df, nil
 	}
-	ids, firstRow := chunk.GroupIDs(keyColumns, g.df.height)
+	ids, firstRow := chunk.GroupIDs(keyCols, g.df.height)
 	ngroups := len(firstRow)
 
 	counts := make([]int, ngroups)
@@ -70,7 +66,7 @@ func (g GroupBy) Agg(exprs ...expr.Expr) (DataFrame, error) {
 	// Key columns are materialized by a typed gather of the representative
 	// (first-seen) row per group — no boxing.
 	for j, key := range g.keys {
-		out = append(out, series.FromColumn(key, keyColumns[j].Gather(firstRow)))
+		out = append(out, series.FromColumn(key, keyCols[j].Gather(firstRow)))
 	}
 	for i, aggExpr := range exprs {
 		dt, err := g.aggType(aggExpr)
@@ -98,7 +94,8 @@ func (g GroupBy) evalAgg(aggExpr expr.Expr, idxs []int) (any, error) {
 		if target == nil {
 			return nil, fmt.Errorf("sum target is nil")
 		}
-		return g.sum(*target, idxs)
+		sum, _, err := g.sumAndCount(*target, idxs)
+		return sum, err
 	case "mean":
 		target := aggExpr.Target()
 		if target == nil {
@@ -121,10 +118,10 @@ func (g GroupBy) evalAgg(aggExpr expr.Expr, idxs []int) (any, error) {
 		return g.extreme(aggExpr, idxs, true)
 	case "max":
 		return g.extreme(aggExpr, idxs, false)
-	case "n_unique":
+	case "n_unique", "count_distinct":
 		target := aggExpr.Target()
 		if target == nil {
-			return nil, fmt.Errorf("n_unique target is nil")
+			return nil, fmt.Errorf("%s target is nil", aggExpr.Op())
 		}
 		seen := map[string]struct{}{}
 		for _, idx := range idxs {
@@ -132,22 +129,8 @@ func (g GroupBy) evalAgg(aggExpr expr.Expr, idxs []int) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			seen[fmt.Sprintf("%v", v)] = struct{}{}
-		}
-		return int64(len(seen)), nil
-	case "count_distinct":
-		// COUNT(DISTINCT col): distinct non-null values.
-		target := aggExpr.Target()
-		if target == nil {
-			return nil, fmt.Errorf("count_distinct target is nil")
-		}
-		seen := map[string]struct{}{}
-		for _, idx := range idxs {
-			v, err := expr.Eval(*target, rowAccessor{df: g.df, row: idx})
-			if err != nil {
-				return nil, err
-			}
-			if v == nil {
+			// COUNT(DISTINCT col) counts distinct non-null values only.
+			if v == nil && aggExpr.Op() == "count_distinct" {
 				continue
 			}
 			seen[fmt.Sprintf("%v", v)] = struct{}{}
@@ -167,7 +150,7 @@ func (g GroupBy) evalAgg(aggExpr expr.Expr, idxs []int) (any, error) {
 			if v == nil {
 				continue
 			}
-			f, ok := toFloat(v)
+			f, ok := expr.ToFloat(v)
 			if !ok {
 				return nil, fmt.Errorf("%s expects numeric values", aggExpr.Op())
 			}
@@ -223,17 +206,12 @@ func medianOf(values []float64) any {
 	}
 	sorted := make([]float64, len(values))
 	copy(sorted, values)
-	sort.Float64s(sorted)
+	slices.Sort(sorted)
 	mid := len(sorted) / 2
 	if len(sorted)%2 == 1 {
 		return sorted[mid]
 	}
 	return (sorted[mid-1] + sorted[mid]) / 2
-}
-
-func (g GroupBy) sum(target expr.Expr, idxs []int) (any, error) {
-	sum, _, err := g.sumAndCount(target, idxs)
-	return sum, err
 }
 
 func (g GroupBy) sumAndCount(target expr.Expr, idxs []int) (any, int, error) {

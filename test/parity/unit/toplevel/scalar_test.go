@@ -33,7 +33,7 @@ func TestScalarLitBroadcastGatherEvery(t *testing.T) {
 	}
 	bar, _ := got.GetColumn("bar")
 	foo, _ := got.GetColumn("foo")
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if v, _ := bar.Value(i).(int64); v != 1 {
 			t.Fatalf("bar[%d]: got %v, want 1", i, bar.Value(i))
 		}
@@ -97,7 +97,7 @@ func TestScalarShiftLitFilter(t *testing.T) {
 			t.Fatalf("next_a[%d]: got %v, want %v", i, na.Value(i), w)
 		}
 	}
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if v, _ := lit.Value(i).(bool); v != false {
 			t.Fatalf("lit[%d]: got %v, want false", i, lit.Value(i))
 		}

@@ -5,12 +5,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/expr"
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	"github.com/h0rn3t/gopolars/pkg/plan/logical"
 	"github.com/h0rn3t/gopolars/pkg/plan/optimizer"
@@ -30,7 +32,6 @@ func (e Engine) Execute(ctx context.Context, source frame.DataFrame, nodes []log
 }
 
 func (e Engine) ExecuteStreaming(ctx context.Context, source frame.DataFrame, nodes []logical.Node, chunkSize int) (frame.DataFrame, error) {
-	_ = ctx
 	if chunkSize <= 0 || source.Height() <= chunkSize {
 		return e.Execute(ctx, source, nodes)
 	}
@@ -86,47 +87,25 @@ func fuseFilterFrameAgg(nodes []logical.Node) []logical.Node {
 func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.DataFrame, error) {
 	optimized = fuseFilterFrameAgg(optimized)
 	current := source
-	runNode := func(n logical.Node) error {
+	runNode := func(n logical.Node) (frame.DataFrame, error) {
 		switch n.Type {
 		case logical.NodeScan:
-			return nil
+			return current, nil
 		case logical.NodeSelect:
-			next, err := current.Select(n.Exprs...)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Select(n.Exprs...)
 		case logical.NodeFilter:
 			if len(n.Exprs) == 0 {
-				return fmt.Errorf("filter node has no expression")
+				return frame.DataFrame{}, fmt.Errorf("filter node has no expression")
 			}
-			next, err := current.Filter(n.Exprs[0])
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Filter(n.Exprs[0])
 		case logical.NodeWithCols:
-			next, err := current.WithColumns(n.Exprs...)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.WithColumns(n.Exprs...)
 		case logical.NodeSort:
-			next, err := current.Sort(frame.SortInput{By: n.Columns, Descending: n.Descending})
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Sort(frame.SortInput{By: n.Columns, Descending: n.Descending})
 		case logical.NodeLimit:
-			current = current.Limit(n.IntValue)
-			return nil
+			return current.Limit(n.IntValue), nil
 		case logical.NodeTail:
-			current = current.Tail(n.IntValue)
-			return nil
+			return current.Tail(n.IntValue), nil
 		case logical.NodeSlice:
 			length := 0
 			if len(n.Strings) > 0 {
@@ -134,8 +113,7 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 					length = parsed
 				}
 			}
-			current = current.Slice(n.IntValue, length)
-			return nil
+			return current.Slice(n.IntValue, length), nil
 		case logical.NodeGatherEvery:
 			step := 1
 			if len(n.Strings) > 0 {
@@ -143,108 +121,57 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 					step = parsed
 				}
 			}
-			current = current.GatherEvery(step, n.IntValue)
-			return nil
+			return current.GatherEvery(step, n.IntValue), nil
 		case logical.NodeReverse:
-			current = current.Reverse()
-			return nil
+			return current.Reverse(), nil
 		case logical.NodeRename:
 			mapping := map[string]string{}
 			for i := 0; i < len(n.Strings)-1; i += 2 {
 				mapping[n.Strings[i]] = n.Strings[i+1]
 			}
-			next, err := current.Rename(mapping)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Rename(mapping)
 		case logical.NodeUnique:
-			next, err := current.Unique(n.Columns...)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Unique(n.Columns...)
 		case logical.NodeFillNull:
 			if len(n.Exprs) == 0 {
-				return fmt.Errorf("fill_null node has no value expression")
+				return frame.DataFrame{}, fmt.Errorf("fill_null node has no value expression")
 			}
-			next, err := current.FillNull(n.Exprs[0].Value())
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.FillNull(n.Exprs[0].Value())
 		case logical.NodeDropNulls:
-			current = current.DropNulls(n.Columns...)
-			return nil
+			return current.DropNulls(n.Columns...), nil
 		case logical.NodeDropNans:
-			current = current.DropNaNs(n.Columns...)
-			return nil
+			return current.DropNaNs(n.Columns...), nil
 		case logical.NodeDrop:
-			next, err := current.Drop(n.Columns...)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Drop(n.Columns...)
 		case logical.NodeWindow:
-			next, err := applyWindows(current, n.Windows)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return applyWindows(current, n.Windows)
 		case logical.NodeExplode:
-			next, err := current.Explode(n.Columns...)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Explode(n.Columns...)
 		case logical.NodeFlatten:
 			if len(n.Columns) == 0 {
-				return fmt.Errorf("flatten node has no target column")
+				return frame.DataFrame{}, fmt.Errorf("flatten node has no target column")
 			}
-			next, err := current.FlattenStruct(n.Columns[0], n.Prefix)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.FlattenStruct(n.Columns[0], n.Prefix)
 		case logical.NodeUnnest:
-			next, err := current.Unnest(n.Columns...)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Unnest(n.Columns...)
 		case logical.NodeMelt, logical.NodeUnpivot:
 			if len(n.Strings) < 3 {
-				return fmt.Errorf("melt/unpivot node metadata is incomplete")
+				return frame.DataFrame{}, fmt.Errorf("melt/unpivot node metadata is incomplete")
 			}
 			idCount, err := strconv.Atoi(n.Strings[2])
 			if err != nil {
-				return err
+				return frame.DataFrame{}, err
 			}
 			if idCount < 0 || idCount > len(n.Columns) {
-				return fmt.Errorf("invalid melt/unpivot id count")
+				return frame.DataFrame{}, fmt.Errorf("invalid melt/unpivot id count")
 			}
-			var next frame.DataFrame
 			if n.Type == logical.NodeMelt {
-				next, err = current.Melt(n.Columns[:idCount], n.Columns[idCount:], n.Strings[0], n.Strings[1])
-			} else {
-				next, err = current.Unpivot(n.Columns[:idCount], n.Columns[idCount:], n.Strings[0], n.Strings[1])
+				return current.Melt(n.Columns[:idCount], n.Columns[idCount:], n.Strings[0], n.Strings[1])
 			}
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Unpivot(n.Columns[:idCount], n.Columns[idCount:], n.Strings[0], n.Strings[1])
 		case logical.NodeWithRowIdx:
 			if len(n.Strings) < 1 {
-				return fmt.Errorf("with_row_index node missing name")
+				return frame.DataFrame{}, fmt.Errorf("with_row_index node missing name")
 			}
 			offset := int64(0)
 			if len(n.Strings) > 1 {
@@ -252,40 +179,20 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 					offset = parsed
 				}
 			}
-			next, err := current.WithRowIndex(n.Strings[0], offset)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.WithRowIndex(n.Strings[0], offset)
 		case logical.NodeShift:
-			next, err := current.Shift(n.IntValue)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Shift(n.IntValue)
 		case logical.NodeSetSorted:
 			if len(n.Columns) < 1 {
-				return fmt.Errorf("set_sorted node missing column")
+				return frame.DataFrame{}, fmt.Errorf("set_sorted node missing column")
 			}
-			next, err := current.SetSorted(n.Columns[0])
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.SetSorted(n.Columns[0])
 		case logical.NodeCast:
 			mapping := map[string]dtypes.DataType{}
 			for i := 0; i < len(n.Strings)-1; i += 2 {
 				mapping[n.Strings[i]] = dtypes.DataType(n.Strings[i+1])
 			}
-			next, err := current.Cast(mapping)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Cast(mapping)
 		case logical.NodeFillNaN:
 			val := 0.0
 			if len(n.Strings) > 0 {
@@ -293,113 +200,82 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 					val = parsed
 				}
 			}
-			next, err := current.FillNaN(val)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.FillNaN(val)
 		case logical.NodeInterpolate:
-			next, err := current.Interpolate(n.Columns...)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Interpolate(n.Columns...)
 		case logical.NodeFrameAgg:
 			if len(n.Strings) < 1 {
-				return fmt.Errorf("frame_agg node missing aggregation type")
+				return frame.DataFrame{}, fmt.Errorf("frame_agg node missing aggregation type")
 			}
-			if len(n.Exprs) >= 1 {
-				// Fused filter+aggregate: try the single-pass masked path; fall
-				// back to materialize-then-aggregate when it declines.
-				fused, ok, err := current.FilterAggregate(n.Exprs[0], n.Strings[0], n.Strings[1:])
-				if err != nil {
-					return err
-				}
-				if ok {
-					current = fused
-					return nil
-				}
-				filtered, err := current.Filter(n.Exprs[0])
-				if err != nil {
-					return err
-				}
-				current = filtered
+			if len(n.Exprs) == 0 {
+				return aggregateFrame(current, n.Strings[0], n.Strings[1:])
 			}
-			next, err := aggregateFrame(current, n.Strings[0], n.Strings[1:])
+			// Fused filter+aggregate: try the single-pass masked path; fall
+			// back to materialize-then-aggregate when it declines.
+			fused, ok, err := current.FilterAggregate(n.Exprs[0], n.Strings[0], n.Strings[1:])
 			if err != nil {
-				return err
+				return frame.DataFrame{}, err
 			}
-			current = next
-			return nil
+			if ok {
+				return fused, nil
+			}
+			filtered, err := current.Filter(n.Exprs[0])
+			if err != nil {
+				return frame.DataFrame{}, err
+			}
+			return aggregateFrame(filtered, n.Strings[0], n.Strings[1:])
 		case logical.NodeUpdate:
 			if len(n.Plan) == 0 {
-				return fmt.Errorf("update node missing plan")
+				return frame.DataFrame{}, fmt.Errorf("update node missing plan")
 			}
 			other, err := executeOptimized(source, n.Plan)
 			if err != nil {
-				return err
+				return frame.DataFrame{}, err
 			}
-			next, err := current.Update(other)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Update(other)
 		case logical.NodePivot:
 			if len(n.Columns) < 3 {
-				return fmt.Errorf("pivot node columns are incomplete")
+				return frame.DataFrame{}, fmt.Errorf("pivot node columns are incomplete")
 			}
 			agg := ""
 			if len(n.Strings) > 0 {
 				agg = n.Strings[0]
 			}
-			next, err := current.Pivot([]string{n.Columns[0]}, n.Columns[1], n.Columns[2], agg)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.Pivot([]string{n.Columns[0]}, n.Columns[1], n.Columns[2], agg)
 		case logical.NodeRolling:
 			if len(n.Columns) < 3 || len(n.Strings) < 2 {
-				return fmt.Errorf("rolling node metadata is incomplete")
+				return frame.DataFrame{}, fmt.Errorf("rolling node metadata is incomplete")
 			}
 			windowNS, err := strconv.ParseInt(n.Strings[0], 10, 64)
 			if err != nil {
-				return err
+				return frame.DataFrame{}, err
 			}
 			minRows, err := strconv.Atoi(n.Strings[1])
 			if err != nil {
-				return err
+				return frame.DataFrame{}, err
 			}
 			closed := ""
 			if len(n.Strings) > 2 {
 				closed = n.Strings[2]
 			}
-			next, err := current.RollingMean(n.Columns[0], n.Columns[1], time.Duration(windowNS), minRows, n.Columns[2], closed)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.RollingMean(n.Columns[0], n.Columns[1], time.Duration(windowNS), minRows, n.Columns[2], closed)
 		case logical.NodeDynamic:
 			if len(n.Columns) < 2 || len(n.Strings) < 5 || len(n.Exprs) == 0 {
-				return fmt.Errorf("group_by_dynamic node metadata is incomplete")
+				return frame.DataFrame{}, fmt.Errorf("group_by_dynamic node metadata is incomplete")
 			}
 			everyNS, err := strconv.ParseInt(n.Strings[0], 10, 64)
 			if err != nil {
-				return err
+				return frame.DataFrame{}, err
 			}
 			periodNS, err := strconv.ParseInt(n.Strings[1], 10, 64)
 			if err != nil {
-				return err
+				return frame.DataFrame{}, err
 			}
 			offsetNS, err := strconv.ParseInt(n.Strings[2], 10, 64)
 			if err != nil {
-				return err
+				return frame.DataFrame{}, err
 			}
-			next, err := current.GroupByDynamic(
+			return current.GroupByDynamic(
 				n.Columns[0],
 				time.Duration(everyNS),
 				time.Duration(periodNS),
@@ -409,23 +285,13 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 				n.Columns[1],
 				n.Exprs[0],
 			)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
 		case logical.NodeAggregate:
-			next, err := current.GroupBy(n.Columns...).Agg(n.Exprs...)
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return current.GroupBy(n.Columns...).Agg(n.Exprs...)
 		case logical.NodeJoin:
 			if n.Join == nil {
-				return fmt.Errorf("join node is missing join payload")
+				return frame.DataFrame{}, fmt.Errorf("join node is missing join payload")
 			}
-			next, err := current.Join(frame.JoinInput{
+			return current.Join(frame.JoinInput{
 				Other:         n.Join.Other,
 				LeftOn:        n.Join.LeftOn,
 				RightOn:       n.Join.RightOn,
@@ -434,33 +300,25 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 				AsofDirection: n.Join.AsofDirection,
 				AsofTolerance: n.Join.AsofTolerance,
 			})
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
 		case logical.NodeSetOp:
 			if len(n.Strings) == 0 {
-				return fmt.Errorf("set_op node is missing operation")
+				return frame.DataFrame{}, fmt.Errorf("set_op node is missing operation")
 			}
 			right, err := executeOptimized(source, n.Plan)
 			if err != nil {
-				return err
+				return frame.DataFrame{}, err
 			}
-			next, err := applySetOp(current, right, n.Strings[0])
-			if err != nil {
-				return err
-			}
-			current = next
-			return nil
+			return applySetOp(current, right, n.Strings[0])
 		default:
-			return fmt.Errorf("unsupported node type %s", n.Type)
+			return frame.DataFrame{}, fmt.Errorf("unsupported node type %s", n.Type)
 		}
 	}
 	for _, n := range optimized {
-		if err := runNode(n); err != nil {
+		next, err := runNode(n)
+		if err != nil {
 			return frame.DataFrame{}, err
 		}
+		current = next
 	}
 	return current, nil
 }
@@ -472,9 +330,9 @@ func applySetOp(left frame.DataFrame, right frame.DataFrame, op string) (frame.D
 	case "union all":
 		return unionFrames(left, right, true)
 	case "intersect":
-		return intersectFrames(left, right)
+		return filterRowsBySet(left, right, true)
 	case "except":
-		return exceptFrames(left, right)
+		return filterRowsBySet(left, right, false)
 	default:
 		return frame.DataFrame{}, fmt.Errorf("unsupported set operation %s", op)
 	}
@@ -491,28 +349,16 @@ func unionFrames(left frame.DataFrame, right frame.DataFrame, all bool) (frame.D
 	return merged.Unique()
 }
 
-func intersectFrames(left frame.DataFrame, right frame.DataFrame) (frame.DataFrame, error) {
+// filterRowsBySet keeps, in order, the rows of left whose rowKey is among the
+// row keys of right (keepMatches) or is not (!keepMatches).
+func filterRowsBySet(left frame.DataFrame, right frame.DataFrame, keepMatches bool) (frame.DataFrame, error) {
 	rightSet := map[string]struct{}{}
 	for row := 0; row < right.Height(); row++ {
 		rightSet[rowKey(right, row)] = struct{}{}
 	}
 	idx := make([]int, 0, left.Height())
 	for row := 0; row < left.Height(); row++ {
-		if _, ok := rightSet[rowKey(left, row)]; ok {
-			idx = append(idx, row)
-		}
-	}
-	return selectRows(left, idx)
-}
-
-func exceptFrames(left frame.DataFrame, right frame.DataFrame) (frame.DataFrame, error) {
-	rightSet := map[string]struct{}{}
-	for row := 0; row < right.Height(); row++ {
-		rightSet[rowKey(right, row)] = struct{}{}
-	}
-	idx := make([]int, 0, left.Height())
-	for row := 0; row < left.Height(); row++ {
-		if _, ok := rightSet[rowKey(left, row)]; !ok {
+		if _, ok := rightSet[rowKey(left, row)]; ok == keepMatches {
 			idx = append(idx, row)
 		}
 	}
@@ -529,12 +375,12 @@ func selectRows(df frame.DataFrame, idx []int) (frame.DataFrame, error) {
 }
 
 func rowKey(df frame.DataFrame, row int) string {
-	key := ""
+	var key []byte
 	for _, c := range df.Columns() {
 		s, _ := df.Series(c)
-		key += fmt.Sprintf("|%v", s.Value(row))
+		key = fmt.Appendf(key, "|%v", s.Value(row))
 	}
-	return key
+	return string(key)
 }
 
 func hasStatefulNode(nodes []logical.Node) bool {
@@ -553,20 +399,12 @@ func splitFrames(source frame.DataFrame, chunkSize int) []frame.DataFrame {
 	}
 	out := make([]frame.DataFrame, 0, (source.Height()+chunkSize-1)/chunkSize)
 	for start := 0; start < source.Height(); start += chunkSize {
-		end := start + chunkSize
-		if end > source.Height() {
-			end = source.Height()
-		}
+		end := min(start+chunkSize, source.Height())
 		idx := make([]int, 0, end-start)
 		for i := start; i < end; i++ {
 			idx = append(idx, i)
 		}
-		cols := make([]series.Series, 0, source.Width())
-		for _, name := range source.Columns() {
-			s, _ := source.Series(name)
-			cols = append(cols, s.Slice(idx))
-		}
-		part, _ := frame.New(frame.NewInput{Series: cols})
+		part, _ := selectRows(source, idx)
 		out = append(out, part)
 	}
 	return out
@@ -605,19 +443,18 @@ func applyWindows(df frame.DataFrame, windows []logical.WindowSpec) (frame.DataF
 		values := make([]any, current.Height())
 		partitions := map[string][]int{}
 		for i := 0; i < current.Height(); i++ {
-			key := ""
+			var key []byte
 			for _, c := range w.PartitionBy {
 				s, ok := current.Series(c)
 				if !ok {
 					return frame.DataFrame{}, fmt.Errorf("window partition column %s not found", c)
 				}
-				key += fmt.Sprintf("|%v", s.Value(i))
+				key = fmt.Appendf(key, "|%v", s.Value(i))
 			}
-			partitions[key] = append(partitions[key], i)
+			partitions[string(key)] = append(partitions[string(key)], i)
 		}
 		for _, idxs := range partitions {
-			ordered := make([]int, len(idxs))
-			copy(ordered, idxs)
+			ordered := slices.Clone(idxs)
 			if len(w.OrderBy) > 0 {
 				sort.Slice(ordered, func(i, j int) bool {
 					li := ordered[i]
@@ -626,15 +463,15 @@ func applyWindows(df frame.DataFrame, windows []logical.WindowSpec) (frame.DataF
 						s, _ := current.Series(col)
 						lv := s.Value(li)
 						rv := s.Value(rj)
-						cmp := compareForOrder(lv, rv)
-						if cmp == 0 {
+						c := compareForOrder(lv, rv)
+						if c == 0 {
 							continue
 						}
 						desc := k < len(w.Descending) && w.Descending[k]
 						if desc {
-							return cmp > 0
+							return c > 0
 						}
-						return cmp < 0
+						return c < 0
 					}
 					return li < rj
 				})
@@ -769,7 +606,7 @@ func computePartitionAgg(df frame.DataFrame, rows []int, fn string, target strin
 			if v == nil {
 				continue
 			}
-			f, ok := toFloat(v)
+			f, ok := expr.ToFloat(v)
 			if !ok {
 				return nil, fmt.Errorf("window %s expects numeric values", fn)
 			}
@@ -807,17 +644,6 @@ func computePartitionAgg(df frame.DataFrame, rows []int, fn string, target strin
 		return best, nil
 	}
 	return nil, fmt.Errorf("unsupported window function %s", fn)
-}
-
-func toFloat(v any) (float64, bool) {
-	switch t := v.(type) {
-	case int64:
-		return float64(t), true
-	case float64:
-		return t, true
-	default:
-		return 0, false
-	}
 }
 
 // compareOrdered orders two values of the same comparable type. Any pair that
@@ -894,7 +720,12 @@ func aggregateFrame(df frame.DataFrame, op string, args []string) (frame.DataFra
 		var val any
 		var dt = dtypes.Float64
 		switch op {
-		case "max":
+		case "max", "min":
+			// replaces is the compareForOrder result that makes a value the new best.
+			replaces := 1
+			if op == "min" {
+				replaces = -1
+			}
 			var best any
 			has := false
 			for i := 0; i < s.Len(); i++ {
@@ -902,42 +733,24 @@ func aggregateFrame(df frame.DataFrame, op string, args []string) (frame.DataFra
 				if v == nil {
 					continue
 				}
-				if !has || compareForOrder(v, best) > 0 {
+				if !has || compareForOrder(v, best) == replaces {
 					best = v
 					has = true
 				}
 			}
 			val = best
 			dt = s.DataType()
-		case "min":
-			var best any
-			has := false
-			for i := 0; i < s.Len(); i++ {
-				v := s.Value(i)
-				if v == nil {
-					continue
-				}
-				if !has || compareForOrder(v, best) < 0 {
-					best = v
-					has = true
-				}
-			}
-			val = best
-			dt = s.DataType()
-		case "count":
-			val = int64(s.Len())
+		case "count", "null_count":
+			nulls := 0
 			for i := 0; i < s.Len(); i++ {
 				if s.IsNull(i) {
-					val = val.(int64) - 1
+					nulls++
 				}
 			}
-			dt = dtypes.Int64
-		case "null_count":
-			val = int64(0)
-			for i := 0; i < s.Len(); i++ {
-				if s.IsNull(i) {
-					val = val.(int64) + 1
-				}
+			if op == "count" {
+				val = int64(s.Len() - nulls)
+			} else {
+				val = int64(nulls)
 			}
 			dt = dtypes.Int64
 		case "sum":
@@ -968,45 +781,22 @@ func aggregateFrame(df frame.DataFrame, op string, args []string) (frame.DataFra
 				val = sum
 			}
 		case "mean":
-			sum := float64(0)
-			count := 0
-			for i := 0; i < s.Len(); i++ {
-				if s.IsNull(i) {
-					continue
-				}
-				v := s.Value(i)
-				switch t := v.(type) {
-				case int64:
-					sum += float64(t)
-					count++
-				case float64:
-					sum += t
-					count++
-				}
-			}
-			if count == 0 {
-				val = nil
-			} else {
-				val = sum / float64(count)
-			}
-		case "median":
-			nums := make([]float64, 0, s.Len())
-			for i := 0; i < s.Len(); i++ {
-				if s.IsNull(i) {
-					continue
-				}
-				v := s.Value(i)
-				switch t := v.(type) {
-				case int64:
-					nums = append(nums, float64(t))
-				case float64:
-					nums = append(nums, t)
-				}
-			}
+			nums := numericValues(s)
 			if len(nums) == 0 {
 				val = nil
 			} else {
-				sort.Float64s(nums)
+				sum := float64(0)
+				for _, f := range nums {
+					sum += f
+				}
+				val = sum / float64(len(nums))
+			}
+		case "median":
+			nums := numericValues(s)
+			if len(nums) == 0 {
+				val = nil
+			} else {
+				slices.Sort(nums)
 				mid := len(nums) / 2
 				if len(nums)%2 == 0 {
 					val = (nums[mid-1] + nums[mid]) / 2.0
@@ -1015,42 +805,21 @@ func aggregateFrame(df frame.DataFrame, op string, args []string) (frame.DataFra
 				}
 			}
 		case "std", "var":
-			sum := float64(0)
-			count := 0
-			for i := 0; i < s.Len(); i++ {
-				if s.IsNull(i) {
-					continue
-				}
-				v := s.Value(i)
-				switch t := v.(type) {
-				case int64:
-					sum += float64(t)
-					count++
-				case float64:
-					sum += t
-					count++
-				}
-			}
-			if count == 0 {
+			nums := numericValues(s)
+			if len(nums) == 0 {
 				val = nil
 			} else {
-				mean := sum / float64(count)
+				sum := float64(0)
+				for _, f := range nums {
+					sum += f
+				}
+				mean := sum / float64(len(nums))
 				variance := float64(0)
-				for i := 0; i < s.Len(); i++ {
-					if s.IsNull(i) {
-						continue
-					}
-					v := s.Value(i)
-					diff := float64(0)
-					switch t := v.(type) {
-					case int64:
-						diff = float64(t) - mean
-					case float64:
-						diff = t - mean
-					}
+				for _, f := range nums {
+					diff := f - mean
 					variance += diff * diff
 				}
-				variance /= float64(count)
+				variance /= float64(len(nums))
 				if op == "std" {
 					val = math.Sqrt(variance)
 				} else {
@@ -1064,23 +833,11 @@ func aggregateFrame(df frame.DataFrame, op string, args []string) (frame.DataFra
 					q = parsed
 				}
 			}
-			nums := make([]float64, 0, s.Len())
-			for i := 0; i < s.Len(); i++ {
-				if s.IsNull(i) {
-					continue
-				}
-				v := s.Value(i)
-				switch t := v.(type) {
-				case int64:
-					nums = append(nums, float64(t))
-				case float64:
-					nums = append(nums, t)
-				}
-			}
+			nums := numericValues(s)
 			if len(nums) == 0 {
 				val = nil
 			} else {
-				sort.Float64s(nums)
+				slices.Sort(nums)
 				idx := float64(len(nums)-1) * q
 				lower := int(math.Floor(idx))
 				upper := int(math.Ceil(idx))
@@ -1099,4 +856,22 @@ func aggregateFrame(df frame.DataFrame, op string, args []string) (frame.DataFra
 		out = append(out, newS)
 	}
 	return frame.New(frame.NewInput{Series: out})
+}
+
+// numericValues returns the non-null int64 and float64 values of s as float64,
+// in row order. Values of any other type are skipped.
+func numericValues(s series.Series) []float64 {
+	nums := make([]float64, 0, s.Len())
+	for i := 0; i < s.Len(); i++ {
+		if s.IsNull(i) {
+			continue
+		}
+		switch t := s.Value(i).(type) {
+		case int64:
+			nums = append(nums, float64(t))
+		case float64:
+			nums = append(nums, t)
+		}
+	}
+	return nums
 }

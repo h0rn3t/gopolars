@@ -55,3 +55,26 @@ func TestReverseRowCtxReadsMirroredRow(t *testing.T) {
 		t.Fatal("очікували false для індексу поза діапазоном")
 	}
 }
+
+// TestReverseRowCtxOutOfRangeBase pins that ValueByName mirrors the base row and
+// reports no value when the base row lies outside the frame.
+func TestReverseRowCtxOutOfRangeBase(t *testing.T) {
+	t.Parallel()
+
+	data := map[string][]any{"v": {int64(10), int64(20), int64(30)}}
+	for _, base := range []rasterRow{
+		{index: 3, rows: 3, data: data},
+		{index: -1, rows: 3, data: data},
+		{index: 0, rows: 0, data: data},
+	} {
+		if v, ok := (reverseRowCtx{base: base}).ValueByName("v"); ok || v != nil {
+			t.Errorf("base row %d of %d: got %v ok=%v, want nil false", base.index, base.rows, v, ok)
+		}
+	}
+	if v, ok := (reverseRowCtx{base: rasterRow{index: 2, rows: 3, data: data}}).ValueByName("v"); !ok || v != int64(10) {
+		t.Errorf("base row 2: got %v ok=%v, want 10 true", v, ok)
+	}
+	if _, ok := (reverseRowCtx{base: rasterRow{index: 0, rows: 3, data: data}}).ValueByName("nope"); ok {
+		t.Error("missing column: want ok=false")
+	}
+}

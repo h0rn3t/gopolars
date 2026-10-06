@@ -33,10 +33,7 @@ func CompareEQInt64(vals []int64, target int64) []bool {
 // AndMask returns the element-wise logical AND of a and b. The result length is
 // min(len(a), len(b)).
 func AndMask(a, b []bool) []bool {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
+	n := min(len(a), len(b))
 	out := make([]bool, n)
 	for i := range n {
 		out[i] = a[i] && b[i]
