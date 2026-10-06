@@ -264,6 +264,16 @@ type Series interface {
 	Len() int
 	Value(i int) any
 	ToList() []any
+	// The typed accessors return a copy of the series' values without boxing
+	// them, plus a null mask that is nil when the series has no nulls. Null
+	// slots hold the type's zero value. A series of another dtype returns an
+	// error wrapping ErrDTypeMismatch; StringValues also accepts Categorical
+	// and Enum series.
+	Int64Values() ([]int64, []bool, error)
+	Float64Values() ([]float64, []bool, error)
+	StringValues() ([]string, []bool, error)
+	BoolValues() ([]bool, []bool, error)
+	DatetimeValues() ([]time.Time, []bool, error)
 	NullCount() int
 	IsNull() Series
 	IsNotNull() Series
