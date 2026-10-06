@@ -19,6 +19,7 @@ import (
 	"github.com/apache/arrow-go/v18/parquet/pqarrow"
 	pqgo "github.com/parquet-go/parquet-go"
 
+	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
@@ -50,16 +51,37 @@ func Write(df frame.DataFrame, input WriteInput) error {
 	}
 	defer rec.Release()
 
-	tbl := array.NewTableFromRecords(rec.Schema(), []goarrow.RecordBatch{rec})
+	rowGroup := int64(input.RowGroupSize)
+	if rowGroup <= 0 {
+		rowGroup = defaultRowGroupRows
+	}
+	// A string column the dictionary pays off for is dictionary-encoded here
+	// instead of by arrow-go, whose encoder allocates twice for every value it
+	// hashes; pqarrow writes a dictionary array's dictionary and indices as is.
+	fields := rec.Schema().Fields()
+	columns := make([]goarrow.Column, len(fields))
+	for i, field := range fields {
+		s, _ := df.Series(field.Name)
+		col := s.Column()
+		values, ok := col.Strings()
+		if !ok || !lowCardinality(col) {
+			columns[i] = goarrow.NewColumnFromArr(field, rec.Column(i))
+			continue
+		}
+		data := dictionaryChunks(values, col.Nulls(), int(rowGroup))
+		fields[i].Type = data.DataType()
+		columns[i] = *goarrow.NewColumn(fields[i], data)
+		data.Release()
+	}
+	tbl := array.NewTable(goarrow.NewSchema(fields, nil), columns, int64(df.Height()))
 	defer tbl.Release()
+	for i := range columns {
+		columns[i].Release()
+	}
 
 	codec, err := codecFor(input.Compression)
 	if err != nil {
 		return err
-	}
-	rowGroup := int64(input.RowGroupSize)
-	if rowGroup <= 0 {
-		rowGroup = defaultRowGroupRows
 	}
 	props := aparquet.NewWriterProperties(append([]aparquet.WriterProperty{
 		aparquet.WithCompression(codec),
@@ -82,31 +104,80 @@ func Write(df frame.DataFrame, input WriteInput) error {
 // estimate cardinality before choosing dictionary encoding.
 const dictSampleSize = 4096
 
-// dictionaryChoices turns dictionary encoding off for Int64, Float64 and
-// Datetime columns whose sampled values are more than half distinct. arrow-go
-// dictionary-encodes every column by default and, for such columns, builds a
-// hash table only to fall back to plain encoding once the dictionary outgrows
-// its page. Other dtypes keep the arrow-go default.
+// dictionaryChoices turns dictionary encoding off for every column that is not
+// [lowCardinality]. arrow-go dictionary-encodes every column by default and,
+// for such columns, builds a hash table only to fall back to plain encoding
+// once the dictionary outgrows its page.
 func dictionaryChoices(df frame.DataFrame) []aparquet.WriterProperty {
 	var props []aparquet.WriterProperty
 	for _, name := range df.Columns() {
 		s, _ := df.Series(name)
-		col := s.Column()
-		lowCardinality := true
-		if vals, ok := col.Int64s(); ok {
-			lowCardinality = sampledLowCardinality(vals, col.Nulls(), func(v int64) int64 { return v })
-		} else if vals, ok := col.Float64s(); ok {
-			lowCardinality = sampledLowCardinality(vals, col.Nulls(), math.Float64bits)
-		} else if vals, ok := col.Times(); ok {
-			// Datetimes are written as UnixNano timestamps, so that is the
-			// value whose cardinality the dictionary sees.
-			lowCardinality = sampledLowCardinality(vals, col.Nulls(), time.Time.UnixNano)
-		}
-		if !lowCardinality {
+		if !lowCardinality(s.Column()) {
 			props = append(props, aparquet.WithDictionaryFor(name, false))
 		}
 	}
 	return props
+}
+
+// lowCardinality reports whether at most half of a sample of an Int64,
+// Float64, Datetime or string-backed column's values are distinct. Other
+// dtypes report true, which keeps the arrow-go default.
+func lowCardinality(col *chunk.Column) bool {
+	if vals, ok := col.Int64s(); ok {
+		return sampledLowCardinality(vals, col.Nulls(), func(v int64) int64 { return v })
+	}
+	if vals, ok := col.Float64s(); ok {
+		return sampledLowCardinality(vals, col.Nulls(), math.Float64bits)
+	}
+	if vals, ok := col.Times(); ok {
+		// Datetimes are written as UnixNano timestamps, so that is the
+		// value whose cardinality the dictionary sees.
+		return sampledLowCardinality(vals, col.Nulls(), time.Time.UnixNano)
+	}
+	if vals, ok := col.Strings(); ok {
+		return sampledLowCardinality(vals, col.Nulls(), func(v string) string { return v })
+	}
+	return true
+}
+
+// dictionaryChunks dictionary-encodes values one row group of rowGroup rows at
+// a time, so that each column chunk's dictionary page holds only the values
+// its own rows use, as arrow-go's encoder writes it.
+func dictionaryChunks(values []string, nulls []bool, rowGroup int) *goarrow.Chunked {
+	dtype := &goarrow.DictionaryType{IndexType: goarrow.PrimitiveTypes.Int32, ValueType: goarrow.BinaryTypes.String}
+	indices := array.NewInt32Builder(memory.DefaultAllocator)
+	defer indices.Release()
+	dictionary := array.NewStringBuilder(memory.DefaultAllocator)
+	defer dictionary.Release()
+	index := make(map[string]int32)
+	var chunks []goarrow.Array
+	for start := 0; start < len(values); start += rowGroup {
+		end := min(start+rowGroup, len(values))
+		clear(index)
+		indices.Reserve(end - start)
+		for i := start; i < end; i++ {
+			if nulls != nil && nulls[i] {
+				indices.AppendNull()
+				continue
+			}
+			k, seen := index[values[i]]
+			if !seen {
+				k = int32(len(index))
+				index[values[i]] = k
+				dictionary.Append(values[i])
+			}
+			indices.UnsafeAppend(k)
+		}
+		ids, dict := indices.NewArray(), dictionary.NewArray()
+		chunks = append(chunks, array.NewDictionaryArray(dtype, ids, dict))
+		ids.Release()
+		dict.Release()
+	}
+	data := goarrow.NewChunked(dtype, chunks)
+	for _, c := range chunks {
+		c.Release()
+	}
+	return data
 }
 
 // sampledLowCardinality reports whether at most half of a strided,

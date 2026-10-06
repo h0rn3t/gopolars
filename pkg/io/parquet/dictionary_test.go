@@ -4,6 +4,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -18,7 +20,7 @@ func dictionaryFrame(t *testing.T) frame.DataFrame {
 	t.Helper()
 	const n = 100_000
 	cols := map[string][]any{}
-	names := []string{"unique_int", "low_int", "unique_float", "low_float", "unique_ts", "low_ts", "label"}
+	names := []string{"unique_int", "low_int", "unique_float", "low_float", "unique_ts", "low_ts", "label", "unique_label"}
 	for _, name := range names {
 		cols[name] = make([]any, n)
 	}
@@ -31,15 +33,17 @@ func dictionaryFrame(t *testing.T) frame.DataFrame {
 		cols["unique_ts"][i] = base.Add(time.Duration(i) * time.Second)
 		cols["low_ts"][i] = base.Add(time.Duration(i%10) * time.Hour)
 		cols["label"][i] = []string{"alpha", "beta", "gamma"}[i%3]
+		cols["unique_label"][i] = "user-" + strconv.Itoa(i)
 		if i%11 == 0 {
 			cols["low_float"][i] = nil
+			cols["label"][i] = nil
 		}
 	}
 	dtypeOf := map[string]dtypes.DataType{
 		"unique_int": dtypes.Int64, "low_int": dtypes.Int64,
 		"unique_float": dtypes.Float64, "low_float": dtypes.Float64,
 		"unique_ts": dtypes.Datetime, "low_ts": dtypes.Datetime,
-		"label": dtypes.String,
+		"label": dtypes.String, "unique_label": dtypes.String,
 	}
 	inputs := make([]frame.SeriesInput, 0, len(names))
 	for _, name := range names {
@@ -94,6 +98,7 @@ func TestWriteDictionaryOnlyWherePaysOff(t *testing.T) {
 		"unique_ts":    false,
 		"low_ts":       true,
 		"label":        true,
+		"unique_label": false,
 	}
 	for name, wantDict := range want {
 		if got[name] != wantDict {
@@ -145,5 +150,85 @@ func sameCell(want, got any) bool {
 		return ok && g.Equal(w)
 	default:
 		return want == got
+	}
+}
+
+// dictionaryEntries reports, per row group, how many values the dictionary page
+// of column holds, or -1 when the column chunk has no dictionary page.
+func dictionaryEntries(t *testing.T, path string, column int) []int32 {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open %q: %v", path, err)
+	}
+	defer func() { _ = f.Close() }() // read-only file
+	pf, err := file.NewParquetReader(f)
+	if err != nil {
+		t.Fatalf("NewParquetReader(%q): %v", path, err)
+	}
+	out := make([]int32, pf.NumRowGroups())
+	for rg := range out {
+		pages, err := pf.RowGroup(rg).GetColumnPageReader(column)
+		if err != nil {
+			t.Fatalf("GetColumnPageReader(%d) in row group %d: %v", column, rg, err)
+		}
+		out[rg] = -1
+		if pages.Next() && pages.Page().Type() == file.PageTypeDictionaryPage {
+			out[rg] = pages.Page().NumValues()
+		}
+	}
+	return out
+}
+
+func TestWriteStringDictionary(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		values   []any
+		rowGroup int
+		want     []int32 // dictionary entries per row group, -1 for none
+	}{
+		{name: "empty", values: nil, want: []int32{-1}},
+		{name: "all null", values: []any{nil, nil, nil, nil}, want: []int32{0}},
+		{name: "repeated values with nulls", values: []any{"a", "b", nil, "a", "b", "c", nil, "a", "b", "c", "a", "b"}, want: []int32{3}},
+		{name: "row groups with disjoint values", values: []any{"x", "y", "x", "y", "x", "p", "q", "p", "q", nil}, rowGroup: 5, want: []int32{2, 2}},
+		{name: "unique values", values: []any{"a", "b", "c", "d", "e", "f", "g", "h"}, want: []int32{-1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			df, err := frame.FromAnyColumns(frame.FromAnyColumnsInput{Columns: []frame.SeriesInput{
+				{Name: "s", Values: tt.values, DType: dtypes.String},
+			}})
+			if err != nil {
+				t.Fatalf("FromAnyColumns(%v): %v", tt.values, err)
+			}
+			path := filepath.Join(t.TempDir(), "s.parquet")
+			if err := Write(df, WriteInput{Path: path, RowGroupSize: tt.rowGroup}); err != nil {
+				t.Fatalf("Write(%v, RowGroupSize %d): %v", tt.values, tt.rowGroup, err)
+			}
+			if got := dictionaryEntries(t, path, 0); !slices.Equal(got, tt.want) {
+				t.Errorf("Write(%v, RowGroupSize %d) dictionary entries per row group = %v, want %v", tt.values, tt.rowGroup, got, tt.want)
+			}
+
+			back, err := Read(ReadInput{Path: path})
+			if err != nil {
+				t.Fatalf("Read(%q): %v", path, err)
+			}
+			if back.Height() != len(tt.values) {
+				t.Fatalf("Read(Write(%v)) height = %d, want %d", tt.values, back.Height(), len(tt.values))
+			}
+			// An empty file reads back with no columns at all, so only a
+			// non-empty column has a dtype to check.
+			s, ok := back.Series("s")
+			if len(tt.values) > 0 && (!ok || s.DataType() != dtypes.String) {
+				t.Fatalf("Read(Write(%v)) column s = %v, want String", tt.values, s.DataType())
+			}
+			for i, want := range tt.values {
+				if got := s.Value(i); got != want {
+					t.Errorf("Read(Write(%v)) row %d = %v, want %v", tt.values, i, got, want)
+				}
+			}
+		})
 	}
 }
