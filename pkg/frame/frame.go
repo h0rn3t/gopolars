@@ -144,13 +144,17 @@ func (d DataFrame) Dtypes() []dtypes.DataType {
 }
 
 func (d DataFrame) ToDicts() []map[string]any {
-	out := make([]map[string]any, 0, d.height)
-	for row := 0; row < d.height; row++ {
+	cols := make([]series.Series, len(d.order))
+	for i, name := range d.order {
+		cols[i] = d.cols[name]
+	}
+	out := make([]map[string]any, d.height)
+	for row := range out {
 		record := make(map[string]any, len(d.order))
-		for _, name := range d.order {
-			record[name] = d.cols[name].Value(row)
+		for i, name := range d.order {
+			record[name] = cols[i].Value(row)
 		}
-		out = append(out, record)
+		out[row] = record
 	}
 	return out
 }

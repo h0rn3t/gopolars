@@ -114,7 +114,7 @@ func nestedToColumn(arr goarrow.Array, n int, dtype dtypes.DataType) *chunk.Colu
 	nulls := buildNullMask(arr, n)
 	boxed := make([]any, n)
 	for i := 0; i < n; i++ {
-		if !nulls[i] {
+		if arr.IsValid(i) {
 			boxed[i] = arrowValueAt(arr, i)
 		}
 	}

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,13 +15,13 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	aparquet "github.com/apache/arrow-go/v18/parquet"
 	"github.com/apache/arrow-go/v18/parquet/compress"
+	"github.com/apache/arrow-go/v18/parquet/file"
 	"github.com/apache/arrow-go/v18/parquet/pqarrow"
 	pqgo "github.com/parquet-go/parquet-go"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
-	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
 // defaultRowGroupRows bounds a row group when the caller does not specify one.
@@ -59,10 +61,10 @@ func Write(df frame.DataFrame, input WriteInput) error {
 	if rowGroup <= 0 {
 		rowGroup = defaultRowGroupRows
 	}
-	props := aparquet.NewWriterProperties(
+	props := aparquet.NewWriterProperties(append([]aparquet.WriterProperty{
 		aparquet.WithCompression(codec),
 		aparquet.WithMaxRowGroupLength(rowGroup),
-	)
+	}, dictionaryChoices(df)...)...)
 
 	f, err := os.Create(input.Path)
 	if err != nil {
@@ -74,6 +76,53 @@ func Write(df frame.DataFrame, input WriteInput) error {
 		return err
 	}
 	return nil
+}
+
+// dictSampleSize bounds how many non-null values per column are sampled to
+// estimate cardinality before choosing dictionary encoding.
+const dictSampleSize = 4096
+
+// dictionaryChoices turns dictionary encoding off for Int64, Float64 and
+// Datetime columns whose sampled values are more than half distinct. arrow-go
+// dictionary-encodes every column by default and, for such columns, builds a
+// hash table only to fall back to plain encoding once the dictionary outgrows
+// its page. Other dtypes keep the arrow-go default.
+func dictionaryChoices(df frame.DataFrame) []aparquet.WriterProperty {
+	var props []aparquet.WriterProperty
+	for _, name := range df.Columns() {
+		s, _ := df.Series(name)
+		col := s.Column()
+		lowCardinality := true
+		if vals, ok := col.Int64s(); ok {
+			lowCardinality = sampledLowCardinality(vals, col.Nulls(), func(v int64) int64 { return v })
+		} else if vals, ok := col.Float64s(); ok {
+			lowCardinality = sampledLowCardinality(vals, col.Nulls(), math.Float64bits)
+		} else if vals, ok := col.Times(); ok {
+			// Datetimes are written as UnixNano timestamps, so that is the
+			// value whose cardinality the dictionary sees.
+			lowCardinality = sampledLowCardinality(vals, col.Nulls(), time.Time.UnixNano)
+		}
+		if !lowCardinality {
+			props = append(props, aparquet.WithDictionaryFor(name, false))
+		}
+	}
+	return props
+}
+
+// sampledLowCardinality reports whether at most half of a strided,
+// deterministic sample of up to dictSampleSize non-null values are distinct.
+func sampledLowCardinality[T any, K comparable](values []T, nulls []bool, key func(T) K) bool {
+	step := max(1, len(values)/dictSampleSize)
+	distinct := make(map[K]struct{}, min(len(values), dictSampleSize))
+	sampled := 0
+	for i := 0; i < len(values) && sampled < dictSampleSize; i += step {
+		if nulls != nil && nulls[i] {
+			continue
+		}
+		distinct[key(values[i])] = struct{}{}
+		sampled++
+	}
+	return len(distinct)*2 <= sampled
 }
 
 // codecFor maps a compression option string to an Arrow parquet codec. An empty
@@ -111,26 +160,77 @@ func Read(input ReadInput) (frame.DataFrame, error) {
 // readColumnar reads a standard columnar parquet file. It returns ok=false (to
 // defer to the legacy reader) when the file is not columnar parquet: either it
 // is not a parquet file at all, or it is the legacy single "payload" envelope.
+//
+// Only the requested columns are decoded, and columns decode in parallel:
+// pqarrow runs one goroutine per column and joins them before returning.
 func readColumnar(input ReadInput) (frame.DataFrame, bool, error) {
 	f, err := os.Open(input.Path)
 	if err != nil {
 		return frame.DataFrame{}, false, nil
 	}
-	defer func() { _ = f.Close() }()
+	defer func() { _ = f.Close() }() // read-only file
 
 	mem := memory.NewGoAllocator()
-	tbl, err := pqarrow.ReadTable(context.Background(), f, aparquet.NewReaderProperties(mem), pqarrow.ArrowReadProperties{}, mem)
+	pf, err := file.NewParquetReader(f, file.WithReadProps(aparquet.NewReaderProperties(mem)))
+	if err != nil {
+		return frame.DataFrame{}, false, nil
+	}
+	fr, err := pqarrow.NewFileReader(pf, pqarrow.ArrowReadProperties{Parallel: true}, mem)
+	if err != nil {
+		return frame.DataFrame{}, false, nil
+	}
+	schema, err := fr.Schema()
+	if err != nil || isLegacyEnvelope(schema) {
+		return frame.DataFrame{}, false, nil
+	}
+
+	// ReadParquet takes no context; reads are bounded by the file itself.
+	ctx := context.Background()
+	var tbl goarrow.Table
+	if len(input.Columns) == 0 {
+		tbl, err = fr.ReadTable(ctx)
+	} else {
+		leaves := projectedLeaves(fr.Manifest.Fields, input.Columns)
+		if len(leaves) == 0 {
+			df, err := frame.New(frame.NewInput{})
+			return df, true, err
+		}
+		rowGroups := make([]int, pf.NumRowGroups())
+		for i := range rowGroups {
+			rowGroups[i] = i
+		}
+		tbl, err = fr.ReadRowGroups(ctx, leaves, rowGroups)
+	}
 	if err != nil {
 		return frame.DataFrame{}, false, nil
 	}
 	defer tbl.Release()
 
-	if isLegacyEnvelope(tbl.Schema()) {
-		return frame.DataFrame{}, false, nil
-	}
-
-	df, err := tableToFrame(tbl, input.Columns)
+	df, err := tableToFrame(tbl)
 	return df, true, err
+}
+
+// projectedLeaves returns, in file order, the leaf column indices of every
+// top-level field named in columns. A nested field contributes all of its
+// leaves, because pqarrow reads a field only from the leaves it is given.
+func projectedLeaves(fields []pqarrow.SchemaField, columns []string) []int {
+	var leaves []int
+	var collect func(field *pqarrow.SchemaField)
+	collect = func(field *pqarrow.SchemaField) {
+		if field.IsLeaf() {
+			leaves = append(leaves, field.ColIndex)
+			return
+		}
+		for i := range field.Children {
+			collect(&field.Children[i])
+		}
+	}
+	for i := range fields {
+		if slices.Contains(columns, fields[i].Field.Name) {
+			collect(&fields[i])
+		}
+	}
+	return leaves
 }
 
 // isLegacyEnvelope reports whether the schema is the old single-column JSON
@@ -139,9 +239,8 @@ func isLegacyEnvelope(schema *goarrow.Schema) bool {
 	return schema.NumFields() == 1 && schema.Field(0).Name == "payload"
 }
 
-// tableToFrame converts an Arrow table to a DataFrame via the native bridge and
-// applies an optional column projection.
-func tableToFrame(tbl goarrow.Table, columns []string) (frame.DataFrame, error) {
+// tableToFrame converts an Arrow table to a DataFrame via the native bridge.
+func tableToFrame(tbl goarrow.Table) (frame.DataFrame, error) {
 	if tbl.NumRows() == 0 {
 		return frame.New(frame.NewInput{})
 	}
@@ -150,32 +249,7 @@ func tableToFrame(tbl goarrow.Table, columns []string) (frame.DataFrame, error) 
 	if !tr.Next() {
 		return frame.New(frame.NewInput{})
 	}
-	df, err := iarrow.FromArrowRecord(tr.RecordBatch())
-	if err != nil {
-		return frame.DataFrame{}, err
-	}
-	return projectFrame(df, columns)
-}
-
-// projectFrame returns df restricted to the named columns (preserving the
-// frame's column order). An empty selection returns df unchanged.
-func projectFrame(df frame.DataFrame, columns []string) (frame.DataFrame, error) {
-	if len(columns) == 0 {
-		return df, nil
-	}
-	want := make(map[string]struct{}, len(columns))
-	for _, c := range columns {
-		want[c] = struct{}{}
-	}
-	sel := make([]series.Series, 0, len(columns))
-	for _, name := range df.Columns() {
-		if _, ok := want[name]; !ok {
-			continue
-		}
-		s, _ := df.Series(name)
-		sel = append(sel, s)
-	}
-	return frame.New(frame.NewInput{Series: sel})
+	return iarrow.FromArrowRecord(tr.RecordBatch())
 }
 
 // readLegacy decodes files written by the previous JSON-envelope writer (a

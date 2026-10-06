@@ -12,6 +12,7 @@ package arrow
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -81,60 +82,39 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 	nulls := buildNullMask(arr, n)
 	switch a := arr.(type) {
 	case *array.Float64:
-		vals := make([]float64, n)
-		for i := 0; i < n; i++ {
-			if !nulls[i] {
-				vals[i] = a.Value(i)
-			}
-		}
-		return chunk.NewFloat64(vals, nulls), nil
+		return chunk.NewFloat64(cloneZeroingNulls(a.Float64Values(), nulls), nulls), nil
 
 	case *array.Int64:
-		vals := make([]int64, n)
-		for i := 0; i < n; i++ {
-			if !nulls[i] {
-				vals[i] = a.Value(i)
-			}
-		}
-		return chunk.NewInt64(vals, nulls), nil
+		return chunk.NewInt64(cloneZeroingNulls(a.Int64Values(), nulls), nulls), nil
 
 	case *array.Boolean:
 		vals := make([]bool, n)
 		for i := 0; i < n; i++ {
-			if !nulls[i] {
+			if arr.IsValid(i) {
 				vals[i] = a.Value(i)
 			}
 		}
 		return chunk.NewBool(vals, nulls), nil
 
+	// A zero-length array may carry no offsets buffer, which ValueOffsets
+	// cannot slice.
 	case *array.String:
-		vals := make([]string, n)
-		for i := 0; i < n; i++ {
-			if !nulls[i] {
-				// strings.Clone forces a Go-owned heap copy. a.Value(i) is an
-				// unsafe view into the Arrow value buffer; for records imported
-				// over the C Data Interface (e.g. ADBC read_database) that buffer
-				// is C-owned and freed on the record's Release, so without a copy
-				// the column would dangle into freed memory.
-				vals[i] = strings.Clone(a.Value(i))
-			}
+		if n == 0 {
+			return chunk.NewString([]string{}, nil), nil
 		}
-		return chunk.NewString(vals, nulls), nil
+		return chunk.NewString(sliceStringBuffer(a.ValueBytes(), a.ValueOffsets(), nulls), nulls), nil
 
 	case *array.LargeString:
-		vals := make([]string, n)
-		for i := 0; i < n; i++ {
-			if !nulls[i] {
-				vals[i] = strings.Clone(a.Value(i))
-			}
+		if n == 0 {
+			return chunk.NewString([]string{}, nil), nil
 		}
-		return chunk.NewString(vals, nulls), nil
+		return chunk.NewString(sliceStringBuffer(a.ValueBytes(), a.ValueOffsets(), nulls), nulls), nil
 
 	case *array.Timestamp:
 		vals := make([]time.Time, n)
 		unit := a.DataType().(*goarrow.TimestampType).Unit
 		for i := 0; i < n; i++ {
-			if !nulls[i] {
+			if arr.IsValid(i) {
 				vals[i] = timestampToTime(int64(a.Value(i)), unit)
 			}
 		}
@@ -143,7 +123,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 	case *array.Date32:
 		vals := make([]time.Time, n)
 		for i := 0; i < n; i++ {
-			if !nulls[i] {
+			if arr.IsValid(i) {
 				vals[i] = a.Value(i).ToTime()
 			}
 		}
@@ -152,7 +132,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 	case *array.Date64:
 		vals := make([]time.Time, n)
 		for i := 0; i < n; i++ {
-			if !nulls[i] {
+			if arr.IsValid(i) {
 				vals[i] = a.Value(i).ToTime()
 			}
 		}
@@ -162,7 +142,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 		unit := a.DataType().(*goarrow.Time32Type).Unit
 		vals := make([]time.Time, n)
 		for i := 0; i < n; i++ {
-			if !nulls[i] {
+			if arr.IsValid(i) {
 				vals[i] = a.Value(i).ToTime(unit)
 			}
 		}
@@ -172,7 +152,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 		unit := a.DataType().(*goarrow.Time64Type).Unit
 		vals := make([]time.Time, n)
 		for i := 0; i < n; i++ {
-			if !nulls[i] {
+			if arr.IsValid(i) {
 				vals[i] = a.Value(i).ToTime(unit)
 			}
 		}
@@ -181,7 +161,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 	case *array.Binary:
 		boxed := make([]any, n)
 		for i := 0; i < n; i++ {
-			if !nulls[i] {
+			if arr.IsValid(i) {
 				boxed[i] = append([]byte{}, a.Value(i)...)
 			}
 		}
@@ -190,7 +170,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 	case *array.LargeBinary:
 		boxed := make([]any, n)
 		for i := 0; i < n; i++ {
-			if !nulls[i] {
+			if arr.IsValid(i) {
 				boxed[i] = append([]byte{}, a.Value(i)...)
 			}
 		}
@@ -199,7 +179,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 	case *array.MonthDayNanoInterval:
 		boxed := make([]any, n)
 		for i := 0; i < n; i++ {
-			if !nulls[i] {
+			if arr.IsValid(i) {
 				boxed[i] = intervalToDuration(a.Value(i))
 			}
 		}
@@ -209,7 +189,7 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 		dt := a.DataType().(*goarrow.Decimal128Type)
 		boxed := make([]any, n)
 		for i := 0; i < n; i++ {
-			if !nulls[i] {
+			if arr.IsValid(i) {
 				boxed[i] = dtypes.DecimalValue(a.Value(i).ToString(dt.Scale))
 			}
 		}
@@ -224,10 +204,10 @@ func arrowArrayToColumn(arr goarrow.Array, n int) (*chunk.Column, error) {
 	default:
 		// Unsupported Arrow type: box into []any. Clone string/[]byte values so
 		// the boxed column does not alias a C-owned Arrow buffer that is freed on
-		// the record's Release (see the *array.String case).
+		// the record's Release (see sliceStringBuffer).
 		boxed := make([]any, n)
 		for i := 0; i < n; i++ {
-			if nulls[i] {
+			if arr.IsNull(i) {
 				continue
 			}
 			switch v := arr.GetOneForMarshal(i).(type) {
@@ -356,16 +336,47 @@ func columnToArrowArray(s series.Series, alloc memory.Allocator) (goarrow.Array,
 }
 
 // buildNullMask creates a bool slice (true == null) from the Arrow array's
-// validity bitmap. Returns a zeroed slice when there are no nulls.
+// validity bitmap. Returns nil when there are no nulls, which chunk columns
+// treat as "no nulls" without spending n bytes on an all-false mask.
 func buildNullMask(arr goarrow.Array, n int) []bool {
 	if arr.NullN() == 0 {
-		return make([]bool, n)
+		return nil
 	}
 	nulls := make([]bool, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		nulls[i] = arr.IsNull(i)
 	}
 	return nulls
+}
+
+// cloneZeroingNulls copies an Arrow value buffer into a Go-owned slice and
+// zeroes the null slots, whose contents Arrow leaves undefined.
+func cloneZeroingNulls[T int64 | float64](values []T, nulls []bool) []T {
+	out := slices.Clone(values)
+	for i, null := range nulls {
+		if null {
+			out[i] = 0
+		}
+	}
+	return out
+}
+
+// sliceStringBuffer copies an Arrow string value buffer into one Go string and
+// slices every non-null value out of it: one allocation per column instead of
+// one per value, and no reference into the Arrow buffer, which is C-owned and
+// freed on Release for records imported over the C Data Interface (ADBC).
+// offsets are absolute positions in the array's buffer, as ValueOffsets
+// returns them, so sliced arrays rebase on offsets[0].
+func sliceStringBuffer[O int32 | int64](data []byte, offsets []O, nulls []bool) []string {
+	buf := string(data)
+	base := offsets[0]
+	vals := make([]string, len(offsets)-1)
+	for i := range vals {
+		if nulls == nil || !nulls[i] {
+			vals[i] = buf[offsets[i]-base : offsets[i+1]-base]
+		}
+	}
+	return vals
 }
 
 func timestampToTime(v int64, unit goarrow.TimeUnit) time.Time {
