@@ -425,7 +425,7 @@ func TestEvalNumericUnaryFamilies(t *testing.T) {
 		want [3]int64
 	}{
 		{"bitwise_count_ones", [3]int64{3, 64, 2}},
-		{"bitwise_count_zeros", [3]int64{60, 0, 62}},
+		{"bitwise_count_zeros", [3]int64{61, 0, 62}},
 		{"bitwise_leading_ones", [3]int64{0, 64, 0}},
 		{"bitwise_leading_zeros", [3]int64{60, 0, 61}},
 		{"bitwise_trailing_ones", [3]int64{2, 64, 0}},

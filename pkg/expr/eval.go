@@ -427,7 +427,7 @@ var dtUnaryOps = map[string]func(time.Time) int64{
 // int64. Any other operand, null included, is an "<op> expects int" error.
 var bitwiseUnaryOps = map[string]func(uint64) int{
 	"bitwise_count_ones":     bits.OnesCount64,
-	"bitwise_count_zeros":    func(u uint64) int { return bits.LeadingZeros64(u) + bits.TrailingZeros64(u) },
+	"bitwise_count_zeros":    func(u uint64) int { return 64 - bits.OnesCount64(u) },
 	"bitwise_leading_ones":   func(u uint64) int { return bits.LeadingZeros64(^u) },
 	"bitwise_leading_zeros":  bits.LeadingZeros64,
 	"bitwise_trailing_ones":  func(u uint64) int { return bits.TrailingZeros64(^u) },

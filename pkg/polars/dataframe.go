@@ -337,15 +337,21 @@ func (d *df) PartitionBy(columns ...string) ([]DataFrame, error) {
 	}
 	records := d.ToDicts()
 	groups := map[string][]int{}
+	var order []string // partitions are returned in order of first appearance
 	for i, rec := range records {
-		var key []byte
+		var buf []byte
 		for _, c := range columns {
-			key = fmt.Appendf(key, "|%v", rec[c])
+			buf = fmt.Appendf(buf, "|%v", rec[c])
 		}
-		groups[string(key)] = append(groups[string(key)], i)
+		key := string(buf)
+		if _, seen := groups[key]; !seen {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], i)
 	}
-	out := make([]DataFrame, 0, len(groups))
-	for _, idxs := range groups {
+	out := make([]DataFrame, 0, len(order))
+	for _, key := range order {
+		idxs := groups[key]
 		seriesOut := make([]series.Series, 0, len(d.value.Columns()))
 		for _, name := range d.value.Columns() {
 			s, _ := d.value.Series(name)

@@ -2170,12 +2170,12 @@ func (s seriesFacade) cumulative(mode string) Series {
 			sum += f
 			values[i] = sum
 		case "max":
-			if i == 0 || compareForSeriesOrder(f, running) > 0 {
+			if running == nil || compareForSeriesOrder(f, running) > 0 {
 				running = f
 			}
 			values[i] = running
 		case "min":
-			if i == 0 || compareForSeriesOrder(f, running) < 0 {
+			if running == nil || compareForSeriesOrder(f, running) < 0 {
 				running = f
 			}
 			values[i] = running

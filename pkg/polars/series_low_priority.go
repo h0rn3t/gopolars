@@ -166,7 +166,8 @@ func (s seriesFacade) ShrinkDType() (Series, error) {
 			allWholeInInt64 = false
 			break
 		}
-		if f != math.Trunc(f) || f > float64(math.MaxInt64) || f < float64(math.MinInt64) {
+		// float64(math.MaxInt64) rounds up to 2^63, the first value int64 cannot hold.
+		if f != math.Trunc(f) || f >= float64(math.MaxInt64) || f < float64(math.MinInt64) {
 			allWholeInInt64 = false
 			break
 		}
