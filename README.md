@@ -27,7 +27,7 @@ go get github.com/h0rn3t/gopolars@latest
 Or pin the latest release:
 
 ```bash
-go get github.com/h0rn3t/gopolars@v0.6.0
+go get github.com/h0rn3t/gopolars@v0.6.1
 ```
 
 Import the public API package:
@@ -43,10 +43,12 @@ fused filter-reduce path; see [Performance / SIMD Acceleration](#performance--si
 
 ## Current status
 
-Latest release: **[v0.6.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.6.0)**
-([changelog vs v0.5.0](https://github.com/h0rn3t/gopolars/compare/v0.5.0...v0.6.0)).
+Latest release: **[v0.6.1](https://github.com/h0rn3t/gopolars/releases/tag/v0.6.1)**
+([changelog vs v0.6.0](https://github.com/h0rn3t/gopolars/compare/v0.6.0...v0.6.1)).
 The public API is versioned with SemVer; while `< v1.0.0` it may still evolve between minor
-versions — see the [versioning policy](docs/versioning_policy.md). `v0.6.0` adds a typed column
+versions — see the [versioning policy](docs/versioning_policy.md). `v0.6.1` is a patch release
+and changes no public API: it speeds up `WriteParquet` for string columns and updates
+dependencies, closing two grpc advisories. `v0.6.0` added a typed column
 API and speeds up parquet IO; its one compatibility note is **narrowly breaking**: the `Series`
 interface gains five methods, which only affects code that implements `polars.Series` itself
 (e.g. a test double) — see the [v0.6.0 migration notes](docs/v0_6_migration.md). `v0.5.0`
@@ -62,6 +64,22 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 - ✅ Opt-in SQL over in-memory frames via embedded DuckDB (`-tags duckdb,duckdb_arrow`)
 - ✅ **75%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
 - ✅ **659 / 670** public Python Polars methods implemented, measured against **Polars 1.41.2** ([full parity matrix](#python-polars-vs-gopolars-function-matrix)) — 11 named gaps, listed below
+
+### What's new in v0.6.1
+
+Patch release — no public API change. Numbers are v0.6.0 → v0.6.1 for 200,000 rows on Intel Xeon
+Gold 6240R (linux/amd64), `benchstat` n=8, p=0.000; see
+[`docs/performance/parquet-io.md`](docs/performance/parquet-io.md).
+
+- **`WriteParquet` dictionary-encodes low-cardinality string columns itself** — arrow-go's encoder
+  allocated twice for every string value it hashed. The writer now builds one dictionary per row
+  group in Go and hands pqarrow a dictionary array; the files and their encodings are unchanged.
+  `WriteParquetProdShape`: 93.3 ms → 67.5 ms (−28%), 402k → 3.6k allocations, 52.1 → 40.9 MiB
+- **High-cardinality string columns skip the dictionary**, as numeric columns already did:
+  110.9 ms → 85.6 ms (−23%), 234k → 2.3k allocations, file −5.5%
+- **Dependencies** — arrow-go v18.8.0, arrow-adbc v1.12.0, parquet-go v0.32.0, grpc v1.84.0. The
+  grpc update fixes GO-2026-6348 and GO-2026-6061, which `govulncheck` reported on gopolars' call
+  paths in v0.6.0
 
 ### What's new in v0.6.0
 

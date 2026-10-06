@@ -60,3 +60,27 @@ happen inside arrow-go's dictionary encoder for byte arrays.
 
 The frame→Arrow conversion owned by gopolars and the encoder time owned by
 pqarrow are still split by `BenchmarkWriteParquetBreakdown`.
+
+## Write, v0.6.1: string columns
+
+v0.6.0 left string columns to arrow-go, and the ~2 allocations per string value
+noted above came from its `DictByteArrayEncoder.PutByteArray`, which boxes each
+value into an interface and captures it in its lookup closure. String-backed
+columns now go through the same sample. A low-cardinality column is
+dictionary-encoded in Go, one dictionary per row group, and handed to pqarrow as
+an Arrow dictionary array, which it writes from the indices: each column chunk
+still holds only the values its own rows use, data pages stay `RLE_DICTIONARY`
+and the file is the same size. A high-cardinality column skips the dictionary.
+
+Reference machine: Intel Xeon Gold 6240R (linux/amd64), Go 1.27.1, arrow-go
+v18.6.0, `benchstat` n=8, all p=0.000. The unique-strings rows replace the
+3-value `String` column with 200,000 distinct strings.
+
+| benchmark | before | after | delta |
+|---|---|---|---|
+| `WriteParquetProdShape`, time | 93.3 ms | 72.4 ms | −22% |
+| `WriteParquetProdShape`, memory | 52.1 MiB | 40.8 MiB | −22% |
+| `WriteParquetProdShape`, allocations | 402.3k | 3.6k | −99% |
+| unique strings, time | 110.9 ms | 90.8 ms | −18% |
+| unique strings, allocations | 233.8k | 2.3k | −99% |
+| unique strings, file size | 4.05 MiB | 3.83 MiB | −5.5% |
