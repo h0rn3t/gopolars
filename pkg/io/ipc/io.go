@@ -28,12 +28,18 @@ func init() {
 	gob.Register(time.Time{})
 }
 
-func Write(df frame.DataFrame, input WriteInput) error {
+func Write(df frame.DataFrame, input WriteInput) (err error) {
 	f, err := os.Create(input.Path)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
+	// A failed close can lose buffered data, so it is reported when nothing
+	// failed before it.
+	defer func() {
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+	}()
 	enc := gob.NewEncoder(f)
 	return enc.Encode(iarrow.ToTable(df))
 }

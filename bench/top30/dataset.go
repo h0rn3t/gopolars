@@ -104,5 +104,9 @@ func WriteArrowIPC(path string, ds dataset) error {
 	if err := writer.Write(rec); err != nil {
 		return fmt.Errorf("write arrow record: %w", err)
 	}
-	return nil
+	// Close writes the IPC footer; the deferred closes only cover early returns.
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("close arrow writer: %w", err)
+	}
+	return f.Close()
 }

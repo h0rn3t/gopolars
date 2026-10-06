@@ -85,7 +85,7 @@ func Read(input ReadInput) (frame.DataFrame, error) {
 // costs a few hundred write syscalls rather than one per row.
 const writeBlockSize = 1 << 16 // 64 KiB
 
-func Write(df frame.DataFrame, input WriteInput) error {
+func Write(df frame.DataFrame, input WriteInput) (err error) {
 	comma := ','
 	if input.Separator != 0 {
 		comma = input.Separator
@@ -100,7 +100,13 @@ func Write(df frame.DataFrame, input WriteInput) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
+	// A failed close can lose buffered data, so it is reported when nothing
+	// failed before it.
+	defer func() {
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+	}()
 
 	names := df.Columns()
 	// Resolve each column's typed backing once (not once per cell) and bind a

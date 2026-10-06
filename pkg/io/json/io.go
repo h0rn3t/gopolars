@@ -40,13 +40,19 @@ func Read(input ReadInput) (frame.DataFrame, error) {
 	return fromRows(rows, input.Schema, input.Columns)
 }
 
-func Write(df frame.DataFrame, input WriteInput) error {
+func Write(df frame.DataFrame, input WriteInput) (err error) {
 	rows := toRows(df)
 	f, err := os.Create(input.Path)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
+	// A failed close can lose buffered data, so it is reported when nothing
+	// failed before it.
+	defer func() {
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+	}()
 	if input.NDJSON {
 		w := bufio.NewWriter(f)
 		for _, row := range rows {
