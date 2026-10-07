@@ -27,7 +27,7 @@ go get github.com/h0rn3t/gopolars@latest
 Or pin the latest release:
 
 ```bash
-go get github.com/h0rn3t/gopolars@v0.8.0
+go get github.com/h0rn3t/gopolars@v0.9.0
 ```
 
 Import the public API package:
@@ -43,10 +43,13 @@ fused filter-reduce path; see [Performance / SIMD Acceleration](#performance--si
 
 ## Current status
 
-Latest release: **[v0.8.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.8.0)**
-([changelog vs v0.7.0](https://github.com/h0rn3t/gopolars/compare/v0.7.0...v0.8.0)).
+Latest release: **[v0.9.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.9.0)**
+([changelog vs v0.8.0](https://github.com/h0rn3t/gopolars/compare/v0.8.0...v0.9.0)).
 The public API is versioned with SemVer; while `< v1.0.0` it may still evolve between minor
-versions — see the [versioning policy](docs/versioning_policy.md). `v0.8.0` keeps Datetime
+versions — see the [versioning policy](docs/versioning_policy.md). `v0.9.0` fixes sort, concat
+and `is_in` results that were wrong without an error and speeds up group-by, sort and filters;
+two of its fixes are **breaking** (null placement in a descending sort, `Concat` dtype errors) —
+see the [v0.9.0 migration notes](docs/v0_9_migration.md). `v0.8.0` keeps Datetime
 values outside 1677–2262 intact on export and as keys; it changes no exported signature, but
 Datetime is now written as `timestamp[us]` instead of `timestamp[ns]`, which is **breaking** —
 see the [v0.8.0 migration notes](docs/v0_8_migration.md). `v0.7.0` fixed correctness defects
@@ -70,6 +73,32 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 - ✅ Opt-in SQL over in-memory frames via embedded DuckDB (`-tags duckdb,duckdb_arrow`)
 - ✅ **75%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
 - ✅ **659 / 670** public Python Polars methods implemented, measured against **Polars 1.41.2** ([full parity matrix](#python-polars-vs-gopolars-function-matrix)) — 11 named gaps, listed below
+
+### What's new in v0.9.0
+
+Minor release: fixes for results that were wrong without an error, faster group-by, sort and
+filter paths, and two aggregate constructors. No exported signature changed; two fixes are
+**breaking**, and the [migration notes](docs/v0_9_migration.md) say how to check calling code.
+
+- **Sort** orders Datetime, Duration and Boolean keys by value (a Datetime or Duration sort used
+  to leave rows in input order), keeps rows with equal keys in input order on every path, and
+  places nulls by `NullsLast` alone whatever the direction (**breaking**: a descending key used
+  to flip it). `LazyFrame.Sort` now honors `NullsLast`
+- **Datetime and Boolean ordering** is fixed in group-by `min`/`max`, `rank`, `Pivot` `min`/`max`
+  and the `Flags` sortedness flags, which treated every pair of such values as equal
+- **`Concat`** fails with an error naming the column when its dtype differs between frames
+  (**breaking**); it used to return zeros in place of the mismatched values
+- **`is_in`** accepts typed slices (`Lit([]int64{...})`, `[]string`, `[]time.Time`, …), which
+  matched no row before
+- **`GroupBy.Agg`** accepts the method form of aggregates (`Col("v").Sum()`, `Col("x").First()`,
+  …), and the package adds `First` and `Last`
+
+Speed-ups against v0.8.0 (100k rows, 8 cores, benchstat): group-by `Sum`+`First` 3.5 → 1.5 ms and
+`Last` of a Datetime 3.1 → 1.0 ms, now on the parallel path, with aggregate columns built without
+boxing (a 100k-group `Sum` makes 1.7k allocations instead of 101k); sort by a String key −57…69%,
+by `(Boolean, Datetime, String)` −82%, by a Boolean or nullable Int64 key −23…42%; an `is_in`
+filter 11–13 ms → about 1 ms; a filter whose predicate is null on some rows 7.1 → 2.4 ms, since it
+no longer falls back to row-wise evaluation.
 
 ### What's new in v0.8.0
 
