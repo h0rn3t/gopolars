@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 )
@@ -715,8 +716,33 @@ func (e Expr) IsFirstDistinct() Expr {
 	return Expr{kind: KindUnary, op: "is_first_distinct", target: &e}
 }
 
+// IsIn tests whether e is in values. A literal list of type []int64,
+// []float64, []string, []bool or []time.Time means the same as the []any
+// holding its elements.
 func (e Expr) IsIn(values Expr) Expr {
+	if values.kind == KindLit {
+		switch list := values.value.(type) {
+		case []int64:
+			values.value = anySlice(list)
+		case []float64:
+			values.value = anySlice(list)
+		case []string:
+			values.value = anySlice(list)
+		case []bool:
+			values.value = anySlice(list)
+		case []time.Time:
+			values.value = anySlice(list)
+		}
+	}
 	return bin("is_in", e, values)
+}
+
+func anySlice[T any](s []T) []any {
+	out := make([]any, len(s))
+	for i, v := range s {
+		out[i] = v
+	}
+	return out
 }
 
 func (e Expr) IsInfinite() Expr {

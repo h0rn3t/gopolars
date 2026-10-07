@@ -120,6 +120,14 @@ func supported(e expr.Expr) bool {
 			return e.Left() != nil && e.Right() != nil &&
 				supported(*e.Left()) && e.Right().Kind() == expr.KindLit
 		}
+		if e.Op() == "is_in" {
+			// Membership in a literal list; against a column it stays row-wise.
+			if e.Left() == nil || e.Right() == nil || e.Right().Kind() != expr.KindLit {
+				return false
+			}
+			_, isList := e.Right().Value().([]any)
+			return isList && supported(*e.Left())
+		}
 		if !batchBinOps[e.Op()] {
 			return false
 		}
@@ -152,33 +160,28 @@ func (p *Plan) Eval(cols map[string]*chunk.Column, height int) (*chunk.Column, e
 // EvalBool evaluates a predicate plan into a packed simd.Bitmap: bit i is set
 // iff the predicate is true and non-null at row i. One bit per row replaces the
 // old one-byte-per-row []bool mask, cutting the mask 8x and letting the
-// fused-reduce / compress kernels walk it a word at a time.
+// fused-reduce / compress kernels walk it a word at a time. A null predicate
+// value leaves its bit clear, which is how the row-wise Filter treats it.
 //
 // For the common predicate shapes — a numeric column compared to a literal,
-// the AND of such predicates, or a bare boolean column — the Bitmap is produced
-// directly by the simd compare kernels (CompareGTFloat64Bitmap /
-// CompareEQInt64Bitmap / BitmapAnd) with a null operand folded to a 0 bit, so no
-// intermediate []bool byte-mask is allocated. Any other shape falls back to the
-// general column evaluator and packs the resulting boolean chunk into a Bitmap.
-//
-// The returned nulls slice is non-nil only on the fallback path, where it
-// aliases the result chunk's validity buffer (read-only) so callers can detect a
-// null-valued predicate result. Supported predicates never actually produce one
-// (a comparison folds a null operand to false rather than null), so in practice
-// it is all-false; the direct path returns nil. Either way the Bitmap already
-// excludes null rows.
-func (p *Plan) EvalBool(cols map[string]*chunk.Column, height int) (mask simd.Bitmap, nulls []bool, err error) {
+// the AND of such predicates, a bare boolean column, or is_in against a
+// literal list — the Bitmap is produced directly by the simd compare kernels
+// (CompareGTFloat64Bitmap / CompareEQInt64Bitmap / BitmapAnd) with a null
+// operand folded to a 0 bit, so no intermediate []bool byte-mask is allocated.
+// Any other shape falls back to the general column evaluator and packs the
+// resulting boolean chunk into a Bitmap.
+func (p *Plan) EvalBool(cols map[string]*chunk.Column, height int) (simd.Bitmap, error) {
 	if bm, ok := evalBitmap(p.root, cols, height); ok {
-		return bm, nil, nil
+		return bm, nil
 	}
 	c, err := p.Eval(cols, height)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if c.DataType() != dtypes.Boolean {
-		return nil, nil, fmt.Errorf("predicate did not evaluate to bool")
+		return nil, fmt.Errorf("predicate did not evaluate to bool")
 	}
-	return packBoolColumn(c, height), c.Nulls(), nil
+	return packBoolColumn(c, height), nil
 }
 
 // evalBitmap tries to evaluate predicate e directly to a Bitmap without going
@@ -192,9 +195,8 @@ func evalBitmap(e expr.Expr, cols map[string]*chunk.Column, height int) (simd.Bi
 		if !found || c.DataType() != dtypes.Boolean {
 			return nil, false
 		}
-		// A nullable boolean used directly as a predicate has error semantics in
-		// the row-wise evaluator (a null is not a bool); defer to the fallback so
-		// that behavior is preserved exactly.
+		// A nullable boolean goes through the general evaluator, which packs
+		// its nulls as clear bits.
 		if hasNulls(c) {
 			return nil, false
 		}
@@ -203,6 +205,13 @@ func evalBitmap(e expr.Expr, cols map[string]*chunk.Column, height int) (simd.Bi
 		switch op := e.Op(); op {
 		case "gt", "ge", "lt", "le", "eq":
 			return cmpBitmap(op, e, cols, height)
+		case "is_in":
+			l, err := evalNode(*e.Left(), cols, height)
+			if err != nil || l.isLit {
+				return nil, false
+			}
+			mask, err := isInMask(l.col, e.Right().Value().([]any), height)
+			return mask, err == nil
 		case "and":
 			la, lok := evalBitmap(*e.Left(), cols, height)
 			if !lok {
@@ -350,6 +359,66 @@ func coalesceNode(op string, l, r vresult) (vresult, error) {
 	return vresult{col: out}, nil
 }
 
+// isInMask sets the bit of every row of c whose value is in list, mirroring
+// the row-wise is_in: a value matches an element of the same Go type that
+// equals it (a datetime, one denoting the same instant), and a null row
+// matches when list holds nil. The result is never null.
+func isInMask(c *chunk.Column, list []any, height int) (simd.Bitmap, error) {
+	mask := simd.BitmapNew(height)
+	nullsMatch := slices.Contains(list, nil)
+	nulls := c.Nulls()
+	switch c.DataType() {
+	case dtypes.Int64:
+		vals, _ := c.Int64s()
+		markMembers(mask, vals, nulls, nullsMatch, memberSet(list, identity[int64]), identity[int64])
+	case dtypes.Float64:
+		// A NaN element never matches, as NaN != NaN; ±0 are one map key, as -0 == 0.
+		vals, _ := c.Float64s()
+		markMembers(mask, vals, nulls, nullsMatch, memberSet(list, identity[float64]), identity[float64])
+	case dtypes.String, dtypes.Categorical, dtypes.Enum:
+		vals, _ := c.Strings()
+		markMembers(mask, vals, nulls, nullsMatch, memberSet(list, identity[string]), identity[string])
+	case dtypes.Boolean:
+		vals, _ := c.Bools()
+		markMembers(mask, vals, nulls, nullsMatch, memberSet(list, identity[bool]), identity[bool])
+	case dtypes.Datetime:
+		vals, _ := c.Times()
+		markMembers(mask, vals, nulls, nullsMatch, memberSet(list, chunk.TimeKeyOf), chunk.TimeKeyOf)
+	default:
+		return nil, fmt.Errorf("is_in: unsupported dtype %s", c.DataType())
+	}
+	return mask, nil
+}
+
+func identity[T any](v T) T { return v }
+
+// memberSet returns the keys of the list elements of type T.
+func memberSet[T any, K comparable](list []any, key func(T) K) map[K]struct{} {
+	set := make(map[K]struct{}, len(list))
+	for _, v := range list {
+		if x, ok := v.(T); ok {
+			set[key(x)] = struct{}{}
+		}
+	}
+	return set
+}
+
+// markMembers sets the bit of every row whose key is in set, and of every null
+// row when nullsMatch.
+func markMembers[T any, K comparable](mask simd.Bitmap, vals []T, nulls []bool, nullsMatch bool, set map[K]struct{}, key func(T) K) {
+	for i, v := range vals {
+		if nulls != nil && nulls[i] {
+			if nullsMatch {
+				simd.BitmapSet(mask, i)
+			}
+			continue
+		}
+		if _, ok := set[key(v)]; ok {
+			simd.BitmapSet(mask, i)
+		}
+	}
+}
+
 func evalBinNode(e expr.Expr, cols map[string]*chunk.Column, height int) (vresult, error) {
 	l, err := evalNode(*e.Left(), cols, height)
 	if err != nil {
@@ -363,6 +432,19 @@ func evalBinNode(e expr.Expr, cols map[string]*chunk.Column, height int) (vresul
 	switch op {
 	case "fill_null_expr", "fill_nan_expr":
 		return coalesceNode(op, l, r)
+	case "is_in":
+		if l.isLit {
+			return vresult{}, fmt.Errorf("is_in needs a column operand")
+		}
+		mask, err := isInMask(l.col, r.lit.([]any), height)
+		if err != nil {
+			return vresult{}, err
+		}
+		out := make([]bool, height)
+		for i := range out {
+			out[i] = simd.BitmapGet(mask, i)
+		}
+		return vresult{col: chunk.NewBool(out, nil)}, nil
 	case "add", "sub", "mul", "div":
 		return arithNode(op, l, r, height)
 	case "gt", "ge", "lt", "le":

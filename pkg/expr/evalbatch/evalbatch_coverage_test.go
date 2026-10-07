@@ -184,7 +184,7 @@ func TestBatchEvalErrors(t *testing.T) {
 	if !ok {
 		t.Fatal("Compile(col a) not supported")
 	}
-	if _, _, err := plan.EvalBool(cols, height); err == nil {
+	if _, err := plan.EvalBool(cols, height); err == nil {
 		t.Error("EvalBool on int column: expected non-bool error")
 	}
 }
@@ -226,7 +226,7 @@ func TestEvalBitmapShapes(t *testing.T) {
 			if !ok {
 				t.Fatalf("Compile(%s) not supported", tc.name)
 			}
-			mask, _, err := plan.EvalBool(cols, height)
+			mask, err := plan.EvalBool(cols, height)
 			if err != nil {
 				t.Fatalf("EvalBool: %v", err)
 			}

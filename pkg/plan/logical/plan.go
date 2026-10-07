@@ -54,6 +54,7 @@ type Node struct {
 	IntValue   int
 	Strings    []string
 	Descending []bool
+	NullsLast  bool // NodeSort: nulls after the values of every key
 	Join       *JoinSpec
 	Windows    []WindowSpec
 	Prefix     string

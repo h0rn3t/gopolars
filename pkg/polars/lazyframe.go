@@ -93,6 +93,7 @@ func (l *lf) Sort(input SortInput) LazyFrame {
 		Type:       logical.NodeSort,
 		Columns:    input.By,
 		Descending: input.Descending,
+		NullsLast:  input.NullsLast,
 	})
 }
 

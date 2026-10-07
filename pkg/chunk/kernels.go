@@ -367,17 +367,18 @@ func float64Key(v float64) uint64 {
 	return math.Float64bits(v)
 }
 
-// timeKey is a group or join key for an instant: Unix seconds and the
-// nanosecond within the second. Unlike UnixNano, which wraps outside
+// TimeKey is a comparable group, join or set key for an instant: Unix seconds
+// and the nanosecond within the second. Unlike UnixNano, which wraps outside
 // 1677-09-21 … 2262-04-11, it is exact for every time.Time, and like UnixNano
 // it ignores the location, so one instant in two zones is one key.
-type timeKey struct {
+type TimeKey struct {
 	sec  int64
 	nsec int32
 }
 
-func timeKeyOf(t time.Time) timeKey {
-	return timeKey{sec: t.Unix(), nsec: int32(t.Nanosecond())}
+// TimeKeyOf returns the key of the instant t.
+func TimeKeyOf(t time.Time) TimeKey {
+	return TimeKey{sec: t.Unix(), nsec: int32(t.Nanosecond())}
 }
 
 // Instants strictly between the Unix seconds minPackedSec and maxPackedSec
@@ -532,13 +533,13 @@ func firstRowsSingle(c *Column, n int) (firstRow []int, ok bool) {
 			}
 		}
 	case dtypes.Datetime:
-		m := make(map[timeKey]struct{})
+		m := make(map[TimeKey]struct{})
 		for row := range n {
 			if nulls != nil && nulls[row] {
 				assignNull(row)
 				continue
 			}
-			v := timeKeyOf(c.tim[row])
+			v := TimeKeyOf(c.tim[row])
 			if _, seen := m[v]; !seen {
 				m[v] = struct{}{}
 				firstRow = append(firstRow, row)
@@ -635,13 +636,13 @@ func groupIDsSingle(c *Column, n int) (ids []int, firstRow []int, ok bool) {
 			ids[row] = g
 		}
 	case dtypes.Datetime:
-		m := make(map[timeKey]int)
+		m := make(map[TimeKey]int)
 		for row := range n {
 			if nulls != nil && nulls[row] {
 				ids[row] = assignNull(row)
 				continue
 			}
-			v := timeKeyOf(c.tim[row])
+			v := TimeKeyOf(c.tim[row])
 			g, seen := m[v]
 			if !seen {
 				g = next
@@ -693,7 +694,7 @@ func appendRowKey(dst []byte, c *Column, row int) []byte {
 		}
 		return append(dst, 4, 0)
 	case dtypes.Datetime:
-		k := timeKeyOf(c.tim[row])
+		k := TimeKeyOf(c.tim[row])
 		dst = appendUint64(append(dst, 5), uint64(k.sec))
 		return binary.LittleEndian.AppendUint32(dst, uint32(k.nsec))
 	default:

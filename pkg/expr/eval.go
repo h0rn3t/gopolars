@@ -866,10 +866,18 @@ func EvalBin(op string, left any, right any) (any, error) {
 		}
 		return math.Abs(lf-rf) <= 1e-9, nil
 	case "is_in":
-		if list, ok := right.([]any); ok {
-			return slices.Contains(list, left), nil
+		list, ok := right.([]any)
+		if !ok {
+			return left == right, nil
 		}
-		return left == right, nil
+		// A datetime matches the same instant in any zone.
+		if t, ok := left.(time.Time); ok {
+			return slices.ContainsFunc(list, func(v any) bool {
+				u, ok := v.(time.Time)
+				return ok && t.Equal(u)
+			}), nil
+		}
+		return slices.Contains(list, left), nil
 	case "index_of":
 		if list, ok := left.([]any); ok {
 			return int64(slices.Index(list, right)), nil

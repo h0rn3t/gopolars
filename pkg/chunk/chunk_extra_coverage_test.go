@@ -2,6 +2,8 @@ package chunk
 
 import (
 	"testing"
+
+	"github.com/h0rn3t/gopolars/pkg/dtypes"
 )
 
 // TestColumnNulls covers the Nulls accessor for a column with and without a
@@ -30,13 +32,13 @@ func TestConcatColumns(t *testing.T) {
 	t.Parallel()
 
 	// Empty input -> a column of length 0.
-	if got := ConcatColumns(nil); got.Len() != 0 {
+	if got := ConcatColumns(nil, dtypes.Int64); got.Len() != 0 {
 		t.Fatalf("ConcatColumns(nil) len = %d, want 0", got.Len())
 	}
 
 	a := NewInt64([]int64{1, 2}, []bool{false, true})
 	b := NewInt64([]int64{3, 4}, nil)
-	merged := ConcatColumns([]*Column{a, b})
+	merged := ConcatColumns([]*Column{a, b}, dtypes.Int64)
 	if merged.Len() != 4 {
 		t.Fatalf("merged len = %d, want 4", merged.Len())
 	}
@@ -52,7 +54,7 @@ func TestConcatColumns(t *testing.T) {
 	// Float path.
 	fa := NewFloat64([]float64{1.5}, nil)
 	fb := NewFloat64([]float64{2.5, 3.5}, nil)
-	fmerged := ConcatColumns([]*Column{fa, fb})
+	fmerged := ConcatColumns([]*Column{fa, fb}, dtypes.Float64)
 	fvals, ok := fmerged.Float64s()
 	if !ok || len(fvals) != 3 || fvals[2] != 3.5 {
 		t.Fatalf("float merged = %v ok=%v", fvals, ok)

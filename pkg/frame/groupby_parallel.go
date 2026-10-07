@@ -19,8 +19,9 @@ import (
 const parallelGroupByThreshold = parallelFilterThreshold
 
 // aggKind enumerates the aggregates the parallel path folds as an associative
-// running reduction over a typed column. Anything else (e.g. n_unique) forces
-// the sequential bucket path.
+// running reduction over a typed column, plus first and last, which are read
+// from a group's first or last row. Anything else (e.g. n_unique) forces the
+// sequential bucket path.
 type aggKind int
 
 const (
@@ -29,11 +30,13 @@ const (
 	aggMean
 	aggMin
 	aggMax
+	aggFirst
+	aggLast
 )
 
 // aggSpec is a resolved aggregate for the parallel path: its kind, output name
 // and dtype, and the typed backing of its target column (nil for count, which
-// reads no column).
+// reads no column). first and last gather col, a column of any dtype.
 type aggSpec struct {
 	kind     aggKind
 	name     string
@@ -42,12 +45,14 @@ type aggSpec struct {
 	f64s     []float64
 	i64s     []int64
 	nulls    []bool
+	col      *chunk.Column
 }
 
 // acc is the running accumulator for one group under one aggregate. Which fields
 // are live depends on the kind and column type; finalizeAgg reads only the
 // meaningful one. cnt is the contributing-value count (sum/mean/min/max) or the
 // group row count (count, which — like the sequential path — includes nulls).
+// For last, ival is the group's last row so far.
 type acc struct {
 	cnt  int64
 	fval float64
@@ -55,10 +60,18 @@ type acc struct {
 }
 
 // foldAgg folds the value at row into a, matching the sequential typed semantics
-// exactly: count tallies every row; sum/mean/min/max skip nulls and NaN.
+// exactly: count tallies every row; sum/mean/min/max skip nulls and NaN; last
+// keeps the row, null or not, since rows arrive in ascending order.
 func foldAgg(spec *aggSpec, a *acc, row int) {
-	if spec.kind == aggCount {
+	switch spec.kind {
+	case aggCount:
 		a.cnt++
+		return
+	case aggFirst:
+		return // read from the merged first rows
+	case aggLast:
+		a.ival = int64(row)
+		a.cnt = 1
 		return
 	}
 	if spec.nulls != nil && spec.nulls[row] {
@@ -101,6 +114,10 @@ func mergeAgg(kind aggKind, colFloat bool, dst *acc, src acc) {
 		dst.cnt += src.cnt
 		dst.fval += src.fval
 		dst.ival += src.ival
+	case aggLast:
+		if src.cnt > 0 && (dst.cnt == 0 || src.ival > dst.ival) {
+			dst.ival, dst.cnt = src.ival, 1
+		}
 	case aggMin, aggMax:
 		isMin := kind == aggMin
 		if src.cnt > 0 {
@@ -118,45 +135,53 @@ func mergeAgg(kind aggKind, colFloat bool, dst *acc, src acc) {
 	}
 }
 
-// finalizeAgg produces the boxed output value for a group, matching the
-// sequential evalAgg: an empty contributing set yields nil (a null result) for
-// sum/mean/min/max; count always yields its int64 row count.
-func finalizeAgg(spec *aggSpec, a acc) any {
-	switch spec.kind {
-	case aggCount:
-		return a.cnt
-	case aggSum:
-		if a.cnt == 0 {
-			return nil
+// finalizeAgg builds the output column of a sum, mean, min, max or count
+// aggregate for the groups in order, matching the sequential evalAgg: a group
+// with no contributing value is null in sum/mean/min/max; count is its row
+// count.
+func finalizeAgg(spec *aggSpec, accs []acc, order []int) *chunk.Column {
+	var nulls []bool
+	setNull := func(i int) {
+		if nulls == nil {
+			nulls = make([]bool, len(order))
 		}
-		if spec.colFloat {
-			return a.fval
-		}
-		return a.ival
-	case aggMean:
-		if a.cnt == 0 {
-			return nil
-		}
-		if spec.colFloat {
-			return a.fval / float64(a.cnt)
-		}
-		return float64(a.ival) / float64(a.cnt)
-	case aggMin, aggMax:
-		if a.cnt == 0 {
-			return nil
-		}
-		if spec.colFloat {
-			return a.fval
-		}
-		return a.ival
+		nulls[i] = true
 	}
-	return nil
+	if spec.dtype == dtypes.Int64 {
+		vals := make([]int64, len(order))
+		for i, gi := range order {
+			switch a := accs[gi]; {
+			case spec.kind == aggCount:
+				vals[i] = a.cnt
+			case a.cnt == 0:
+				setNull(i)
+			default:
+				vals[i] = a.ival
+			}
+		}
+		return chunk.NewInt64(vals, nulls)
+	}
+	vals := make([]float64, len(order))
+	for i, gi := range order {
+		switch a := accs[gi]; {
+		case a.cnt == 0:
+			setNull(i)
+		case spec.kind == aggMean && spec.colFloat:
+			vals[i] = a.fval / float64(a.cnt)
+		case spec.kind == aggMean:
+			vals[i] = float64(a.ival) / float64(a.cnt)
+		default:
+			vals[i] = a.fval
+		}
+	}
+	return chunk.NewFloat64(vals, nulls)
 }
 
 // resolveParallelAggs maps the aggregate expressions to typed specs. ok is false
-// (the caller falls back to the sequential path) for any aggregate that is not an
-// associative running reduction over a typed numeric column: n_unique, a
-// non-column target, or a non-numeric target column.
+// (the caller falls back to the sequential path) for any aggregate that is
+// neither first/last of a column nor an associative running reduction over a
+// typed numeric column: n_unique, a non-column target, or a non-numeric target
+// column.
 func (g GroupBy) resolveParallelAggs(exprs []expr.Expr) ([]aggSpec, bool) {
 	specs := make([]aggSpec, len(exprs))
 	for i, e := range exprs {
@@ -168,6 +193,21 @@ func (g GroupBy) resolveParallelAggs(exprs []expr.Expr) ([]aggSpec, bool) {
 		case "count":
 			spec.kind = aggCount
 			spec.dtype = dtypes.Int64
+		case "first", "last":
+			target := e.Target()
+			if target == nil || target.Kind() != expr.KindCol {
+				return nil, false
+			}
+			s, ok := g.df.cols[target.ColName()]
+			if !ok || s.Column() == nil {
+				return nil, false
+			}
+			spec.kind = aggFirst
+			if e.Op() == "last" {
+				spec.kind = aggLast
+			}
+			spec.col = s.Column()
+			spec.dtype = spec.col.DataType()
 		case "sum", "mean", "min", "max":
 			target := e.Target()
 			if target == nil || target.Kind() != expr.KindCol {
@@ -453,7 +493,8 @@ func parScan[K comparable](ranges [][2]int, build func(start, end int) *shardTab
 
 // buildAggOutput orders groups by ascending first-seen row (matching the
 // sequential encounter order), materializes the key columns via a typed Gather of
-// the representative rows, and finalizes each aggregate.
+// the representative rows, and builds each aggregate column: first and last by
+// gathering the target at each group's first or last row.
 func (g GroupBy) buildAggOutput(keyColumns []*chunk.Column, specs []aggSpec, m mergedGroups) (DataFrame, error) {
 	ngroups := len(m.firstRow)
 	order := make([]int, ngroups)
@@ -472,15 +513,21 @@ func (g GroupBy) buildAggOutput(keyColumns []*chunk.Column, specs []aggSpec, m m
 		out = append(out, series.FromColumn(key, keyColumns[j].Gather(reps)))
 	}
 	for a := range specs {
-		vals := make([]any, ngroups)
-		for i, gi := range order {
-			vals[i] = finalizeAgg(&specs[a], m.accs[a][gi])
+		spec := &specs[a]
+		var col *chunk.Column
+		switch spec.kind {
+		case aggFirst:
+			col = spec.col.Gather(reps)
+		case aggLast:
+			lastRows := make([]int, ngroups)
+			for i, gi := range order {
+				lastRows[i] = int(m.accs[a][gi].ival)
+			}
+			col = spec.col.Gather(lastRows)
+		default:
+			col = finalizeAgg(spec, m.accs[a], order)
 		}
-		s, err := series.New(specs[a].name, specs[a].dtype, vals)
-		if err != nil {
-			return DataFrame{}, err
-		}
-		out = append(out, s)
+		out = append(out, series.FromColumn(spec.name, col))
 	}
 	return New(NewInput{Series: out})
 }

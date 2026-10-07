@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"runtime"
-	"slices"
 	"sync"
 
 	"github.com/h0rn3t/gopolars/pkg/chunk"
@@ -57,10 +56,8 @@ func (d DataFrame) chunkColumns() map[string]*chunk.Column {
 // filterBatch attempts to evaluate predicate as a single vectorized bool mask
 // and gather the surviving rows. The bool result reports whether the batch path
 // handled the predicate; when false the caller must fall back to row-wise eval.
-//
-// It deliberately declines (falls back) whenever the predicate result carries a
-// null, because the row-wise Filter treats a null predicate as a hard error and
-// the fallback reproduces that behavior exactly.
+// A row where the predicate is null is dropped, as the row-wise Filter does: the
+// predicate Bitmap sets only true, non-null rows.
 //
 // Survivors are gathered directly from the predicate Bitmap (no CompressIndices
 // []int keep list on the hot path).
@@ -100,13 +97,9 @@ func (d DataFrame) filterBatch(predicate expr.Expr) (DataFrame, bool, error) {
 // wave plus per-column gather waves.
 func (d DataFrame) filterFused(plan *evalbatch.Plan, cols map[string]*chunk.Column, workers int) (DataFrame, bool, error) {
 	return d.gatherFused(workers, func(start, end int) (simd.Bitmap, bool) {
-		mask, nulls, err := plan.EvalBool(columnViews(cols, start, end), end-start)
+		mask, err := plan.EvalBool(columnViews(cols, start, end), end-start)
 		if err != nil {
 			debugFallback("filter", err)
-			return nil, false
-		}
-		if slices.Contains(nulls, true) {
-			debugFallback("filter", "null predicate result")
 			return nil, false
 		}
 		return mask, true
@@ -208,21 +201,16 @@ func (d DataFrame) takeColumnsBitmap(mask simd.Bitmap) []series.Series {
 }
 
 // filterMask evaluates plan over cols and returns the predicate Bitmap.
-// ok is false when the caller must fall back to the row-wise evaluator: an
-// evaluation error, or a null predicate result (the row-wise Filter drops
-// null-predicate rows, matching Polars). At or above parallelFilterThreshold
+// ok is false when the caller must fall back to the row-wise evaluator after
+// an evaluation error. At or above parallelFilterThreshold
 // the predicate is evaluated across GOMAXPROCS workers over disjoint contiguous
 // row ranges; bits are stitched into one Bitmap identical to sequential eval.
 func (d DataFrame) filterMask(plan *evalbatch.Plan, cols map[string]*chunk.Column) (mask simd.Bitmap, ok bool) {
 	workers := runtime.GOMAXPROCS(0)
 	if d.height < parallelFilterThreshold || workers <= 1 {
-		mask, nulls, err := plan.EvalBool(cols, d.height)
+		mask, err := plan.EvalBool(cols, d.height)
 		if err != nil {
 			debugFallback("filter", err)
-			return nil, false
-		}
-		if slices.Contains(nulls, true) {
-			debugFallback("filter", "null predicate result")
 			return nil, false
 		}
 		return mask, true
@@ -236,22 +224,14 @@ func (d DataFrame) filterMask(plan *evalbatch.Plan, cols map[string]*chunk.Colum
 func filterMaskParallel(plan *evalbatch.Plan, cols map[string]*chunk.Column, height, workers int) (simd.Bitmap, bool) {
 	ranges := partitionRangesAligned(height, workers)
 	global := simd.BitmapNew(height)
-	type rangeResult struct {
-		declined bool
-		err      error
-	}
-	results := make([]rangeResult, len(ranges))
+	errs := make([]error, len(ranges))
 	var wg sync.WaitGroup
 	for i, rg := range ranges {
 		start, end := rg[0], rg[1]
 		wg.Go(func() {
-			mask, nulls, err := plan.EvalBool(columnViews(cols, start, end), end-start)
+			mask, err := plan.EvalBool(columnViews(cols, start, end), end-start)
 			if err != nil {
-				results[i].err = err
-				return
-			}
-			if slices.Contains(nulls, true) {
-				results[i].declined = true
+				errs[i] = err
 				return
 			}
 			copy(global[start>>6:], mask)
@@ -259,13 +239,9 @@ func filterMaskParallel(plan *evalbatch.Plan, cols map[string]*chunk.Column, hei
 	}
 	wg.Wait()
 
-	for i := range results {
-		if results[i].err != nil {
-			debugFallback("filter", results[i].err)
-			return nil, false
-		}
-		if results[i].declined {
-			debugFallback("filter", "null predicate result")
+	for _, err := range errs {
+		if err != nil {
+			debugFallback("filter", err)
 			return nil, false
 		}
 	}
@@ -356,7 +332,8 @@ func (r *colReduction) merge(p colReduction) {
 // filtered frame or building a surviving-index slice. This is the fused
 // filter+reduce path. It returns ok=false (the caller must
 // materialize-then-aggregate) when op, the predicate, or any column dtype is
-// unsupported, or the predicate yields a null. Supported ops are sum, min, max,
+// unsupported; rows where the predicate is null are excluded, as d.Filter
+// drops them. Supported ops are sum, min, max,
 // count, and mean over Float64 columns; the result matches
 // exec.aggregateFrame applied to d.Filter(predicate).
 func (d DataFrame) FilterAggregate(predicate expr.Expr, op string, args []string) (DataFrame, bool, error) {
@@ -501,7 +478,7 @@ func (d DataFrame) FilterAggregateDirect(predicate expr.Expr, op string, cols []
 		reductions, ok = d.fusedReduce(plan, chunks, names)
 	}
 	if !ok {
-		return nil, fmt.Errorf("frame: FilterAggregateDirect: null predicate result or evaluation error")
+		return nil, fmt.Errorf("frame: FilterAggregateDirect: predicate evaluation failed")
 	}
 	out := make(map[string]float64, len(names))
 	for j, name := range names {
@@ -512,20 +489,16 @@ func (d DataFrame) FilterAggregateDirect(predicate expr.Expr, op string, cols []
 
 // fusedReduce evaluates plan over cols and returns the masked reduction of each
 // column in names (one entry per name, in order). ok is false when the caller
-// must fall back (predicate eval error or a null predicate result). Above
+// must fall back after a predicate evaluation error. Above
 // parallelFilterThreshold the work is split across GOMAXPROCS workers over
 // disjoint contiguous row ranges and the partials are merged in range order —
 // so the predicate scan, the dominant cost at low selectivity, is parallel.
 func (d DataFrame) fusedReduce(plan *evalbatch.Plan, cols map[string]*chunk.Column, names []string) ([]colReduction, bool) {
 	workers := runtime.GOMAXPROCS(0)
 	if d.height < parallelFilterThreshold || workers <= 1 {
-		mask, nulls, err := plan.EvalBool(cols, d.height)
+		mask, err := plan.EvalBool(cols, d.height)
 		if err != nil {
 			debugFallback("filter_agg", err)
-			return nil, false
-		}
-		if slices.Contains(nulls, true) {
-			debugFallback("filter_agg", "null predicate result")
 			return nil, false
 		}
 		// Selectivity gate: with no survivors every column reduces to the empty
@@ -552,9 +525,8 @@ func (d DataFrame) fusedReduce(plan *evalbatch.Plan, cols map[string]*chunk.Colu
 func (d DataFrame) fusedReduceParallel(plan *evalbatch.Plan, cols map[string]*chunk.Column, names []string, workers int) ([]colReduction, bool) {
 	ranges := partitionRanges(d.height, workers)
 	type winResult struct {
-		red      []colReduction
-		declined bool
-		err      error
+		red []colReduction
+		err error
 	}
 	results := make([]winResult, len(ranges))
 	var wg sync.WaitGroup
@@ -562,13 +534,9 @@ func (d DataFrame) fusedReduceParallel(plan *evalbatch.Plan, cols map[string]*ch
 		start, end := rg[0], rg[1]
 		wg.Go(func() {
 			view := columnViews(cols, start, end)
-			mask, nulls, err := plan.EvalBool(view, end-start)
+			mask, err := plan.EvalBool(view, end-start)
 			if err != nil {
 				results[i].err = err
-				return
-			}
-			if slices.Contains(nulls, true) {
-				results[i].declined = true
 				return
 			}
 			red := make([]colReduction, len(names))
@@ -587,10 +555,6 @@ func (d DataFrame) fusedReduceParallel(plan *evalbatch.Plan, cols map[string]*ch
 	for i := range results {
 		if results[i].err != nil {
 			debugFallback("filter_agg", results[i].err)
-			return nil, false
-		}
-		if results[i].declined {
-			debugFallback("filter_agg", "null predicate result")
 			return nil, false
 		}
 		for j := range reductions {

@@ -64,6 +64,18 @@ func NUnique(v Expr) Expr {
 	return e.NUnique(v)
 }
 
+// First aggregates each group to the value of v at its first row, which may be
+// null (pl.col(...).first()).
+func First(v Expr) Expr {
+	return e.First(v)
+}
+
+// Last aggregates each group to the value of v at its last row, which may be
+// null (pl.col(...).last()).
+func Last(v Expr) Expr {
+	return e.Last(v)
+}
+
 func When(cond Expr, thenExpr Expr, otherwise Expr) Expr {
 	return e.When(cond, thenExpr, otherwise)
 }

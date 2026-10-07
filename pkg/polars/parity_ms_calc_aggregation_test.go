@@ -6,20 +6,18 @@ package polars
 // (col.fill_nan(0) * 1000).sum() / 1000 pattern from profiling.py:218.
 
 import (
+	"slices"
 	"testing"
 )
 
 // mscStatsFrame builds an hourly-quantity fixture and reproduces the volume_invariants.py:26
 // aggregation: group_by(["z_id","kyiv_date"]).agg(max, sum, first(volume_per_day)).
-//
-// gopolars GroupBy.Agg has no `first` aggregate; volume_per_day is invariant within a group, so
-// Max yields the same per-group value (see TestParityAggregationFirstAggUnsupported for the gap).
 func mscStatsFrame(t *testing.T, df DataFrame) DataFrame {
 	t.Helper()
 	stats, err := df.GroupBy("z_id", "kyiv_date").Agg(
 		Max(Col("z_quantity")).Alias("max_z_quantity"),
 		Sum(Col("z_quantity")).Alias("sum_z_quantity"),
-		Max(Col("volume_per_day")).Alias("volume_per_day"),
+		Col("volume_per_day").First().Alias("volume_per_day"),
 	)
 	if err != nil {
 		t.Fatalf("group_by.agg: %v", err)
@@ -170,15 +168,18 @@ func TestParityPrecisionScaledSum(t *testing.T) {
 	}
 }
 
-// TestParityAggregationFirstAggUnsupported documents the gap: gopolars GroupBy.Agg supports
-// count/sum/mean/min/max/n_unique but not `first` (volume_invariants.py:29 uses .first()).
-func TestParityAggregationFirstAggUnsupported(t *testing.T) {
+// TestParityAggregationFirstAgg pins the `first` aggregate volume_invariants.py:29 uses:
+// pl.col("v").first() keeps each group's value at its first row.
+func TestParityAggregationFirstAgg(t *testing.T) {
 	df := mscFrame(t,
 		mscCol("z_id", int64(1), int64(1)),
 		mscCol("v", 7.0, 9.0),
 	)
-	_, err := df.GroupBy("z_id").Agg(Col("v").First().Alias("first_v"))
-	if err == nil {
-		t.Errorf("GroupBy.Agg(First) unexpectedly succeeded; gopolars now supports a `first` aggregate — replace the Max() proxy in mscStatsFrame")
+	got, err := df.GroupBy("z_id").Agg(Col("v").First().Alias("first_v"))
+	if err != nil {
+		t.Fatalf("GroupBy.Agg(v.First()) error = %v", err)
+	}
+	if vals := frameColumnValues(t, got, "first_v"); !slices.Equal(vals, []any{7.0}) {
+		t.Errorf("GroupBy.Agg(v.First()) = %v, want [7]", vals)
 	}
 }

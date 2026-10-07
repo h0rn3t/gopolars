@@ -19,6 +19,21 @@ func Median(e Expr) Expr { return Expr{kind: KindAgg, op: "median", target: &e} 
 func First(e Expr) Expr  { return Expr{kind: KindAgg, op: "first", target: &e} }
 func Last(e Expr) Expr   { return Expr{kind: KindAgg, op: "last", target: &e} }
 
+// AsAgg returns the aggregate the function form builds when e is one written
+// as a method, such as Col("v").Sum() for Sum(Col("v")), keeping e's alias;
+// any other e is returned unchanged. Count is left out: Col("v").Count() counts
+// non-null values in Polars, while the count aggregate counts rows.
+func AsAgg(e Expr) Expr {
+	if e.kind != KindUnary || e.target == nil {
+		return e
+	}
+	switch e.op {
+	case "sum", "mean", "min", "max", "first", "last", "n_unique", "median", "std", "var":
+		e.kind = KindAgg
+	}
+	return e
+}
+
 // CountDistinct counts distinct non-null values (COUNT(DISTINCT col)).
 func CountDistinct(e Expr) Expr { return Expr{kind: KindAgg, op: "count_distinct", target: &e} }
 

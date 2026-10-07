@@ -107,7 +107,7 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 		case logical.NodeWithCols:
 			return current.WithColumns(n.Exprs...)
 		case logical.NodeSort:
-			return current.Sort(frame.SortInput{By: n.Columns, Descending: n.Descending})
+			return current.Sort(frame.SortInput{By: n.Columns, Descending: n.Descending, NullsLast: n.NullsLast})
 		case logical.NodeLimit:
 			return current.Limit(n.IntValue), nil
 		case logical.NodeTail:

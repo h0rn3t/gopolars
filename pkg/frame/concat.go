@@ -25,7 +25,23 @@ func ConcatVertical(base DataFrame, others ...DataFrame) (DataFrame, error) {
 			}
 			chunks[i] = s.Column()
 		}
-		out = append(out, series.FromColumn(field.Name, chunk.ConcatColumns(chunks)))
+		// The output dtype is that of the first part not entirely null; a part
+		// that is entirely null, as an Arrow null-typed column imports, fits any
+		// dtype and contributes only nulls.
+		dtype, typed := chunks[0].DataType(), -1
+		for i, c := range chunks {
+			if c.NullCount() == c.Len() {
+				continue
+			}
+			if typed < 0 {
+				dtype, typed = c.DataType(), i
+				continue
+			}
+			if c.DataType() != dtype {
+				return DataFrame{}, fmt.Errorf("concat vertical: column %q has dtype %s in frame %d and %s in frame %d", field.Name, dtype, typed, c.DataType(), i)
+			}
+		}
+		out = append(out, series.FromColumn(field.Name, chunk.ConcatColumns(chunks, dtype)))
 	}
 	return New(NewInput{Series: out})
 }

@@ -120,11 +120,8 @@ func valuesEqual(a, b any) bool {
 	}
 }
 
-// Sinks keep EvalBool's results live so the compiler cannot drop the call.
-var (
-	benchMaskSink simd.Bitmap
-	benchNullSink []bool
-)
+// benchMaskSink keeps EvalBool's result live so the compiler cannot drop the call.
+var benchMaskSink simd.Bitmap
 
 // BenchmarkEvalBool measures evaluating a float64 > literal predicate to a
 // Bitmap over 1M rows. -benchmem confirms the direct bitmap path allocates a
@@ -143,12 +140,11 @@ func BenchmarkEvalBool(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		mask, nulls, err := plan.EvalBool(cols, n)
+		mask, err := plan.EvalBool(cols, n)
 		if err != nil {
 			b.Fatalf("EvalBool: %v", err)
 		}
 		benchMaskSink = mask
-		benchNullSink = nulls
 	}
 }
 
@@ -169,7 +165,7 @@ func TestEvalBoolNoByteMaskAllocs(t *testing.T) {
 		t.Fatal("compile failed")
 	}
 	allocs := testing.AllocsPerRun(50, func() {
-		mask, _, err := plan.EvalBool(cols, n)
+		mask, err := plan.EvalBool(cols, n)
 		if err != nil {
 			t.Fatalf("EvalBool: %v", err)
 		}
@@ -202,19 +198,16 @@ func TestEvalBoolMaskAndValidity(t *testing.T) {
 	if !ok {
 		t.Fatal("compile failed")
 	}
-	mask, nulls, err := plan.EvalBool(cols, height)
+	mask, err := plan.EvalBool(cols, height)
 	if err != nil {
 		t.Fatalf("EvalBool: %v", err)
 	}
 	// a = {1,2,3,4,null} > 2 -> compare with null operand yields false (not null).
-	// The direct bitmap path folds the null row to a 0 bit and returns nil nulls.
+	// The direct bitmap path folds the null row to a 0 bit.
 	want := []bool{false, false, true, true, false}
 	for i := range height {
 		if simd.BitmapGet(mask, i) != want[i] {
 			t.Fatalf("row %d: mask=%v want %v", i, simd.BitmapGet(mask, i), want[i])
-		}
-		if nulls != nil && nulls[i] {
-			t.Fatalf("row %d: unexpected null", i)
 		}
 	}
 }

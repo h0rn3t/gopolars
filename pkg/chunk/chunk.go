@@ -591,21 +591,30 @@ func (c *Column) Clone() *Column {
 	return out
 }
 
-// ConcatColumns appends multiple same-dtype columns into one without per-element
-// boxing. Columns must all share the same dtype. Returns an empty column when
-// cols is empty.
-func ConcatColumns(cols []*Column) *Column {
+// ConcatColumns appends multiple columns into one dtype column without
+// per-element boxing. A column of another dtype must be entirely null and
+// contributes only null rows. Returns an empty column when cols is empty.
+func ConcatColumns(cols []*Column, dtype dtypes.DataType) *Column {
 	if len(cols) == 0 {
 		return &Column{nullCount: unknownNullCount}
 	}
 	total := 0
+	needNulls := false
 	for _, c := range cols {
 		total += c.n
+		needNulls = needNulls || c.NullCount() != 0
 	}
-	out := allocGatherOut(cols[0], total, true)
+	out := allocGatherOut(&Column{dtype: dtype}, total, needNulls)
 	off := 0
 	for _, c := range cols {
-		if c.nulls != nil {
+		if c.dtype != dtype {
+			for i := range c.n {
+				out.nulls[off+i] = true
+			}
+			off += c.n
+			continue
+		}
+		if needNulls && c.nulls != nil {
 			copy(out.nulls[off:], c.nulls)
 		}
 		switch out.dtype {

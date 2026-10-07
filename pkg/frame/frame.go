@@ -556,31 +556,45 @@ func (d DataFrame) Sort(input SortInput) (DataFrame, error) {
 	}
 	// Pre-extract typed comparators so the sort hot path reads chunk buffers
 	// directly instead of calling s.Value(i) (boxing) per comparison.
-	comparators := buildColumnComparators(sortSeries)
-	sort.Slice(indexes, func(i, j int) bool {
-		for colIdx, compare := range comparators {
-			c := compare(indexes[i], indexes[j], input.NullsLast)
-			if c == 0 {
-				continue
-			}
-			desc := colIdx < len(input.Descending) && input.Descending[colIdx]
-			if desc {
-				return c > 0
-			}
-			return c < 0
-		}
-		return false
-	})
+	sortStable(indexes, compareByKeys(buildColumnComparators(sortSeries, input.Descending, input.NullsLast)))
 	return New(NewInput{Series: d.takeColumns(indexes)})
 }
 
-// radixArgsort returns an index permutation for a sort whose leading key is a
-// null-free, NaN-free numeric column, or ok=false to fall back to the comparator
-// sort. The leading key is ordered by the O(n) radix (parallel-merged above its
-// threshold); for a multi-key sort, ties on the leading key are then resolved by
-// the existing stable comparators over the remaining keys. NaN-last and null
-// handling are only relevant on the fallback path, which this excludes for the
-// leading key.
+// compareByKeys orders row indices by each key comparator in turn.
+func compareByKeys(keys []columnComparatorFn) func(a, b int) int {
+	return func(a, b int) int {
+		for _, compare := range keys {
+			if c := compare(a, b); c != 0 {
+				return c
+			}
+		}
+		return 0
+	}
+}
+
+// sortStable sorts row indices by compare, then puts each run of rows that
+// compare equal in ascending row order, which is their input order. Sorting
+// without a row-index tie-break keeps pdqsort's fast path for repeated keys; a
+// tie-break, or slices.SortStableFunc, made low-cardinality sorts 2-4x slower.
+func sortStable(idx []int, compare func(a, b int) int) {
+	slices.SortFunc(idx, compare)
+	for start := 0; start < len(idx); {
+		end := start + 1
+		for end < len(idx) && compare(idx[start], idx[end]) == 0 {
+			end++
+		}
+		slices.Sort(idx[start:end])
+		start = end
+	}
+}
+
+// radixArgsort returns an index permutation for a sort whose leading key is an
+// Int64, a NaN-free Float64, a Boolean, or a Datetime column whose values all
+// fit in int64 nanoseconds, or ok=false to fall back to the comparator sort. The leading
+// key's non-null rows are ordered by the O(n) radix (parallel-merged above its
+// threshold) and its null rows, in input order, go before or after them as
+// NullsLast says; for a multi-key sort, ties on the leading key are then
+// resolved by the stable comparators over the remaining keys.
 func (d DataFrame) radixArgsort(input SortInput) ([]int, bool) {
 	if len(input.By) == 0 || d.height < radixSortThreshold {
 		return nil, false
@@ -590,31 +604,96 @@ func (d DataFrame) radixArgsort(input SortInput) ([]int, bool) {
 		return nil, false
 	}
 	col := s.Column()
-	if col == nil || col.NullCount() != 0 {
+	if col == nil {
 		return nil, false
 	}
-	// equalLead reports whether two rows share the leading-key value, used to
-	// delimit the equal-key runs that multi-key sorts tie-break.
+	// When the key has nulls, the radix sorts the values of the non-null rows
+	// and its positions map back through rows.
+	var rows, nullRows []int
+	if nullCount := col.NullCount(); nullCount != 0 {
+		rows = make([]int, 0, d.height-nullCount)
+		nullRows = make([]int, 0, nullCount)
+		for i := range d.height {
+			if col.IsNull(i) {
+				nullRows = append(nullRows, i)
+			} else {
+				rows = append(rows, i)
+			}
+		}
+	}
 	var idx []int
-	var equalLead func(a, b int) bool
+	var equal func(a, b int) bool // whether two non-null rows share the key value
 	switch col.DataType() {
 	case dtypes.Float64:
 		f64s, _ := col.Float64s()
-		if anyNaN(f64s) {
+		vals := gatherRows(f64s, rows)
+		if anyNaN(vals) {
 			return nil, false // NaN ordering differs; use the comparator path
 		}
-		idx = chunk.ArgsortFloat64Parallel(f64s)
-		equalLead = func(a, b int) bool { return f64s[a] == f64s[b] }
+		idx = chunk.ArgsortFloat64Parallel(vals)
+		equal = func(a, b int) bool { return f64s[a] == f64s[b] }
 	case dtypes.Int64:
 		i64s, _ := col.Int64s()
-		idx = chunk.ArgsortInt64Parallel(i64s)
-		equalLead = func(a, b int) bool { return i64s[a] == i64s[b] }
+		idx = chunk.ArgsortInt64Parallel(gatherRows(i64s, rows))
+		equal = func(a, b int) bool { return i64s[a] == i64s[b] }
+	case dtypes.Datetime:
+		// The join-key check is the one needed here: every non-null value has an
+		// exact UnixNano.
+		if !chunk.CanPackJoinKey(col) {
+			return nil, false
+		}
+		tims, _ := col.Times()
+		vals := gatherRows(tims, rows)
+		nanos := make([]int64, len(vals))
+		for i, t := range vals {
+			nanos[i] = t.UnixNano()
+		}
+		idx = chunk.ArgsortInt64Parallel(nanos)
+		equal = func(a, b int) bool { return tims[a].Equal(tims[b]) }
+	case dtypes.Boolean:
+		bools, _ := col.Bools()
+		vals := gatherRows(bools, rows)
+		keys := make([]int64, len(vals))
+		for i, v := range vals {
+			if v {
+				keys[i] = 1
+			}
+		}
+		idx = chunk.ArgsortInt64Parallel(keys)
+		equal = func(a, b int) bool { return bools[a] == bools[b] }
 	default:
 		return nil, false
 	}
+	if rows != nil {
+		for i, p := range idx {
+			idx[i] = rows[p]
+		}
+	}
 	if len(input.Descending) > 0 && input.Descending[0] {
-		for i, j := 0, len(idx)-1; i < j; i, j = i+1, j-1 {
-			idx[i], idx[j] = idx[j], idx[i]
+		slices.Reverse(idx)
+		// Reversing also reversed each run of equal keys; put them back in input order.
+		for start := 0; start < len(idx); {
+			end := start + 1
+			for end < len(idx) && equal(idx[start], idx[end]) {
+				end++
+			}
+			slices.Reverse(idx[start:end])
+			start = end
+		}
+	}
+	equalLead := equal
+	if rows != nil {
+		if input.NullsLast {
+			idx = append(idx, nullRows...)
+		} else {
+			idx = append(nullRows, idx...)
+		}
+		equalLead = func(a, b int) bool {
+			na, nb := col.IsNull(a), col.IsNull(b)
+			if na || nb {
+				return na && nb
+			}
+			return equal(a, b)
 		}
 	}
 	if len(input.By) == 1 {
@@ -626,12 +705,24 @@ func (d DataFrame) radixArgsort(input SortInput) ([]int, bool) {
 	return idx, true
 }
 
-// resolveSecondaryTies stable-sorts each maximal run of equal-leading-key rows in
-// idx by the remaining sort keys, using the same typed comparators and
-// per-key descending flags as the comparison-sort fallback. It returns false if a
+// gatherRows returns the values of vals at rows, or vals itself when rows is nil.
+func gatherRows[T any](vals []T, rows []int) []T {
+	if rows == nil {
+		return vals
+	}
+	out := make([]T, len(rows))
+	for i, r := range rows {
+		out[i] = vals[r]
+	}
+	return out
+}
+
+// resolveSecondaryTies sorts each maximal run of equal-leading-key rows in idx
+// by the remaining sort keys, using the same typed comparators and per-key
+// descending flags as the comparison-sort fallback. It returns false if a
 // secondary key column is missing (so the caller falls back and surfaces the
-// error). idx is already ordered by the leading key, so equal-leading rows are
-// contiguous.
+// error). idx is already ordered by the leading key with each run in input
+// order, so equal-leading rows are contiguous.
 func (d DataFrame) resolveSecondaryTies(idx []int, input SortInput, equalLead func(a, b int) bool) bool {
 	secSeries := make([]series.Series, 0, len(input.By)-1)
 	for _, by := range input.By[1:] {
@@ -641,30 +732,17 @@ func (d DataFrame) resolveSecondaryTies(idx []int, input SortInput, equalLead fu
 		}
 		secSeries = append(secSeries, s)
 	}
-	comps := buildColumnComparators(secSeries)
-	// compare orders two rows by the remaining keys (respecting each key's
-	// descending flag); hoisted out of the run loop so per-run stable sorts add no
-	// closure/boxing allocations. slices.SortStableFunc sorts the []int run in
-	// place without boxing it to any.
-	compare := func(p, q int) int {
-		for ci, c := range comps {
-			r := c(p, q, input.NullsLast)
-			if r == 0 {
-				continue
-			}
-			if ci+1 < len(input.Descending) && input.Descending[ci+1] {
-				return -r
-			}
-			return r
-		}
-		return 0
+	var secDescending []bool
+	if len(input.Descending) > 1 {
+		secDescending = input.Descending[1:]
 	}
+	compare := compareByKeys(buildColumnComparators(secSeries, secDescending, input.NullsLast))
 	n := len(idx)
 	start := 0
 	for end := 1; end <= n; end++ {
 		if end == n || !equalLead(idx[start], idx[end]) {
 			if end-start > 1 {
-				slices.SortStableFunc(idx[start:end], compare)
+				sortStable(idx[start:end], compare)
 			}
 			start = end
 		}
@@ -684,46 +762,74 @@ func anyNaN(f64s []float64) bool {
 }
 
 // columnComparatorFn compares rows i and j, returning -1, 0, or 1.
-type columnComparatorFn func(i, j int, nullsLast bool) int
+type columnComparatorFn func(i, j int) int
 
-// buildColumnComparators returns one comparator per sort key. For Float64 and
-// Int64 columns the comparator reads the typed backing buffer directly;
-// all other dtypes fall back to s.Value(i) boxing.
-func buildColumnComparators(cols []series.Series) []columnComparatorFn {
+// buildColumnComparators returns one comparator per sort key. Nulls go first,
+// or last when nullsLast, whatever the key's direction; descending[k] reverses
+// only the order of key k's non-null values, so NaN, the largest float, comes
+// first in a descending key. Float64, Int64, String, Datetime and Boolean keys
+// are compared on their typed backing; other dtypes fall back to s.Value(i)
+// boxing.
+func buildColumnComparators(cols []series.Series, descending []bool, nullsLast bool) []columnComparatorFn {
 	out := make([]columnComparatorFn, len(cols))
 	for k, s := range cols {
+		sign := 1
+		if k < len(descending) && descending[k] {
+			sign = -1
+		}
 		col := s.Column()
-		if f64s, ok := col.Float64s(); ok {
-			nulls := col.Nulls()
-			out[k] = func(i, j int, nullsLast bool) int {
-				ni := nulls != nil && nulls[i]
-				nj := nulls != nil && nulls[j]
-				if ni || nj {
-					return compareNulls(ni, nj, nullsLast)
-				}
-				// NaN always sorts last, matching compareSortValues semantics.
-				return compareNaNLast(f64s[i], f64s[j])
-			}
+		nulls := col.Nulls()
+		if v, ok := col.Float64s(); ok {
+			out[k] = typedComparator(v, nulls, sign, nullsLast, compareNaNLast)
 			continue
 		}
-		if i64s, ok := col.Int64s(); ok {
-			nulls := col.Nulls()
-			out[k] = func(i, j int, nullsLast bool) int {
-				ni := nulls != nil && nulls[i]
-				nj := nulls != nil && nulls[j]
-				if ni || nj {
-					return compareNulls(ni, nj, nullsLast)
+		if v, ok := col.Int64s(); ok {
+			out[k] = typedComparator(v, nulls, sign, nullsLast, compareOrdered[int64])
+			continue
+		}
+		if v, ok := col.Strings(); ok {
+			out[k] = typedComparator(v, nulls, sign, nullsLast, strings.Compare)
+			continue
+		}
+		if v, ok := col.Times(); ok {
+			out[k] = typedComparator(v, nulls, sign, nullsLast, time.Time.Compare)
+			continue
+		}
+		if v, ok := col.Bools(); ok {
+			out[k] = typedComparator(v, nulls, sign, nullsLast, func(a, b bool) int {
+				switch {
+				case a == b:
+					return 0
+				case a:
+					return 1
 				}
-				return compareOrdered(i64s[i], i64s[j])
-			}
+				return -1
+			})
 			continue
 		}
 		// Generic fallback for other dtypes.
-		out[k] = func(i, j int, nullsLast bool) int {
-			return compareSortValues(s.Value(i), s.Value(j), nullsLast)
+		out[k] = func(i, j int) int {
+			ni, nj := s.IsNull(i), s.IsNull(j)
+			if ni || nj {
+				return compareNulls(ni, nj, nullsLast)
+			}
+			return sign * compareSortValues(s.Value(i), s.Value(j), nullsLast)
 		}
 	}
 	return out
+}
+
+// typedComparator compares rows i and j of a typed key: nulls by nullsLast,
+// values by compare times sign.
+func typedComparator[T any](vals []T, nulls []bool, sign int, nullsLast bool, compare func(a, b T) int) columnComparatorFn {
+	return func(i, j int) int {
+		ni := nulls != nil && nulls[i]
+		nj := nulls != nil && nulls[j]
+		if ni || nj {
+			return compareNulls(ni, nj, nullsLast)
+		}
+		return sign * compare(vals[i], vals[j])
+	}
 }
 
 // compareNulls returns the ordering when at least one side is null.
@@ -2790,6 +2896,9 @@ func compareNaNLast(l, r float64) int {
 	return compareOrdered(l, r)
 }
 
+// compareAny orders two boxed values of the same type: numbers, strings and
+// durations by value, datetimes by instant, false before true. Values of
+// different or unordered types compare as equal.
 func compareAny(left any, right any) int {
 	switch l := left.(type) {
 	case int64:
@@ -2803,6 +2912,21 @@ func compareAny(left any, right any) int {
 	case string:
 		if r, ok := right.(string); ok {
 			return compareOrdered(l, r)
+		}
+	case time.Time:
+		if r, ok := right.(time.Time); ok {
+			return l.Compare(r)
+		}
+	case time.Duration:
+		if r, ok := right.(time.Duration); ok {
+			return compareOrdered(l, r)
+		}
+	case bool:
+		if r, ok := right.(bool); ok && l != r {
+			if l {
+				return 1
+			}
+			return -1
 		}
 	}
 	return 0
@@ -2855,10 +2979,6 @@ func (r rowAccessor) ValueAt(row int, column string) (any, bool) {
 }
 
 func lessAny(left any, right any) bool {
-	if l, ok := left.(bool); ok {
-		r, ok := right.(bool)
-		return ok && !l && r
-	}
 	return compareAny(left, right) < 0
 }
 

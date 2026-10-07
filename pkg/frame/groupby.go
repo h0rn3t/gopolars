@@ -20,6 +20,11 @@ func (g GroupBy) Agg(exprs ...expr.Expr) (DataFrame, error) {
 	if len(g.keys) == 0 {
 		return DataFrame{}, fmt.Errorf("group keys are empty")
 	}
+	aggs := make([]expr.Expr, len(exprs))
+	for i, e := range exprs {
+		aggs[i] = expr.AsAgg(e)
+	}
+	exprs = aggs
 	// Build group buckets from the typed backing slices of the key columns via
 	// chunk.GroupIDs — no per-row interface boxing or fmt.Sprintf. Allocation
 	// scales with the number of distinct groups, not the row count.

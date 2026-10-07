@@ -71,7 +71,12 @@ func TestCompareSortValuesCharacterization(t *testing.T) {
 		{nan, int64(1), false, 0},
 		{int64(1), nan, false, 0},
 		{"a", int64(1), false, 0},
-		{time.Unix(1, 0), time.Unix(2, 0), false, 0},
+		// value-ordering: datetimes order by instant, durations by length.
+		{time.Unix(1, 0), time.Unix(2, 0), false, -1},
+		{time.Unix(2, 0), time.Unix(1, 0), false, 1},
+		{time.Unix(1, 0), time.Unix(1, 0).In(time.FixedZone("UTC+2", 2*3600)), false, 0},
+		{time.Second, 2 * time.Second, false, -1},
+		{time.Unix(1, 0), time.Second, false, 0},
 	}
 	for _, tc := range cases {
 		if got := compareSortValues(tc.l, tc.r, tc.nullsLast); got != tc.want {
@@ -104,7 +109,11 @@ func TestLessAnyCharacterization(t *testing.T) {
 		{"a", false, false},
 		{nil, int64(1), false},
 		{int64(1), nil, false},
-		{time.Unix(1, 0), time.Unix(2, 0), false},
+		// value-ordering: datetimes order by instant, durations by length.
+		{time.Unix(1, 0), time.Unix(2, 0), true},
+		{time.Unix(2, 0), time.Unix(1, 0), false},
+		{2 * time.Second, time.Second, false},
+		{time.Second, 2 * time.Second, true},
 	}
 	for _, tc := range cases {
 		if got := lessAny(tc.l, tc.r); got != tc.want {
@@ -143,8 +152,8 @@ func TestColumnComparatorsCharacterization(t *testing.T) {
 		return 1, 0
 	}
 	for _, col := range []series.Series{f, i} {
-		cmps := buildColumnComparators([]series.Series{col})
 		for _, nullsLast := range []bool{false, true} {
+			cmps := buildColumnComparators([]series.Series{col}, nil, nullsLast)
 			for a := range col.Len() {
 				for b := range col.Len() {
 					ra, va := rank(col, a, nullsLast)
@@ -160,21 +169,21 @@ func TestColumnComparatorsCharacterization(t *testing.T) {
 					case va > vb:
 						want = 1
 					}
-					if got := cmps[0](a, b, nullsLast); got != want {
+					if got := cmps[0](a, b); got != want {
 						t.Errorf("%s cmp(%d,%d,%v) = %d, want %d", col.Name(), a, b, nullsLast, got, want)
 					}
 				}
 			}
 		}
 	}
-	cmps := buildColumnComparators([]series.Series{s})
-	if got := cmps[0](0, 2, false); got != 1 {
+	cmps := buildColumnComparators([]series.Series{s}, nil, false)
+	if got := cmps[0](0, 2); got != 1 {
 		t.Errorf("string cmp b>a = %d", got)
 	}
-	if got := cmps[0](1, 0, true); got != 1 {
+	if got := buildColumnComparators([]series.Series{s}, nil, true)[0](1, 0); got != 1 {
 		t.Errorf("string cmp null last = %d", got)
 	}
-	if got := cmps[0](0, 3, false); got != 0 {
+	if got := cmps[0](0, 3); got != 0 {
 		t.Errorf("string cmp equal = %d", got)
 	}
 }
@@ -190,9 +199,10 @@ func TestSortMultiKeyDescendingCharacterization(t *testing.T) {
 		want []any
 	}{
 		{SortInput{By: []string{"a", "b"}}, []any{int64(3), int64(0), int64(2), int64(5), int64(4), int64(1)}},
-		{SortInput{By: []string{"a", "b"}, Descending: []bool{true, false}}, []any{int64(4), int64(1), int64(0), int64(2), int64(5), int64(3)}},
-		{SortInput{By: []string{"a", "b"}, Descending: []bool{false, true}, NullsLast: true}, []any{int64(2), int64(5), int64(0), int64(4), int64(1), int64(3)}},
-		{SortInput{By: []string{"a", "b"}, Descending: []bool{true}}, []any{int64(4), int64(1), int64(0), int64(2), int64(5), int64(3)}},
+		// dataframe-sort: NullsLast alone places nulls, whatever the direction.
+		{SortInput{By: []string{"a", "b"}, Descending: []bool{true, false}}, []any{int64(3), int64(4), int64(1), int64(0), int64(2), int64(5)}},
+		{SortInput{By: []string{"a", "b"}, Descending: []bool{false, true}, NullsLast: true}, []any{int64(2), int64(5), int64(0), int64(1), int64(4), int64(3)}},
+		{SortInput{By: []string{"a", "b"}, Descending: []bool{true}}, []any{int64(3), int64(4), int64(1), int64(0), int64(2), int64(5)}},
 	}
 	for _, tc := range cases {
 		out, err := df.Sort(tc.in)
@@ -243,18 +253,15 @@ func TestRadixSecondaryTiesCharacterization(t *testing.T) {
 		for k, v := range ids {
 			got[k] = int(v.(int64))
 		}
-		// The radix path reverses a stable ascending argsort for a descending
-		// leading key, so its ties start in descending row order.
+		// dataframe-sort: a stable sort of the input rows, nulls placed by
+		// NullsLast alone and the descending flag reversing only non-null values.
 		want := make([]int, n)
 		for k := range want {
 			want[k] = k
 		}
-		if len(in.Descending) > 0 && in.Descending[0] {
-			slices.Reverse(want)
-		}
 		cmpKey := func(a, b any, desc bool) int {
 			c := compareSortValues(a, b, in.NullsLast)
-			if desc {
+			if desc && a != nil && b != nil {
 				return -c
 			}
 			return c
@@ -889,7 +896,7 @@ func TestParallelMaskPathsCharacterization(t *testing.T) {
 	if !ok {
 		t.Fatal("compile predicate")
 	}
-	seq, _, err := plan.EvalBool(cols, n)
+	seq, err := plan.EvalBool(cols, n)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -910,25 +917,46 @@ func TestParallelMaskPathsCharacterization(t *testing.T) {
 			t.Errorf("filterFused workers=%d differs from Filter", workers)
 		}
 	}
-	// Kleene OR yields null where a is null and b >= 10: every path declines.
-	nullable, ok := evalbatch.Compile(expr.Col("a").Gt(expr.Lit(0.0)).Or(expr.Col("b").Lt(expr.Lit(int64(10)))))
+	// Kleene OR yields null where a is null and b >= 10: the parallel paths keep
+	// those rows out of the mask, as the sequential one does
+	// (vectorized-expr-kernels: a null predicate value does not force the fallback).
+	nullablePred := expr.Col("a").Gt(expr.Lit(0.0)).Or(expr.Col("b").Lt(expr.Lit(int64(10))))
+	nullable, ok := evalbatch.Compile(nullablePred)
 	if !ok {
 		t.Fatal("compile nullable predicate")
 	}
+	nullableSeq, err := nullable.EvalBool(cols, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if par, ok := filterMaskParallel(nullable, cols, n, 4); !ok || !slices.Equal(par, nullableSeq) {
+		t.Errorf("filterMaskParallel(nullable) ok=%v, want the sequential mask", ok)
+	}
+	nullableRow, err := df.Filter(nullablePred)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fused, ok, err := df.filterFused(nullable, cols, 4); !ok || err != nil {
+		t.Errorf("filterFused(nullable) ok=%v err=%v, want ok", ok, err)
+	} else if eq, _ := fused.Equals(nullableRow); !eq {
+		t.Error("filterFused(nullable) differs from Filter")
+	}
+	if _, ok := df.fusedReduceParallel(nullable, cols, []string{"c"}, 4); !ok {
+		t.Error("fusedReduceParallel(nullable) declined, want ok")
+	}
+	// A non-bool predicate still declines on every path.
 	bad, ok := evalbatch.Compile(expr.Col("a").Add(expr.Lit(1.0)))
 	if !ok {
 		t.Fatal("compile non-bool")
 	}
-	for _, p := range []*evalbatch.Plan{nullable, bad} {
-		if _, ok := filterMaskParallel(p, cols, n, 4); ok {
-			t.Error("filterMaskParallel should decline")
-		}
-		if out, ok, err := df.filterFused(p, cols, 4); ok || err != nil || out.Width() != 0 {
-			t.Errorf("filterFused decline: ok=%v err=%v w=%d", ok, err, out.Width())
-		}
-		if _, ok := df.fusedReduceParallel(p, cols, []string{"c"}, 4); ok {
-			t.Error("fusedReduceParallel should decline")
-		}
+	if _, ok := filterMaskParallel(bad, cols, n, 4); ok {
+		t.Error("filterMaskParallel should decline")
+	}
+	if out, ok, err := df.filterFused(bad, cols, 4); ok || err != nil || out.Width() != 0 {
+		t.Errorf("filterFused decline: ok=%v err=%v w=%d", ok, err, out.Width())
+	}
+	if _, ok := df.fusedReduceParallel(bad, cols, []string{"c"}, 4); ok {
+		t.Error("fusedReduceParallel should decline")
 	}
 	red, ok := df.fusedReduceParallel(plan, map[string]*chunk.Column{"b": cols["b"], "c": cols["c"]}, []string{"c"}, 4)
 	if !ok || len(red) != 1 {
