@@ -27,7 +27,7 @@ go get github.com/h0rn3t/gopolars@latest
 Or pin the latest release:
 
 ```bash
-go get github.com/h0rn3t/gopolars@v0.6.2
+go get github.com/h0rn3t/gopolars@v0.7.0
 ```
 
 Import the public API package:
@@ -43,11 +43,13 @@ fused filter-reduce path; see [Performance / SIMD Acceleration](#performance--si
 
 ## Current status
 
-Latest release: **[v0.6.2](https://github.com/h0rn3t/gopolars/releases/tag/v0.6.2)**
-([changelog vs v0.6.1](https://github.com/h0rn3t/gopolars/compare/v0.6.1...v0.6.2)).
+Latest release: **[v0.7.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.7.0)**
+([changelog vs v0.6.2](https://github.com/h0rn3t/gopolars/compare/v0.6.2...v0.7.0)).
 The public API is versioned with SemVer; while `< v1.0.0` it may still evolve between minor
-versions — see the [versioning policy](docs/versioning_policy.md). `v0.6.2` is a patch release
-and changes no public API: it fixes five bugs and removes duplicated code. `v0.6.1` sped up
+versions — see the [versioning policy](docs/versioning_policy.md). `v0.7.0` fixes correctness
+defects found by an audit and changes no exported signature, but five fixes change observable
+behavior and are **breaking** — see the [v0.7.0 migration notes](docs/v0_7_migration.md).
+`v0.6.2` fixed five bugs and removed duplicated code. `v0.6.1` sped up
 `WriteParquet` for string columns and updated dependencies, closing two grpc advisories.
 `v0.6.0` added a typed column
 API and speeds up parquet IO; its one compatibility note is **narrowly breaking**: the `Series`
@@ -65,6 +67,46 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 - ✅ Opt-in SQL over in-memory frames via embedded DuckDB (`-tags duckdb,duckdb_arrow`)
 - ✅ **75%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
 - ✅ **659 / 670** public Python Polars methods implemented, measured against **Polars 1.41.2** ([full parity matrix](#python-polars-vs-gopolars-function-matrix)) — 11 named gaps, listed below
+
+### What's new in v0.7.0
+
+Minor release — correctness fixes, no exported signature change. The first five items change
+observable behavior and are **breaking**; the [migration notes](docs/v0_7_migration.md) say how to
+check calling code.
+
+- **`DataFrame.Update` / `LazyFrame.Update`** follow Polars: values are overwritten by row
+  position with the other frame's non-null values. Eager `Update` used to append rows; lazy
+  `Update` re-ran the other frame's operations on the left frame's data
+- **`InsertColumn`** returns an error for an index outside `[0, Width()]` and for a duplicate
+  name; it used to clamp or replace, and panicked for a duplicate name at the end
+- **Arrow, Parquet, ADBC and DuckDB imports** turn narrow integers, `float16`/`float32`, views,
+  dictionaries and durations into typed columns; they came back as `String` columns that
+  panicked on the first read. A `uint64` above `math.MaxInt64` and unmapped Arrow types are
+  import errors
+- **`ReadJSON` / `ScanJSON`** keep keys that first appear after the first record, and JSON, IPC
+  and Arrow-table columns keep their source order (it was random on every read)
+- **`-0.0` and `0.0`** are one key in group-by, unique, joins, `.over()`, pivot and set
+  operations
+- **Lazy optimizer**: `limit` before `sort` is no longer reordered, chained `select`s keep their
+  aliases, and filters are no longer moved past a renaming or aggregating `select` or before a
+  window they would change
+- **Lazy scans** no longer drop columns that no operation removed, nor hoist a filter past an
+  earlier `with_columns` or `limit`
+- **`CollectStreaming`** returns exactly what `Collect` returns; `tail`, `with_row_index`,
+  `limit` and whole-column expressions used to be computed per chunk
+- **`LazyFrame.FillNaN` / `LazyFrame.Quantile`** use their argument exactly (it was rounded to
+  six decimals)
+- **`cum_sum().over()` / `cum_count().over()`** restart in each partition
+- **Sorting by, and `==` on, list, struct and binary columns** no longer panic
+- **`Int64` arithmetic and sums** are exact and wrap on overflow; they went through `float64`
+- **`Quantile`** never panics, and `Replace`/`ExtendConstant`/`Explode`/`Flatten` never return an
+  empty `Series`
+- **SQL**: registered table names are always quoted identifiers, so a name can no longer inject
+  SQL
+- **Concurrency**: operations on frames that share columns no longer race
+
+Interleaved float group-by and join micro benchmarks (1M rows) show no significant change, with
+identical allocation counts.
 
 ### What's new in v0.6.2
 
