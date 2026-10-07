@@ -27,7 +27,7 @@ go get github.com/h0rn3t/gopolars@latest
 Or pin the latest release:
 
 ```bash
-go get github.com/h0rn3t/gopolars@v0.7.0
+go get github.com/h0rn3t/gopolars@v0.8.0
 ```
 
 Import the public API package:
@@ -43,12 +43,15 @@ fused filter-reduce path; see [Performance / SIMD Acceleration](#performance--si
 
 ## Current status
 
-Latest release: **[v0.7.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.7.0)**
-([changelog vs v0.6.2](https://github.com/h0rn3t/gopolars/compare/v0.6.2...v0.7.0)).
+Latest release: **[v0.8.0](https://github.com/h0rn3t/gopolars/releases/tag/v0.8.0)**
+([changelog vs v0.7.0](https://github.com/h0rn3t/gopolars/compare/v0.7.0...v0.8.0)).
 The public API is versioned with SemVer; while `< v1.0.0` it may still evolve between minor
-versions — see the [versioning policy](docs/versioning_policy.md). `v0.7.0` fixes correctness
-defects found by an audit and changes no exported signature, but five fixes change observable
-behavior and are **breaking** — see the [v0.7.0 migration notes](docs/v0_7_migration.md).
+versions — see the [versioning policy](docs/versioning_policy.md). `v0.8.0` keeps Datetime
+values outside 1677–2262 intact on export and as keys; it changes no exported signature, but
+Datetime is now written as `timestamp[us]` instead of `timestamp[ns]`, which is **breaking** —
+see the [v0.8.0 migration notes](docs/v0_8_migration.md). `v0.7.0` fixed correctness defects
+found by an audit; five of its fixes changed observable behavior
+([v0.7.0 migration notes](docs/v0_7_migration.md)).
 `v0.6.2` fixed five bugs and removed duplicated code. `v0.6.1` sped up
 `WriteParquet` for string columns and updated dependencies, closing two grpc advisories.
 `v0.6.0` added a typed column
@@ -67,6 +70,25 @@ It is production-usable for many DataFrame workloads, but it is **not yet a full
 - ✅ Opt-in SQL over in-memory frames via embedded DuckDB (`-tags duckdb,duckdb_arrow`)
 - ✅ **75%** statement coverage for `./pkg/...` (unit + package tests; see [Testing](#testing))
 - ✅ **659 / 670** public Python Polars methods implemented, measured against **Polars 1.41.2** ([full parity matrix](#python-polars-vs-gopolars-function-matrix)) — 11 named gaps, listed below
+
+### What's new in v0.8.0
+
+Minor release — one bug fixed at its root, no exported signature change. The unit change is
+**breaking**; the [migration notes](docs/v0_8_migration.md) say how to check calling code.
+
+- **Datetime export** (`WriteParquet`, `SinkParquet`, `WriteDatabase`, DuckDB SQL) writes Arrow
+  `timestamp[us]` — Parquet `TIMESTAMP(MICROS)`, DuckDB `TIMESTAMP` — the unit Polars uses by
+  default. It used to write `timestamp[ns]`, which holds only 1677-09-21 … 2262-04-11, so
+  `9999-12-31` was silently written as `1816-03-29` and `0001-01-01` as `1754-08-30`. Every
+  instant from year −290308 to 294247, nested ones included, is now written exactly;
+  sub-microsecond digits are truncated, and an instant outside that range is an error naming the
+  column. Files written by v0.7.0 or earlier with such dates hold the wrong instant and need to
+  be re-exported from their source
+- **Datetime keys** in group-by, unique, n_unique and joins tell every instant apart at any date;
+  dates outside 1677–2262 used to collide with the instant their nanosecond count wrapped to
+
+Group-by, unique and join micro benchmarks with a Datetime key (1M rows, benchstat) show no
+regression, with identical allocation counts.
 
 ### What's new in v0.7.0
 
