@@ -140,23 +140,3 @@ func TestWindowSpec(t *testing.T) {
 		t.Fatalf("PartitionBy = %v", got.PartitionBy)
 	}
 }
-
-// TestNodeNestedPlan covers the Plan field used by set-op and update nodes that
-// carry a sub-pipeline.
-func TestNodeNestedPlan(t *testing.T) {
-	t.Parallel()
-
-	node := Node{
-		Type:    NodeSetOp,
-		Strings: []string{"union"},
-		Plan: []Node{
-			{Type: NodeFilter, Exprs: []expr.Expr{expr.Col("id").Le(expr.Lit(int64(5)))}},
-		},
-	}
-	if len(node.Plan) != 1 {
-		t.Fatalf("nested plan len = %d, want 1", len(node.Plan))
-	}
-	if node.Plan[0].Type != NodeFilter {
-		t.Fatalf("nested node type = %q, want filter", node.Plan[0].Type)
-	}
-}

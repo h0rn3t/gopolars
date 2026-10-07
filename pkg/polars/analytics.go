@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/h0rn3t/gopolars/pkg/chunk"
 	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
 )
 
@@ -73,8 +74,8 @@ func WindowSum(d DataFrame, input WindowSumInput) (DataFrame, error) {
 		li := indexes[i]
 		rj := indexes[j]
 		for _, p := range input.PartitionBy {
-			lv := fmt.Sprintf("%v", table.Columns[p][li])
-			rv := fmt.Sprintf("%v", table.Columns[p][rj])
+			lv := fmt.Sprintf("%v", chunk.CanonicalKey(table.Columns[p][li]))
+			rv := fmt.Sprintf("%v", chunk.CanonicalKey(table.Columns[p][rj]))
 			if lv != rv {
 				return lv < rv
 			}
@@ -92,7 +93,7 @@ func WindowSum(d DataFrame, input WindowSumInput) (DataFrame, error) {
 	for _, idx := range indexes {
 		partKey = partKey[:0]
 		for _, p := range input.PartitionBy {
-			partKey = append(partKey, fmt.Sprintf("%v", table.Columns[p][idx]))
+			partKey = append(partKey, fmt.Sprintf("%v", chunk.CanonicalKey(table.Columns[p][idx])))
 		}
 		k := fmt.Sprintf("%v", partKey)
 		v := valueValues[idx]
@@ -145,7 +146,9 @@ func Melt(d DataFrame, input MeltInput) (DataFrame, error) {
 			outCols[input.ValueCol] = append(outCols[input.ValueCol], table.Columns[vv][i])
 		}
 	}
-	return NewDataFrameFromArrow(iarrow.Table{Columns: outCols})
+	names := append(slices.Clone(input.IDVars), input.VariableCol, input.ValueCol)
+	return NewDataFrameFromArrow(iarrow.Table{Columns: outCols, Names: names})
+
 }
 
 func Pivot(d DataFrame, input PivotInput) (DataFrame, error) {
@@ -164,8 +167,8 @@ func Pivot(d DataFrame, input PivotInput) (DataFrame, error) {
 	}
 	aggMap := map[string]map[string]agg{}
 	for i := range idxVals {
-		idx := fmt.Sprintf("%v", idxVals[i])
-		col := fmt.Sprintf("%v", colVals[i])
+		idx := fmt.Sprintf("%v", chunk.CanonicalKey(idxVals[i]))
+		col := fmt.Sprintf("%v", chunk.CanonicalKey(colVals[i]))
 		if _, ok := colSeen[col]; !ok {
 			colSeen[col] = struct{}{}
 			colOrder = append(colOrder, col)
@@ -211,5 +214,7 @@ func Pivot(d DataFrame, input PivotInput) (DataFrame, error) {
 			}
 		}
 	}
-	return NewDataFrameFromArrow(iarrow.Table{Columns: outCols})
+	names := append([]string{input.Index}, colOrder...)
+	return NewDataFrameFromArrow(iarrow.Table{Columns: outCols, Names: names})
+
 }

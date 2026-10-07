@@ -1,9 +1,11 @@
 package expr
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"math/bits"
 	"regexp"
@@ -569,6 +571,104 @@ func kleeneBool(v any) (b bool, isNull bool, ok bool) {
 	return false, false, false
 }
 
+// CompareValues orders left and right and returns -1, 0 or +1. It compares
+// the values that == cannot: lists ([]any) element by element, with a list
+// that is a prefix of the other first; structs (map[string]any) field by field
+// in ascending field-name order, as a boxed struct carries no field order; and
+// binary values ([]byte) bytewise. Their elements order as follows: nil after
+// every value; NaN after every other float64 and equal to another NaN; int64,
+// float64, string, bool, time.Time and time.Duration by value; values of
+// different types by type name, so values of different types never compare
+// equal.
+func CompareValues(left, right any) int {
+	switch {
+	case left == nil && right == nil:
+		return 0
+	case left == nil:
+		return 1
+	case right == nil:
+		return -1
+	}
+	switch l := left.(type) {
+	case []any:
+		if r, ok := right.([]any); ok {
+			for i := range min(len(l), len(r)) {
+				if c := CompareValues(l[i], r[i]); c != 0 {
+					return c
+				}
+			}
+			return cmp.Compare(len(l), len(r))
+		}
+	case map[string]any:
+		if r, ok := right.(map[string]any); ok {
+			lk, rk := slices.Sorted(maps.Keys(l)), slices.Sorted(maps.Keys(r))
+			for i := range min(len(lk), len(rk)) {
+				if c := cmp.Compare(lk[i], rk[i]); c != 0 {
+					return c
+				}
+				if c := CompareValues(l[lk[i]], r[rk[i]]); c != 0 {
+					return c
+				}
+			}
+			return cmp.Compare(len(lk), len(rk))
+		}
+	case []byte:
+		if r, ok := right.([]byte); ok {
+			return bytes.Compare(l, r)
+		}
+	case float64:
+		if r, ok := right.(float64); ok {
+			if lNaN, rNaN := math.IsNaN(l), math.IsNaN(r); lNaN != rNaN {
+				if lNaN {
+					return 1
+				}
+				return -1
+			}
+			return cmp.Compare(l, r)
+		}
+	case int64:
+		if r, ok := right.(int64); ok {
+			return cmp.Compare(l, r)
+		}
+	case string:
+		if r, ok := right.(string); ok {
+			return cmp.Compare(l, r)
+		}
+	case bool:
+		if r, ok := right.(bool); ok {
+			switch {
+			case l == r:
+				return 0
+			case r:
+				return -1
+			}
+			return 1
+		}
+	case time.Time:
+		if r, ok := right.(time.Time); ok {
+			return l.Compare(r)
+		}
+	case time.Duration:
+		if r, ok := right.(time.Duration); ok {
+			return cmp.Compare(l, r)
+		}
+	}
+	if lt, rt := fmt.Sprintf("%T", left), fmt.Sprintf("%T", right); lt != rt {
+		return cmp.Compare(lt, rt)
+	}
+	return cmp.Compare(fmt.Sprint(left), fmt.Sprint(right))
+}
+
+// equalValues reports whether left and right are equal, comparing lists,
+// structs and binary values through CompareValues, since == panics on them.
+func equalValues(left, right any) bool {
+	switch left.(type) {
+	case []any, map[string]any, []byte:
+		return CompareValues(left, right) == 0
+	}
+	return left == right
+}
+
 // EvalBin applies the binary operator op to two already-evaluated operands,
 // with the null, NaN and type rules Eval uses for a KindBin expression.
 func EvalBin(op string, left any, right any) (any, error) {
@@ -585,7 +685,7 @@ func EvalBin(op string, left any, right any) (any, error) {
 		if rf, ok := right.(float64); ok && math.IsNaN(rf) {
 			return false, nil
 		}
-		return left == right, nil
+		return equalValues(left, right), nil
 	case "ne":
 		if left == nil || right == nil {
 			return nil, nil
@@ -596,7 +696,7 @@ func EvalBin(op string, left any, right any) (any, error) {
 		if rf, ok := right.(float64); ok && math.IsNaN(rf) {
 			return true, nil
 		}
-		return left != right, nil
+		return !equalValues(left, right), nil
 	case "gt", "ge", "lt", "le":
 		if left == nil || right == nil {
 			return nil, nil
@@ -721,9 +821,9 @@ func EvalBin(op string, left any, right any) (any, error) {
 		}
 		return nil, fmt.Errorf("dot expects numeric")
 	case "eq_missing":
-		return left == right, nil
+		return equalValues(left, right), nil
 	case "ne_missing":
-		return left != right, nil
+		return !equalValues(left, right), nil
 	case "floordiv":
 		lf, lok := ToFloat(left)
 		rf, rok := ToFloat(right)

@@ -216,8 +216,8 @@ func TestLazyClearCollect(t *testing.T) {
 	}
 }
 
-// TestLazyUpdateCollect exercises Update against another LazyFrame. The other
-// plan must carry at least one node, so it is given a passthrough Filter.
+// TestLazyUpdateCollect exercises Update against another LazyFrame that keeps
+// every row through a passthrough Filter.
 func TestLazyUpdateCollect(t *testing.T) {
 	df := newAggFrame(t)
 	other := df.Lazy().Filter(Col("a").Gt(Lit(int64(0))))

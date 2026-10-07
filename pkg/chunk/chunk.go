@@ -12,6 +12,7 @@ package chunk
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
@@ -48,7 +49,8 @@ type Column struct {
 
 	// shared marks a column that may be referenced by more than one frame. A
 	// shared column must be treated as read-only; in-place mutators clone first.
-	shared bool
+	// It is set on columns other goroutines may already be reading, hence atomic.
+	shared atomic.Bool
 
 	f64   []float64
 	i64   []int64

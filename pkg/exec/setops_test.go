@@ -21,16 +21,20 @@ func TestSetOpsIntersectAndExcept(t *testing.T) {
 		t.Fatalf("побудова dataframe: %v", err)
 	}
 
+	right, err := frame.FromAnyColumns(frame.FromAnyColumnsInput{
+		Columns: []frame.SeriesInput{
+			{Name: "id", Values: []any{int64(2), int64(3)}},
+			{Name: "city", Values: []any{"lviv", "odesa"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("побудова правого dataframe: %v", err)
+	}
+
 	engine := New()
 	intersectNodes := []logical.Node{
 		{Type: logical.NodeFilter, Exprs: []expr.Expr{expr.Col("id").Le(expr.Lit(int64(2)))}},
-		{
-			Type:    logical.NodeSetOp,
-			Strings: []string{"intersect"},
-			Plan: []logical.Node{
-				{Type: logical.NodeFilter, Exprs: []expr.Expr{expr.Col("id").Ge(expr.Lit(int64(2)))}},
-			},
-		},
+		{Type: logical.NodeSetOp, Strings: []string{"intersect"}, Other: &right},
 	}
 	intersected, err := engine.Execute(context.Background(), source, intersectNodes)
 	if err != nil {
@@ -46,13 +50,7 @@ func TestSetOpsIntersectAndExcept(t *testing.T) {
 
 	exceptNodes := []logical.Node{
 		{Type: logical.NodeFilter, Exprs: []expr.Expr{expr.Col("id").Le(expr.Lit(int64(2)))}},
-		{
-			Type:    logical.NodeSetOp,
-			Strings: []string{"except"},
-			Plan: []logical.Node{
-				{Type: logical.NodeFilter, Exprs: []expr.Expr{expr.Col("id").Ge(expr.Lit(int64(2)))}},
-			},
-		},
+		{Type: logical.NodeSetOp, Strings: []string{"except"}, Other: &right},
 	}
 	excepted, err := engine.Execute(context.Background(), source, exceptNodes)
 	if err != nil {

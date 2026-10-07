@@ -21,56 +21,37 @@ func PredicatePushdown(nodes []logical.Node) []logical.Node {
 	return out
 }
 
+// canSwapFilter reports whether filter may run before prev. Past a Select that
+// is only safe when the Select keeps every row (all its expressions are
+// elementwise) and passes each column the filter reads through unchanged, so
+// the filter sees the same values on either side.
 func canSwapFilter(filter logical.Node, prev logical.Node) bool {
-	if filter.Type != logical.NodeFilter {
+	if filter.Type != logical.NodeFilter || len(filter.Exprs) == 0 {
 		return false
 	}
-	if prev.Type == logical.NodeScan {
+	switch prev.Type {
+	case logical.NodeScan:
 		return true
-	}
-	if prev.Type == logical.NodeWithCols {
-		return false
-	}
-	if prev.Type == logical.NodeSelect {
-		refs := referencedColumns(filter.Exprs[0])
-		selected := map[string]struct{}{}
-		for _, ex := range prev.Exprs {
-			if ex.Kind() == expr.KindCol {
-				selected[ex.ColName()] = struct{}{}
+	case logical.NodeSelect:
+		refs, ok := expr.InputColumns(filter.Exprs[0])
+		if !ok {
+			return false
+		}
+		passed := map[string]struct{}{}
+		for _, e := range prev.Exprs {
+			if !expr.IsElementwise(e) {
+				return false
+			}
+			if isPassThrough(e) {
+				passed[e.Name()] = struct{}{}
 			}
 		}
 		for _, c := range refs {
-			if _, ok := selected[c]; !ok {
+			if _, found := passed[c]; !found {
 				return false
 			}
 		}
 		return true
 	}
 	return false
-}
-
-func referencedColumns(e expr.Expr) []string {
-	set := map[string]struct{}{}
-	var walk func(v expr.Expr)
-	walk = func(v expr.Expr) {
-		switch v.Kind() {
-		case expr.KindCol:
-			if v.ColName() != "*" {
-				set[v.ColName()] = struct{}{}
-			}
-		case expr.KindBin:
-			walk(*v.Left())
-			walk(*v.Right())
-		case expr.KindUnary, expr.KindCast, expr.KindAgg:
-			if v.Target() != nil {
-				walk(*v.Target())
-			}
-		}
-	}
-	walk(e)
-	out := make([]string, 0, len(set))
-	for k := range set {
-		out = append(out, k)
-	}
-	return out
 }

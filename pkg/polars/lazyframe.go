@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
@@ -240,19 +241,29 @@ func (l *lf) Cast(mapping map[string]dtypes.DataType) LazyFrame {
 }
 
 func (l *lf) FillNaN(value float64) LazyFrame {
-	return l.withNode(logical.Node{Type: logical.NodeFillNaN, Strings: []string{fmt.Sprintf("%f", value)}})
+	return l.withNode(logical.Node{Type: logical.NodeFillNaN, Strings: []string{strconv.FormatFloat(value, 'g', -1, 64)}})
 }
 
 func (l *lf) Interpolate(columns ...string) LazyFrame {
 	return l.withNode(logical.Node{Type: logical.NodeInterpolate, Columns: columns})
 }
 
+// Update collects other now, so its own scan and operations apply, and records
+// the result (or the collect error, which Collect then returns) on the node.
 func (l *lf) Update(other LazyFrame) LazyFrame {
+	node := logical.Node{Type: logical.NodeUpdate}
 	otherLf, ok := other.(*lf)
 	if !ok {
-		return l
+		node.Err = fmt.Errorf("update: unsupported lazyframe implementation")
+		return l.withNode(node)
 	}
-	return l.withNode(logical.Node{Type: logical.NodeUpdate, Plan: otherLf.nodes})
+	otherFrame, err := otherLf.collectFrame(context.Background())
+	if err != nil {
+		node.Err = fmt.Errorf("update: collect other frame: %w", err)
+	} else {
+		node.Other = &otherFrame
+	}
+	return l.withNode(node)
 }
 
 func (l *lf) Pivot(input PivotInput) LazyFrame {
@@ -305,7 +316,7 @@ func (l *lf) Var() LazyFrame {
 }
 
 func (l *lf) Quantile(q float64) LazyFrame {
-	return l.withNode(logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"quantile", fmt.Sprintf("%f", q)}})
+	return l.withNode(logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"quantile", strconv.FormatFloat(q, 'g', -1, 64)}})
 }
 
 func (l *lf) NullCount() LazyFrame {
@@ -703,7 +714,7 @@ func (l *lf) resolveSource() (frame.DataFrame, []logical.Node, error) {
 		return l.source, l.nodes, nil
 	}
 	columns := projectedColumns(l.nodes)
-	pushed, remaining := splitPushdownFilters(l.nodes)
+	pushed, remaining := splitPushdownFilters(optimizer.PredicatePushdown(l.nodes))
 	path, err := resolveObjectStorePath(l.scan.path)
 	if err != nil {
 		return frame.DataFrame{}, nil, err
@@ -902,97 +913,88 @@ func hasColumn(f frame.DataFrame, column string) bool {
 	return slices.Contains(f.Columns(), column)
 }
 
+// projectedColumns returns the source columns a scan must read for nodes, or
+// nil to read every column. It prunes only when the plan reaches a projecting
+// barrier, the first Select or Aggregate, through nodes whose column use is
+// known; the barrier decides which columns survive, so nodes after it read
+// nothing from the source. Names created before the barrier by WithColumns or
+// WithRowIndex are not requested from the source.
 func projectedColumns(nodes []logical.Node) []string {
-	required := map[string]struct{}{}
+	var required []string
+	defined := map[string]struct{}{}
+	request := func(names ...string) {
+		for _, name := range names {
+			if _, ok := defined[name]; !ok && !slices.Contains(required, name) {
+				required = append(required, name)
+			}
+		}
+	}
+	requestInputs := func(exprs []expr.Expr) bool {
+		for _, e := range exprs {
+			cols, ok := expr.InputColumns(e)
+			if !ok {
+				return false
+			}
+			request(cols...)
+		}
+		return true
+	}
 	for _, n := range nodes {
 		switch n.Type {
-		case logical.NodeSelect, logical.NodeWithCols:
-			for _, e := range n.Exprs {
-				if e.Kind() == expr.KindCol {
-					required[e.ColName()] = struct{}{}
-				}
+		case logical.NodeSelect, logical.NodeAggregate:
+			request(n.Columns...)
+			if !requestInputs(n.Exprs) || len(required) == 0 {
+				return nil
 			}
+			return required
 		case logical.NodeFilter:
-			if len(n.Exprs) > 0 {
-				addExprColumns(required, n.Exprs[0])
+			if !requestInputs(n.Exprs) {
+				return nil
 			}
-		case logical.NodeSort, logical.NodeAggregate, logical.NodeJoin, logical.NodeUnique, logical.NodeDropNulls,
-			logical.NodeExplode, logical.NodeFlatten, logical.NodeMelt, logical.NodePivot:
-			for _, c := range n.Columns {
-				required[c] = struct{}{}
-			}
-		case logical.NodeRolling:
-			for _, c := range n.Columns[:min(len(n.Columns), 2)] {
-				if c != "" {
-					required[c] = struct{}{}
-				}
-			}
-		case logical.NodeDynamic:
-			if len(n.Columns) > 0 && n.Columns[0] != "" {
-				required[n.Columns[0]] = struct{}{}
+		case logical.NodeWithCols:
+			if !requestInputs(n.Exprs) {
+				return nil
 			}
 			for _, e := range n.Exprs {
-				addExprColumns(required, e)
+				defined[e.Name()] = struct{}{}
 			}
-		case logical.NodeWindow:
-			for _, w := range n.Windows {
-				for _, c := range w.PartitionBy {
-					required[c] = struct{}{}
-				}
-				for _, c := range w.OrderBy {
-					required[c] = struct{}{}
-				}
-				if w.Target != "" && w.Target != "*" {
-					required[w.Target] = struct{}{}
-				}
+		case logical.NodeWithRowIdx:
+			if len(n.Strings) > 0 {
+				defined[n.Strings[0]] = struct{}{}
 			}
+		case logical.NodeSort, logical.NodeDrop, logical.NodeSetSorted, logical.NodeExplode:
+			request(n.Columns...)
+		case logical.NodeCast:
+			for i := 0; i+1 < len(n.Strings); i += 2 {
+				request(n.Strings[i])
+			}
+		case logical.NodeDropNulls, logical.NodeDropNans, logical.NodeUnique:
+			// Without columns these read every column to decide which rows stay.
+			if len(n.Columns) == 0 {
+				return nil
+			}
+			request(n.Columns...)
+		case logical.NodeLimit, logical.NodeTail, logical.NodeSlice, logical.NodeReverse,
+			logical.NodeGatherEvery, logical.NodeShift, logical.NodeFillNull, logical.NodeFillNaN:
+		default:
+			return nil
 		}
 	}
-	if len(required) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(required))
-	for c := range required {
-		out = append(out, c)
-	}
-	return out
+	return nil
 }
 
-// addExprColumns adds the name of every column node in e's Left/Right/Target/Extra
-// tree to dst.
-func addExprColumns(dst map[string]struct{}, e expr.Expr) {
-	if e.Kind() == expr.KindCol {
-		dst[e.ColName()] = struct{}{}
-	}
-	if e.Left() != nil {
-		addExprColumns(dst, *e.Left())
-	}
-	if e.Right() != nil {
-		addExprColumns(dst, *e.Right())
-	}
-	if e.Target() != nil {
-		addExprColumns(dst, *e.Target())
-	}
-	if e.Extra() != nil {
-		addExprColumns(dst, *e.Extra())
-	}
-}
-
+// splitPushdownFilters hoists the leading run of simple column-versus-literal
+// filters, which the scan applies right after reading, and returns the rest of
+// the plan. A filter behind any other node stays in the plan: that node may
+// change which rows exist or the values the filter reads. Callers run
+// optimizer.PredicatePushdown first so that filters are as early as is safe.
 func splitPushdownFilters(nodes []logical.Node) ([]expr.Expr, []logical.Node) {
-	pushed := make([]expr.Expr, 0)
-	remaining := make([]logical.Node, 0, len(nodes))
-	for _, n := range nodes {
-		if n.Type != logical.NodeFilter || len(n.Exprs) == 0 {
-			remaining = append(remaining, n)
-			continue
-		}
-		if isPushdownFilter(n.Exprs[0]) {
-			pushed = append(pushed, n.Exprs[0])
-			continue
-		}
-		remaining = append(remaining, n)
+	var pushed []expr.Expr
+	for len(nodes) > 0 && nodes[0].Type == logical.NodeFilter && len(nodes[0].Exprs) > 0 && isPushdownFilter(nodes[0].Exprs[0]) {
+		pushed = append(pushed, nodes[0].Exprs[0])
+		nodes = nodes[1:]
 	}
-	return pushed, remaining
+	return pushed, nodes
 }
 
 func isPushdownFilter(e expr.Expr) bool {

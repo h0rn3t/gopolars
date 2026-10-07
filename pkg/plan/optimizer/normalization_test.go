@@ -22,14 +22,16 @@ func TestSimplifyLimitsKeepsSmallestConsecutiveLimit(t *testing.T) {
 	}
 }
 
-func TestNormalizeSortLimitSwapsLimitBeforeSort(t *testing.T) {
+// TestOptimizeKeepsLimitBeforeSort pins that a limit followed by a sort is not
+// reordered: sorting the first n rows differs from taking the first n sorted
+// rows.
+func TestOptimizeKeepsLimitBeforeSort(t *testing.T) {
 	nodes := []logical.Node{
-		{Type: logical.NodeFilter},
-		{Type: logical.NodeLimit, IntValue: 5},
+		{Type: logical.NodeLimit, IntValue: 2},
 		{Type: logical.NodeSort, Columns: []string{"v"}},
 	}
-	got := NormalizeSortLimit(nodes)
-	if got[1].Type != logical.NodeSort || got[2].Type != logical.NodeLimit {
-		t.Fatalf("expected sort before limit after normalization")
+	got := Optimize(nodes)
+	if len(got) != 2 || got[0].Type != logical.NodeLimit || got[1].Type != logical.NodeSort {
+		t.Errorf("Optimize(limit -> sort) = %s, want limit -> sort", planString(got))
 	}
 }

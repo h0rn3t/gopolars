@@ -8,7 +8,6 @@ func Optimize(nodes []logical.Node) []logical.Node {
 	current = ConstantFolding(current)
 	current = PredicatePushdown(current)
 	current = ProjectionPruning(current)
-	current = NormalizeSortLimit(current)
 	current = SimplifyLimits(current)
 	current = AdaptivePlanning(current)
 	return current

@@ -2,6 +2,8 @@ package exec
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -170,13 +172,6 @@ func TestExecuteFillNaNNode(t *testing.T) {
 	if col.Value(1) != 0.0 {
 		t.Fatalf("fill_nan v[1] = %v, want 0", col.Value(1))
 	}
-
-	// No value string -> defaults to 0.0 (still valid).
-	out2 := execNode(t, src, logical.Node{Type: logical.NodeFillNaN})
-	col2, _ := out2.Series("v")
-	if col2.Value(1) != 0.0 {
-		t.Fatalf("default fill_nan v[1] = %v, want 0", col2.Value(1))
-	}
 }
 
 // TestExecuteInterpolateNode covers NodeInterpolate filling a gap linearly.
@@ -191,8 +186,8 @@ func TestExecuteInterpolateNode(t *testing.T) {
 	}
 }
 
-// TestExecuteUpdateNode covers NodeUpdate, which executes a sub-plan against the
-// source and merges matching columns.
+// TestExecuteUpdateNode covers NodeUpdate, which writes the non-null values of
+// the node's Other frame over the current frame by row position.
 func TestExecuteUpdateNode(t *testing.T) {
 	t.Parallel()
 
@@ -200,24 +195,17 @@ func TestExecuteUpdateNode(t *testing.T) {
 		frame.SeriesInput{Name: "id", Values: []any{int64(1), int64(2)}},
 		frame.SeriesInput{Name: "v", Values: []any{int64(10), int64(20)}},
 	)
+	other := mustFrame(t, frame.SeriesInput{Name: "v", Values: []any{nil, int64(200)}})
 
-	// Sub-plan selects v from source and doubles it; Update replaces matching
-	// column v in current with the sub-plan's v.
-	out := execNode(t, src, logical.Node{
-		Type: logical.NodeUpdate,
-		Plan: []logical.Node{
-			{Type: logical.NodeWithCols, Exprs: []expr.Expr{
-				expr.Col("v").Mul(expr.Lit(int64(2))).Alias("v"),
-			}},
-		},
-	})
+	out := execNode(t, src, logical.Node{Type: logical.NodeUpdate, Other: &other})
 	col, _ := out.Series("v")
-	if col.Value(0) != int64(20) {
-		t.Fatalf("update v[0] = %v, want 20", col.Value(0))
+	if got := []any{col.Value(0), col.Value(1)}; !slices.Equal(got, []any{int64(10), int64(200)}) {
+		t.Fatalf("update v = %v, want [10 200]", got)
 	}
 
-	// Empty plan -> error.
-	execNodeErr(t, src, logical.Node{Type: logical.NodeUpdate, Plan: nil})
+	// A missing other frame or an error recorded when the node was built -> error.
+	execNodeErr(t, src, logical.Node{Type: logical.NodeUpdate})
+	execNodeErr(t, src, logical.Node{Type: logical.NodeUpdate, Other: &other, Err: errors.New("collect failed")})
 }
 
 // TestExecutePivotNode covers NodePivot, including its incomplete-columns error.
@@ -395,16 +383,11 @@ func TestExecuteSetOpUnionViaEngine(t *testing.T) {
 	t.Parallel()
 
 	src := mustFrame(t, frame.SeriesInput{Name: "id", Values: []any{int64(1), int64(2), int64(3)}})
+	right := mustFrame(t, frame.SeriesInput{Name: "id", Values: []any{int64(3)}})
 
 	out, err := New().Execute(context.Background(), src, []logical.Node{
 		{Type: logical.NodeFilter, Exprs: []expr.Expr{expr.Col("id").Le(expr.Lit(int64(1)))}},
-		{
-			Type:    logical.NodeSetOp,
-			Strings: []string{"union all"},
-			Plan: []logical.Node{
-				{Type: logical.NodeFilter, Exprs: []expr.Expr{expr.Col("id").Ge(expr.Lit(int64(3)))}},
-			},
-		},
+		{Type: logical.NodeSetOp, Strings: []string{"union all"}, Other: &right},
 	})
 	if err != nil {
 		t.Fatalf("union via engine: %v", err)

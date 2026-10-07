@@ -101,20 +101,15 @@ func TestOverDoesNotLeakAcrossPartitions(t *testing.T) {
 	df := buildOverFrame(t, n, cardinality, 0)
 	got := overCumSum(t, df)
 
-	// Reference: a plain per-partition running sum over the base column, which is
-	// itself the global cum_sum the Over target produces.
-	base, err := df.Select(expr.Col("v").CumSum().Alias("b"))
-	if err != nil {
-		t.Fatalf("base cum_sum: %v", err)
-	}
-	baseCol, ok := base.Series("b")
+	// Reference: a plain per-partition running sum over the raw v column.
+	vCol, ok := df.Series("v")
 	if !ok {
-		t.Fatalf("missing base column")
+		t.Fatalf("missing v column")
 	}
 	sums := make([]float64, cardinality)
 	for i := range n {
 		part := i % cardinality
-		sums[part] += baseCol.Value(i).(float64)
+		sums[part] += vCol.Value(i).(float64)
 		if got[i].(float64) != sums[part] {
 			t.Fatalf("row %d (partition %d): got %v, want %v", i, part, got[i], sums[part])
 		}

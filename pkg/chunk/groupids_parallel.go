@@ -30,7 +30,7 @@ const groupCardinalityDivisor = 8
 func GroupIDsUnordered(cols []*Column, n int) (ids []int, ngroups int) {
 	if len(cols) == 1 {
 		// ponytail: Int64 and String cover the realistic partition keys; Float64
-		// (whose ids must key on canonical NaN bits, so -0.0 and 0.0 stay distinct)
+		// (whose ids must key on float64Key, so every NaN and both zeros are one key)
 		// and the boxed dtypes fall through to the sequential build rather than
 		// growing a second generic path for a case partitioning rarely uses.
 		c := cols[0]

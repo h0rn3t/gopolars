@@ -1,6 +1,8 @@
 package optimizer
 
 import (
+	"slices"
+
 	"github.com/h0rn3t/gopolars/pkg/expr"
 	"github.com/h0rn3t/gopolars/pkg/plan/logical"
 )
@@ -15,7 +17,7 @@ func AdaptivePlanning(nodes []logical.Node) []logical.Node {
 		if out[i-1].Type != logical.NodeWindow {
 			continue
 		}
-		if hasWindowAliasRef(out[i], out[i-1].Windows) {
+		if !filtersWholePartitions(out[i].Exprs[0], out[i-1].Windows) {
 			continue
 		}
 		out[i-1], out[i] = out[i], out[i-1]
@@ -23,44 +25,28 @@ func AdaptivePlanning(nodes []logical.Node) []logical.Node {
 	return out
 }
 
-func hasWindowAliasRef(filter logical.Node, windows []logical.WindowSpec) bool {
-	aliases := map[string]struct{}{}
+// filtersWholePartitions reports whether predicate keeps or drops whole
+// partitions of every window spec, so running it before the windows leaves
+// each kept row's window values unchanged: predicate is elementwise, reads no
+// window alias and reads only columns that are partition keys of every spec.
+// A spec without partition keys spans all rows and never qualifies.
+func filtersWholePartitions(predicate expr.Expr, windows []logical.WindowSpec) bool {
+	if len(windows) == 0 || !expr.IsElementwise(predicate) {
+		return false
+	}
+	cols, ok := expr.InputColumns(predicate)
+	if !ok {
+		return false
+	}
 	for _, w := range windows {
-		aliases[w.Alias] = struct{}{}
-	}
-	cols := collectColumns(filter.Exprs[0])
-	for _, c := range cols {
-		if _, ok := aliases[c]; ok {
-			return true
+		if len(w.PartitionBy) == 0 || slices.Contains(cols, w.Alias) {
+			return false
+		}
+		for _, c := range cols {
+			if !slices.Contains(w.PartitionBy, c) {
+				return false
+			}
 		}
 	}
-	return false
-}
-
-func collectColumns(e expr.Expr) []string {
-	out := map[string]struct{}{}
-	var walk func(x expr.Expr)
-	walk = func(x expr.Expr) {
-		if x.Kind() == expr.KindCol {
-			out[x.ColName()] = struct{}{}
-		}
-		if x.Left() != nil {
-			walk(*x.Left())
-		}
-		if x.Right() != nil {
-			walk(*x.Right())
-		}
-		if x.Target() != nil {
-			walk(*x.Target())
-		}
-		if x.Extra() != nil {
-			walk(*x.Extra())
-		}
-	}
-	walk(e)
-	values := make([]string, 0, len(out))
-	for c := range out {
-		values = append(values, c)
-	}
-	return values
+	return true
 }

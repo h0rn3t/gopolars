@@ -43,6 +43,38 @@ func TestParseTableName(t *testing.T) {
 	}
 }
 
+// TestQuoteIdentifier checks the quoting and that splitIdentifier reads every
+// quoted name back as one part equal to the input.
+func TestQuoteIdentifier(t *testing.T) {
+	cases := []struct {
+		name string
+		want string
+	}{
+		{name: "tbl", want: `"tbl"`},
+		{name: "my tbl", want: `"my tbl"`},
+		{name: `my"tbl`, want: `"my""tbl"`},
+		{name: "select", want: `"select"`},
+		{name: "my.tbl", want: `"my.tbl"`},
+		{name: " padded ", want: `" padded "`},
+		{name: "", want: `""`},
+		{name: `""`, want: `""""""`},
+		{name: "back`tick", want: "\"back`tick\""},
+		{name: "таблиця", want: `"таблиця"`},
+		{name: `a" AS SELECT 'injected' AS secret --`, want: `"a"" AS SELECT 'injected' AS secret --"`},
+		{name: `x"; COPY (SELECT 1) TO 'out.csv'; --`, want: `"x""; COPY (SELECT 1) TO 'out.csv'; --"`},
+	}
+	for _, tc := range cases {
+		got := QuoteIdentifier(tc.name)
+		if got != tc.want {
+			t.Errorf("QuoteIdentifier(%q) = %q, want %q", tc.name, got, tc.want)
+		}
+		parts, err := splitIdentifier(got)
+		if err != nil || len(parts) != 1 || parts[0] != tc.name {
+			t.Errorf("splitIdentifier(%q) = %q, %v, want [%q], nil", got, parts, err, tc.name)
+		}
+	}
+}
+
 func TestIngestMode(t *testing.T) {
 	cases := []struct {
 		in      IfTableExists

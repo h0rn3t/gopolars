@@ -3,6 +3,7 @@ package expr
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -1142,6 +1143,143 @@ func MapAggregates(e Expr, fn func(Expr) (any, bool, error)) (Expr, error) {
 		}
 	}
 	return out, nil
+}
+
+// InputColumns returns the distinct names of the columns e reads, in the order
+// they are first referenced. Besides column nodes it covers the partition
+// columns of Over, the operands of Fold and the names of StructCols and Cols.
+// ok is false, and cols nil, when e contains a selector whose columns depend
+// on the schema: All, Exclude or a regex column name.
+func InputColumns(e Expr) (cols []string, ok bool) {
+	add := func(name string) {
+		if !slices.Contains(cols, name) {
+			cols = append(cols, name)
+		}
+	}
+	var walk func(x Expr) bool
+	walk = func(x Expr) bool {
+		switch {
+		case x.kind == KindCol && x.op == "selector_cols":
+			for _, name := range x.names {
+				add(name)
+			}
+			return true
+		case x.kind == KindCol:
+			if x.name == selectorAll || isRegexName(x.name) {
+				return false
+			}
+			add(x.name)
+			return true
+		case strings.HasPrefix(x.op, "exclude:"):
+			return false
+		case x.op == "struct_pack":
+			for _, name := range x.names {
+				add(name)
+			}
+		case x.op == "fold":
+			spec, _ := x.value.(FoldSpec)
+			for _, operand := range spec.Exprs {
+				if !walk(operand) {
+					return false
+				}
+			}
+		}
+		for _, child := range []*Expr{x.target, x.left, x.right, x.extra} {
+			if child != nil && !walk(*child) {
+				return false
+			}
+		}
+		if partitions, isOver := strings.CutPrefix(x.op, "over:"); isOver {
+			for name := range strings.SplitSeq(partitions, ",") {
+				if name = strings.TrimSpace(name); name != "" {
+					add(name)
+				}
+			}
+		}
+		return true
+	}
+	if !walk(e) {
+		return nil, false
+	}
+	return cols, true
+}
+
+// IsElementwise reports whether each output row of e depends only on the same
+// input row, so e gives the same values on any subset of rows. It is a
+// whitelist: columns, literals, casts and the known row-wise comparison,
+// arithmetic, boolean, string, datetime and math ops over elementwise operands,
+// with is_in only against a literal. Aggregations, window, cumulative and
+// order-dependent ops, and any op not listed, report false.
+func IsElementwise(e Expr) bool {
+	switch e.kind {
+	case KindCol, KindLit:
+		return true
+	case KindCast:
+	case KindBin:
+		name, _, _ := strings.Cut(e.op, ":")
+		switch name {
+		case "eq", "ne", "gt", "ge", "lt", "le", "eq_missing", "ne_missing", "is_close",
+			"add", "sub", "mul", "div", "true_div", "floordiv", "mod", "pow", "atan2",
+			"and", "or", "and_", "or_", "xor", "bitwise_and", "bitwise_or", "bitwise_xor",
+			"contains", "starts_with", "ends_with", "str_concat", "str_concat_ws", "str_pos",
+			"str_left", "str_right", "regexp_like", "list_contains", "list_get",
+			"fill_null_expr", "fill_nan_expr":
+		case "is_in":
+			// Against a column, is_in tests membership in the whole column.
+			if e.right == nil || e.right.kind != KindLit {
+				return false
+			}
+		default:
+			return false
+		}
+	case KindUnary:
+		if !isElementwiseUnaryOp(e) {
+			return false
+		}
+	case KindTern:
+		switch e.op {
+		case "when", "clip", "is_between", "replace", "replace_strict",
+			"str_pad_start", "str_pad_end", "str_split_part":
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+	for _, child := range []*Expr{e.target, e.left, e.right, e.extra} {
+		if child != nil && !IsElementwise(*child) {
+			return false
+		}
+	}
+	return true
+}
+
+// isElementwiseUnaryOp reports whether the unary op of e is row-wise; it does
+// not look at the target.
+func isElementwiseUnaryOp(e Expr) bool {
+	name, _, hasArg := strings.Cut(e.op, ":")
+	if hasArg {
+		switch name {
+		case "round_dp", "round_sig_figs", "str_replace", "str_replace_all", "str_like",
+			"str_substr", "struct_field", "exclude":
+			return true
+		}
+		return false
+	}
+	switch e.op {
+	case "not", "not_", "neg", "abs", "round", "is_null", "is_not_null", "is_nan",
+		"is_not_nan", "is_finite", "is_infinite", "str_len", "str_char_len", "str_lower",
+		"str_upper", "str_trim", "str_ltrim", "str_rtrim", "str_reverse", "str_to_title",
+		"list_len", "dt_ordinal_day", "struct_pack":
+		return true
+	case "fold":
+		spec, ok := e.value.(FoldSpec)
+		return ok && !slices.ContainsFunc(spec.Exprs, func(operand Expr) bool { return !IsElementwise(operand) })
+	}
+	_, isFloat := floatUnaryOps[e.op]
+	_, isDatetime := dtUnaryOps[e.op]
+	_, isBitwise := bitwiseUnaryOps[e.op]
+	return isFloat || isDatetime || isBitwise
 }
 
 func (e Expr) Kind() Kind {

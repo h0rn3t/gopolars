@@ -939,16 +939,15 @@ func (d DataFrame) InsertColumn(index int, column series.Series) (DataFrame, err
 	if column.Len() != d.height {
 		return DataFrame{}, fmt.Errorf("column %s has invalid length", column.Name())
 	}
-	index = min(max(index, 0), len(d.order))
-	out := d.clone()
-	if old, ok := out.cols[column.Name()]; ok && old.Len() == out.height {
-		if i := slices.Index(out.order, column.Name()); i >= 0 {
-			out.order = slices.Delete(out.order, i, i+1)
-		}
-		if i := slices.IndexFunc(out.schema, func(f dtypes.Field) bool { return f.Name == column.Name() }); i >= 0 {
-			out.schema = slices.Delete(out.schema, i, i+1)
-		}
+	// Polars semantics: the index must address a slot in [0, width] and the name
+	// must be new; both are checked before anything changes.
+	if index < 0 || index > len(d.order) {
+		return DataFrame{}, fmt.Errorf("column %s: index %d is out of bounds for width %d", column.Name(), index, len(d.order))
 	}
+	if _, ok := d.cols[column.Name()]; ok {
+		return DataFrame{}, fmt.Errorf("column %s: duplicate column name", column.Name())
+	}
+	out := d.clone()
 	out.order = slices.Insert(out.order, index, column.Name())
 	out.schema = slices.Insert(out.schema, index, dtypes.Field{Name: column.Name(), Type: column.DataType()})
 	out.cols[column.Name()] = column.Clone()
@@ -1717,15 +1716,48 @@ func (d DataFrame) Unpivot(idVars []string, valueVars []string, variableCol stri
 	return d.Melt(idVars, valueVars, variableCol, valueCol)
 }
 
+// Update writes the values of other over d by row position, as Polars'
+// DataFrame.update without keys does: for every column of d that other also
+// has, row i below both heights takes other's value when it is non-null.
+// Columns only in other and rows of other past d's height are ignored. Equal
+// dtypes are kept, Int64 and Float64 combine to Float64, and any other dtype
+// mismatch is an error.
 func (d DataFrame) Update(other DataFrame) (DataFrame, error) {
-	// naive update implementation replacing matching columns
-	out := d.clone()
-	for _, name := range other.Columns() {
-		if _, ok := out.cols[name]; ok {
-			out.cols[name] = other.cols[name].Clone()
+	rows := min(d.height, other.height)
+	out := make([]series.Series, 0, len(d.order))
+	for _, name := range d.order {
+		left := d.cols[name]
+		right, ok := other.cols[name]
+		if !ok {
+			out = append(out, left.Clone())
+			continue
 		}
+		dt, rt := left.DataType(), right.DataType()
+		if dt != rt {
+			numeric := (dt == dtypes.Int64 || dt == dtypes.Float64) && (rt == dtypes.Int64 || rt == dtypes.Float64)
+			if !numeric {
+				return DataFrame{}, fmt.Errorf("update column %s: cannot update %s values with %s", name, dt, rt)
+			}
+			dt = dtypes.Float64
+		}
+		values := make([]any, d.height)
+		for i := range values {
+			v := left.Value(i)
+			if i < rows && !right.IsNull(i) {
+				v = right.Value(i)
+			}
+			if n, isInt := v.(int64); isInt && dt == dtypes.Float64 {
+				v = float64(n)
+			}
+			values[i] = v
+		}
+		s, err := series.New(name, dt, values)
+		if err != nil {
+			return DataFrame{}, err
+		}
+		out = append(out, s)
 	}
-	return out, nil
+	return New(NewInput{Series: out})
 }
 
 func (d DataFrame) GroupBy(keys ...string) GroupBy {
@@ -1933,10 +1965,10 @@ func (d DataFrame) Pivot(index []string, columns string, values string, agg stri
 			}
 			v := s.Value(row)
 			idx = append(idx, v)
-			keyBuf = fmt.Appendf(keyBuf, "|%v", v)
+			keyBuf = fmt.Appendf(keyBuf, "|%v", chunk.CanonicalKey(v))
 		}
 		key := string(keyBuf)
-		pv := fmt.Sprintf("%v", colSeries.Value(row))
+		pv := fmt.Sprintf("%v", chunk.CanonicalKey(colSeries.Value(row)))
 		if _, ok := pivotSet[pv]; !ok {
 			pivotSet[pv] = struct{}{}
 			uniqPivot = append(uniqPivot, pv)
@@ -2373,7 +2405,21 @@ func (d DataFrame) evalOver(target expr.Expr, partitionSpec string, name string)
 			partitions = append(partitions, p)
 		}
 	}
-	base, err := d.evalExprAsSeriesVectorized(target)
+	// With partitions, cum_sum, cum_count and rank accumulate inside each
+	// partition below, so they read their input's raw values: evaluating the
+	// whole op would accumulate over the entire frame first.
+	values := target
+	op := ""
+	if target.Kind() == expr.KindUnary {
+		op = target.Op()
+	}
+	if len(partitions) > 0 && target.Target() != nil {
+		switch op {
+		case "cum_sum", "cum_count", "rank":
+			values = *target.Target()
+		}
+	}
+	base, err := d.evalExprAsSeriesVectorized(values)
 	if err != nil {
 		return series.Series{}, err
 	}
@@ -2396,15 +2442,14 @@ func (d DataFrame) evalOver(target expr.Expr, partitionSpec string, name string)
 	// in the sequential group build, so this is the dominant cost, not the scan.
 	ids, ngroups := chunk.GroupIDsUnordered(partCols, n)
 
-	if target.Kind() != expr.KindUnary {
-		return series.FromColumn(name, baseCol), nil
-	}
-	switch target.Op() {
+	switch op {
 	case "cum_sum":
+		// As in the non-window cum_sum: Int64 sums into float64, a null carries
+		// the partition's running sum forward, and other dtypes add nothing.
+		nulls := baseCol.Nulls()
+		out := make([]float64, n)
+		sums := make([]float64, ngroups)
 		if f64s, ok := baseCol.Float64s(); ok {
-			nulls := baseCol.Nulls()
-			out := make([]float64, n)
-			sums := make([]float64, ngroups)
 			for i := range n {
 				g := ids[i]
 				if nulls == nil || !nulls[i] {
@@ -2412,8 +2457,16 @@ func (d DataFrame) evalOver(target expr.Expr, partitionSpec string, name string)
 				}
 				out[i] = sums[g]
 			}
-			return series.FromFloat64(name, out, nil), nil
+		} else if i64s, ok := baseCol.Int64s(); ok {
+			for i := range n {
+				g := ids[i]
+				if nulls == nil || !nulls[i] {
+					sums[g] += float64(i64s[i])
+				}
+				out[i] = sums[g]
+			}
 		}
+		return series.FromFloat64(name, out, nil), nil
 	case "cum_count":
 		nulls := baseCol.Nulls()
 		out := make([]int64, n)
@@ -2432,8 +2485,15 @@ func (d DataFrame) evalOver(target expr.Expr, partitionSpec string, name string)
 			buckets[g] = append(buckets[g], i)
 		}
 		out := make([]int64, n)
+		// Typed orderings only for null-free input; with nulls every partition
+		// takes the compareAny path, as evalRank does for the whole column.
+		hasNulls := baseCol.NullCount() > 0
 		i64s, isInt := baseCol.Int64s()
 		f64s, isFloat := baseCol.Float64s()
+		strs, isStr := baseCol.Strings()
+		isInt = isInt && !hasNulls
+		isFloat = isFloat && !hasNulls
+		isStr = isStr && !hasNulls
 		// A partition's ordinal rank is the inverse of a stable sort over its
 		// values. For null-free numeric partitions above the radix threshold the
 		// O(n) stable radix (chunk.ArgsortInt64/Float64) over a gathered value
@@ -2461,9 +2521,14 @@ func (d DataFrame) evalOver(target expr.Expr, partitionSpec string, name string)
 					out[idxs[p]] = int64(r + 1)
 				}
 			default:
-				if isInt {
+				switch {
+				case isInt:
 					sort.SliceStable(idxs, func(a, b int) bool { return i64s[idxs[a]] < i64s[idxs[b]] })
-				} else {
+				case isFloat:
+					sort.SliceStable(idxs, func(a, b int) bool { return f64s[idxs[a]] < f64s[idxs[b]] })
+				case isStr:
+					sort.SliceStable(idxs, func(a, b int) bool { return strs[idxs[a]] < strs[idxs[b]] })
+				default:
 					sort.SliceStable(idxs, func(a, b int) bool {
 						return compareAny(base.Value(idxs[a]), base.Value(idxs[b])) < 0
 					})
@@ -2536,12 +2601,15 @@ func aggregateValues(values []any, agg string) any {
 	switch agg {
 	case "sum", "mean":
 		total := float64(0)
+		// intTotal keeps Int64 sums exact (and wrapping) above 2^53.
+		var intTotal int64
 		count := 0
 		allInt := true
 		for _, v := range values {
 			switch t := v.(type) {
 			case int64:
 				total += float64(t)
+				intTotal += t
 				count++
 			case float64:
 				total += t
@@ -2556,7 +2624,7 @@ func aggregateValues(values []any, agg string) any {
 			return total / float64(count)
 		}
 		if allInt {
-			return int64(total)
+			return intTotal
 		}
 		return total
 	case "count":
@@ -2803,8 +2871,12 @@ func compareSortValues(left any, right any, nullsLast bool) int {
 			return compareNaNLast(lf, rf)
 		}
 	}
-	if left == right {
-		return 0
+	for _, v := range [2]any{left, right} {
+		switch v.(type) {
+		case []any, map[string]any, []byte:
+			// == panics on lists, structs and binary values.
+			return expr.CompareValues(left, right)
+		}
 	}
 	if lessAny(left, right) {
 		return -1

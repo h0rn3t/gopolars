@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
+	"github.com/h0rn3t/gopolars/pkg/expr"
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	"github.com/h0rn3t/gopolars/pkg/plan/logical"
 	"github.com/h0rn3t/gopolars/pkg/series"
@@ -89,8 +90,8 @@ func TestUnionFrames(t *testing.T) {
 	}
 }
 
-// TestExtractGlobalLimit pulls the smallest limit out of the pipeline and
-// returns the remaining (non-limit) nodes.
+// TestExtractGlobalLimit pulls the smallest limit of the trailing limit run out
+// of the pipeline and keeps every node before that run, earlier limits included.
 func TestExtractGlobalLimit(t *testing.T) {
 	t.Parallel()
 
@@ -99,18 +100,18 @@ func TestExtractGlobalLimit(t *testing.T) {
 		{Type: logical.NodeLimit, IntValue: 10},
 		{Type: logical.NodeSelect},
 		{Type: logical.NodeLimit, IntValue: 4},
+		{Type: logical.NodeLimit, IntValue: 6},
 	}
 	remaining, limit := extractGlobalLimit(nodes)
 	if limit != 4 {
-		t.Fatalf("limit = %d, want 4 (smallest)", limit)
+		t.Fatalf("limit = %d, want 4 (smallest trailing)", limit)
 	}
-	if len(remaining) != 2 {
-		t.Fatalf("remaining nodes = %d, want 2", len(remaining))
-	}
+	var types []logical.NodeType
 	for _, n := range remaining {
-		if n.Type == logical.NodeLimit {
-			t.Fatal("limit nodes should be stripped")
-		}
+		types = append(types, n.Type)
+	}
+	if want := []logical.NodeType{logical.NodeFilter, logical.NodeLimit, logical.NodeSelect}; !slices.Equal(types, want) {
+		t.Fatalf("extractGlobalLimit remaining = %v, want %v", types, want)
 	}
 
 	// No limit -> sentinel -1.
@@ -150,24 +151,74 @@ func TestAppendSeries(t *testing.T) {
 	}
 }
 
-// TestHasStatefulNode covers the stateful/stateless classification.
-func TestHasStatefulNode(t *testing.T) {
+// TestStreamable covers which plans may run chunk by chunk: row-local nodes
+// with elementwise expressions, followed only by limits.
+func TestStreamable(t *testing.T) {
 	t.Parallel()
 
-	stateful := [][]logical.Node{
-		{{Type: logical.NodeSort}},
-		{{Type: logical.NodeAggregate}},
-		{{Type: logical.NodeJoin}},
-		{{Type: logical.NodeWindow}},
+	a := expr.Col("a")
+	aGt1 := []expr.Expr{a.Gt(expr.Lit(int64(1)))}
+	tests := []struct {
+		name  string
+		nodes []logical.Node
+		want  bool
+	}{
+		{"empty plan", nil, true},
+		{"filter and select", []logical.Node{
+			{Type: logical.NodeFilter, Exprs: aGt1},
+			{Type: logical.NodeSelect, Exprs: []expr.Expr{a.Mul(expr.Lit(int64(2))).Alias("d")}},
+		}, true},
+		{"every row-local node", []logical.Node{
+			{Type: logical.NodeScan},
+			{Type: logical.NodeFilter, Exprs: aGt1},
+			{Type: logical.NodeSelect, Exprs: []expr.Expr{a, expr.Col("s")}},
+			{Type: logical.NodeWithCols, Exprs: []expr.Expr{a.Abs().Alias("b")}},
+			{Type: logical.NodeRename, Strings: []string{"b", "c"}},
+			{Type: logical.NodeDrop, Columns: []string{"c"}},
+			{Type: logical.NodeCast, Strings: []string{"a", "float64"}},
+			{Type: logical.NodeFillNull, Exprs: []expr.Expr{expr.Lit(0.0)}},
+			{Type: logical.NodeFillNaN, Strings: []string{"0"}},
+			{Type: logical.NodeDropNulls},
+			{Type: logical.NodeDropNans},
+			{Type: logical.NodeExplode, Columns: []string{"a"}},
+			{Type: logical.NodeFlatten, Columns: []string{"s"}},
+			{Type: logical.NodeUnnest, Columns: []string{"s"}},
+		}, true},
+		{"trailing limits", []logical.Node{
+			{Type: logical.NodeFilter, Exprs: aGt1},
+			{Type: logical.NodeLimit, IntValue: 3},
+			{Type: logical.NodeLimit, IntValue: 2},
+		}, true},
+		{"limit before filter", []logical.Node{
+			{Type: logical.NodeLimit, IntValue: 3},
+			{Type: logical.NodeFilter, Exprs: aGt1},
+		}, false},
+		{"cumulative expression", []logical.Node{{Type: logical.NodeWithCols, Exprs: []expr.Expr{a.CumSum()}}}, false},
+		{"aggregate expression", []logical.Node{{Type: logical.NodeSelect, Exprs: []expr.Expr{a, expr.Sum(a)}}}, false},
+		{"window expression in filter", []logical.Node{{Type: logical.NodeFilter, Exprs: []expr.Expr{a.CumCount().Over("g").Gt(expr.Lit(int64(1)))}}}, false},
+		{"tail", []logical.Node{{Type: logical.NodeTail, IntValue: 2}}, false},
+		{"row index", []logical.Node{{Type: logical.NodeWithRowIdx, Strings: []string{"i"}}}, false},
+		{"slice", []logical.Node{{Type: logical.NodeSlice, IntValue: 1}}, false},
+		{"gather every", []logical.Node{{Type: logical.NodeGatherEvery}}, false},
+		{"reverse", []logical.Node{{Type: logical.NodeReverse}}, false},
+		{"unique", []logical.Node{{Type: logical.NodeUnique}}, false},
+		{"shift", []logical.Node{{Type: logical.NodeShift, IntValue: 1}}, false},
+		{"interpolate", []logical.Node{{Type: logical.NodeInterpolate}}, false},
+		{"update", []logical.Node{{Type: logical.NodeUpdate}}, false},
+		{"melt", []logical.Node{{Type: logical.NodeMelt}}, false},
+		{"frame aggregation", []logical.Node{{Type: logical.NodeFrameAgg, Strings: []string{"sum"}}}, false},
+		{"sort", []logical.Node{{Type: logical.NodeSort}}, false},
+		{"aggregate", []logical.Node{{Type: logical.NodeAggregate}}, false},
+		{"join", []logical.Node{{Type: logical.NodeJoin}}, false},
+		{"window", []logical.Node{{Type: logical.NodeWindow}}, false},
 	}
-	for _, nodes := range stateful {
-		if !hasStatefulNode(nodes) {
-			t.Fatalf("%v should be stateful", nodes[0].Type)
-		}
-	}
-
-	if hasStatefulNode([]logical.Node{{Type: logical.NodeFilter}, {Type: logical.NodeSelect}}) {
-		t.Fatal("filter+select should be stateless")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := streamable(tt.nodes); got != tt.want {
+				t.Errorf("streamable(%s) = %t, want %t", tt.name, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -237,7 +288,7 @@ func TestAggregateFrameNullsAndOrder(t *testing.T) {
 		frame.SeriesInput{Name: "s", Values: []any{"b", "a"}},
 	)
 	for _, op := range []string{"mean", "median", "std", "var", "quantile"} {
-		out, err := aggregateFrame(empty, op, nil)
+		out, err := aggregateFrame(empty, op, []string{"0.5"})
 		if err != nil {
 			t.Fatalf("%s: %v", op, err)
 		}
@@ -316,7 +367,6 @@ func TestAggregateFrameNullsAndOrder(t *testing.T) {
 		{"median", nil, sorted[2]},
 		{"quantile", []string{"0.25"}, sorted[1]},
 		{"quantile", []string{"1"}, sorted[4]},
-		{"quantile", []string{"x"}, sorted[2]},
 		{"quantile", []string{"0.3"}, interpolated},
 	} {
 		out, err := aggregateFrame(df, tc.op, tc.args)

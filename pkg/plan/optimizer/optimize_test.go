@@ -74,52 +74,39 @@ func TestPredicatePushdownReordersBeforeScan(t *testing.T) {
 func TestCanSwapFilterRules(t *testing.T) {
 	t.Parallel()
 
-	filter := logical.Node{Type: logical.NodeFilter, Exprs: []expr.Expr{expr.Col("a").Gt(expr.Lit(int64(0)))}}
+	a, b, v := expr.Col("a"), expr.Col("b"), expr.Col("v")
+	aPositive := a.Gt(expr.Lit(int64(0)))
+	tests := []struct {
+		name   string
+		filter expr.Expr
+		prev   logical.Node
+		want   bool
+	}{
+		{"past scan", aPositive, logical.Node{Type: logical.NodeScan}, true},
+		{"past with_columns", aPositive, logical.Node{Type: logical.NodeWithCols, Exprs: []expr.Expr{b}}, false},
+		{"past sort", aPositive, logical.Node{Type: logical.NodeSort, Columns: []string{"a"}}, false},
+		{"past covering select", aPositive, selectNode(a, b), true},
+		{"past select with unread computed column", aPositive, selectNode(a, b.Mul(expr.Lit(int64(2))).Alias("c")), true},
+		{"past non-covering select", aPositive, selectNode(b), false},
+		{"past renaming select", aPositive, selectNode(a.Alias("b"), b.Alias("a")), false},
+		{"past computed column of the same name", aPositive, selectNode(a.Add(expr.Lit(int64(1))).Alias("a")), false},
+		{"past aggregating select", v.Gt(expr.Lit(int64(1))), selectNode(v, expr.Sum(v).Alias("s")), false},
+		{"past select with window expression", aPositive, selectNode(a, b.CumSum().Alias("c")), false},
+		{"filter with selector", expr.All().IsNotNull(), selectNode(a, b), false},
+		{"filter reading over partition", a.Sum().Over("p").Gt(expr.Lit(int64(0))), selectNode(a, b), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			filter := logical.Node{Type: logical.NodeFilter, Exprs: []expr.Expr{tt.filter}}
+			if got := canSwapFilter(filter, tt.prev); got != tt.want {
+				t.Errorf("canSwapFilter(%s) = %t, want %t", tt.name, got, tt.want)
+			}
+		})
+	}
 
-	// Past a Scan: always swappable.
-	if !canSwapFilter(filter, logical.Node{Type: logical.NodeScan}) {
-		t.Error("filter should swap past scan")
-	}
-	// Past WithColumns: never (the new column may feed the predicate).
-	if canSwapFilter(filter, logical.Node{Type: logical.NodeWithCols}) {
-		t.Error("filter should not swap past with_columns")
-	}
-	// Past a Select that covers the referenced column: swappable.
-	covering := logical.Node{Type: logical.NodeSelect, Exprs: []expr.Expr{expr.Col("a"), expr.Col("b")}}
-	if !canSwapFilter(filter, covering) {
-		t.Error("filter should swap past a covering select")
-	}
-	// Past a Select that does NOT cover the referenced column: not swappable.
-	noncovering := logical.Node{Type: logical.NodeSelect, Exprs: []expr.Expr{expr.Col("b")}}
-	if canSwapFilter(filter, noncovering) {
-		t.Error("filter should not swap past a non-covering select")
-	}
 	// A non-filter node is never swap-eligible.
 	if canSwapFilter(logical.Node{Type: logical.NodeSort}, logical.Node{Type: logical.NodeScan}) {
-		t.Error("non-filter node should not be swappable")
-	}
-}
-
-// TestReferencedColumns covers column extraction across binary/unary/agg exprs.
-func TestReferencedColumns(t *testing.T) {
-	t.Parallel()
-
-	// (a + b) compared, plus an aggregate over c, plus a wildcard (ignored).
-	e := expr.Col("a").Add(expr.Col("b")).Gt(expr.Sum(expr.Col("c")))
-	refs := referencedColumns(e)
-
-	want := map[string]bool{"a": true, "b": true, "c": true}
-	if len(refs) != 3 {
-		t.Fatalf("referencedColumns = %v, want 3 distinct", refs)
-	}
-	for _, r := range refs {
-		if !want[r] {
-			t.Errorf("unexpected referenced column %q", r)
-		}
-	}
-
-	// Wildcard is not reported.
-	if got := referencedColumns(expr.All()); len(got) != 0 {
-		t.Errorf("wildcard refs = %v, want none", got)
+		t.Error("canSwapFilter(sort, scan) = true, want false")
 	}
 }

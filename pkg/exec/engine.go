@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 	"github.com/h0rn3t/gopolars/pkg/expr"
 	"github.com/h0rn3t/gopolars/pkg/frame"
@@ -36,7 +37,7 @@ func (e Engine) ExecuteStreaming(ctx context.Context, source frame.DataFrame, no
 		return e.Execute(ctx, source, nodes)
 	}
 	optimized := optimizer.Optimize(nodes)
-	if hasStatefulNode(optimized) {
+	if !streamable(optimized) {
 		return executeOptimized(source, optimized)
 	}
 	streamNodes, finalLimit := extractGlobalLimit(optimized)
@@ -44,8 +45,13 @@ func (e Engine) ExecuteStreaming(ctx context.Context, source frame.DataFrame, no
 	streamed := make([]frame.DataFrame, 0, len(parts))
 	for _, part := range parts {
 		next, err := executeOptimized(part, streamNodes)
-		if err != nil {
-			return frame.DataFrame{}, err
+		if err != nil || (len(streamed) > 0 && !slices.Equal(next.Schema(), streamed[0].Schema())) {
+			// Output dtypes are inferred from the values, so a chunk can fail or
+			// get another schema where the whole input does not (a computed
+			// column that is all null in that chunk, struct fields missing from
+			// it); concatenating such chunks would lose values. The whole input
+			// decides.
+			return executeOptimized(source, optimized)
 		}
 		streamed = append(streamed, next)
 	}
@@ -194,11 +200,12 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 			}
 			return current.Cast(mapping)
 		case logical.NodeFillNaN:
-			val := 0.0
-			if len(n.Strings) > 0 {
-				if parsed, err := strconv.ParseFloat(n.Strings[0], 64); err == nil {
-					val = parsed
-				}
+			if len(n.Strings) < 1 {
+				return frame.DataFrame{}, fmt.Errorf("fill_nan node missing value")
+			}
+			val, err := strconv.ParseFloat(n.Strings[0], 64)
+			if err != nil {
+				return frame.DataFrame{}, fmt.Errorf("fill_nan value: %w", err)
 			}
 			return current.FillNaN(val)
 		case logical.NodeInterpolate:
@@ -225,10 +232,7 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 			}
 			return aggregateFrame(filtered, n.Strings[0], n.Strings[1:])
 		case logical.NodeUpdate:
-			if len(n.Plan) == 0 {
-				return frame.DataFrame{}, fmt.Errorf("update node missing plan")
-			}
-			other, err := executeOptimized(source, n.Plan)
+			other, err := otherFrame(n)
 			if err != nil {
 				return frame.DataFrame{}, err
 			}
@@ -304,7 +308,7 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 			if len(n.Strings) == 0 {
 				return frame.DataFrame{}, fmt.Errorf("set_op node is missing operation")
 			}
-			right, err := executeOptimized(source, n.Plan)
+			right, err := otherFrame(n)
 			if err != nil {
 				return frame.DataFrame{}, err
 			}
@@ -321,6 +325,18 @@ func executeOptimized(source frame.DataFrame, optimized []logical.Node) (frame.D
 		current = next
 	}
 	return current, nil
+}
+
+// otherFrame returns the right-hand frame of a NodeUpdate or NodeSetOp node,
+// or the error that building the node recorded.
+func otherFrame(n logical.Node) (frame.DataFrame, error) {
+	if n.Err != nil {
+		return frame.DataFrame{}, n.Err
+	}
+	if n.Other == nil {
+		return frame.DataFrame{}, fmt.Errorf("%s node missing other frame", n.Type)
+	}
+	return *n.Other, nil
 }
 
 func applySetOp(left frame.DataFrame, right frame.DataFrame, op string) (frame.DataFrame, error) {
@@ -378,19 +394,34 @@ func rowKey(df frame.DataFrame, row int) string {
 	var key []byte
 	for _, c := range df.Columns() {
 		s, _ := df.Series(c)
-		key = fmt.Appendf(key, "|%v", s.Value(row))
+		key = fmt.Appendf(key, "|%v", chunk.CanonicalKey(s.Value(row)))
 	}
 	return string(key)
 }
 
-func hasStatefulNode(nodes []logical.Node) bool {
-	for _, n := range nodes {
+// streamable reports whether running nodes on each chunk of the input and
+// concatenating the results equals running them on the whole input: every node
+// is row-local, every expression it carries is elementwise, and limits appear
+// only as a trailing run, which ExecuteStreaming applies after concatenation.
+func streamable(nodes []logical.Node) bool {
+	limits := len(nodes)
+	for limits > 0 && nodes[limits-1].Type == logical.NodeLimit {
+		limits--
+	}
+	for _, n := range nodes[:limits] {
 		switch n.Type {
-		case logical.NodeSort, logical.NodeJoin, logical.NodeAggregate, logical.NodeWindow, logical.NodePivot, logical.NodeSetOp, logical.NodeRolling, logical.NodeDynamic:
-			return true
+		case logical.NodeScan, logical.NodeFilter, logical.NodeSelect, logical.NodeWithCols,
+			logical.NodeRename, logical.NodeDrop, logical.NodeCast, logical.NodeFillNull,
+			logical.NodeFillNaN, logical.NodeDropNulls, logical.NodeDropNans,
+			logical.NodeExplode, logical.NodeFlatten, logical.NodeUnnest:
+		default:
+			return false
+		}
+		if slices.ContainsFunc(n.Exprs, func(e expr.Expr) bool { return !expr.IsElementwise(e) }) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func splitFrames(source frame.DataFrame, chunkSize int) []frame.DataFrame {
@@ -422,19 +453,19 @@ func concatFrames(parts []frame.DataFrame) (frame.DataFrame, error) {
 	return frame.ConcatVertical(parts[0], others...)
 }
 
+// extractGlobalLimit splits the trailing run of limits off nodes and returns
+// the nodes before it with the smallest of those limits, or -1 when nodes do
+// not end in a limit.
 func extractGlobalLimit(nodes []logical.Node) ([]logical.Node, int) {
 	limit := -1
-	out := make([]logical.Node, 0, len(nodes))
-	for _, n := range nodes {
-		if n.Type != logical.NodeLimit {
-			out = append(out, n)
-			continue
-		}
-		if limit == -1 || n.IntValue < limit {
-			limit = n.IntValue
+	end := len(nodes)
+	for end > 0 && nodes[end-1].Type == logical.NodeLimit {
+		end--
+		if limit == -1 || nodes[end].IntValue < limit {
+			limit = nodes[end].IntValue
 		}
 	}
-	return out, limit
+	return nodes[:end], limit
 }
 
 func applyWindows(df frame.DataFrame, windows []logical.WindowSpec) (frame.DataFrame, error) {
@@ -449,7 +480,7 @@ func applyWindows(df frame.DataFrame, windows []logical.WindowSpec) (frame.DataF
 				if !ok {
 					return frame.DataFrame{}, fmt.Errorf("window partition column %s not found", c)
 				}
-				key = fmt.Appendf(key, "|%v", s.Value(i))
+				key = fmt.Appendf(key, "|%v", chunk.CanonicalKey(s.Value(i)))
 			}
 			partitions[string(key)] = append(partitions[string(key)], i)
 		}
@@ -600,6 +631,8 @@ func computePartitionAgg(df frame.DataFrame, rows []int, fn string, target strin
 	switch fn {
 	case "sum", "mean":
 		total := float64(0)
+		// intTotal keeps Int64 sums exact (and wrapping) above 2^53.
+		var intTotal int64
 		count := 0
 		for _, r := range rows {
 			v := s.Value(r)
@@ -610,12 +643,15 @@ func computePartitionAgg(df frame.DataFrame, rows []int, fn string, target strin
 			if !ok {
 				return nil, fmt.Errorf("window %s expects numeric values", fn)
 			}
+			if n, isInt := v.(int64); isInt {
+				intTotal += n
+			}
 			total += f
 			count++
 		}
 		if fn == "sum" {
 			if s.DataType() == dtypes.Int64 {
-				return int64(total), nil
+				return intTotal, nil
 			}
 			return total, nil
 		}
@@ -714,6 +750,20 @@ func appendSeries(df frame.DataFrame, s series.Series) (frame.DataFrame, error) 
 }
 
 func aggregateFrame(df frame.DataFrame, op string, args []string) (frame.DataFrame, error) {
+	var q float64
+	if op == "quantile" {
+		if len(args) < 1 {
+			return frame.DataFrame{}, fmt.Errorf("quantile node missing probability")
+		}
+		var err error
+		if q, err = strconv.ParseFloat(args[0], 64); err != nil {
+			return frame.DataFrame{}, fmt.Errorf("quantile probability: %w", err)
+		}
+		// The negated range check also rejects NaN.
+		if !(q >= 0 && q <= 1) {
+			return frame.DataFrame{}, fmt.Errorf("quantile must be between 0.0 and 1.0")
+		}
+	}
 	out := make([]series.Series, 0, df.Width())
 	for _, name := range df.Columns() {
 		s, _ := df.Series(name)
@@ -755,6 +805,8 @@ func aggregateFrame(df frame.DataFrame, op string, args []string) (frame.DataFra
 			dt = dtypes.Int64
 		case "sum":
 			sum := float64(0)
+			// intSum keeps Int64 sums exact (and wrapping) above 2^53.
+			var intSum int64
 			dt = dtypes.Float64
 			allInt := true
 			has := false
@@ -767,6 +819,7 @@ func aggregateFrame(df frame.DataFrame, op string, args []string) (frame.DataFra
 				switch t := v.(type) {
 				case int64:
 					sum += float64(t)
+					intSum += t
 				case float64:
 					sum += t
 					allInt = false
@@ -775,7 +828,7 @@ func aggregateFrame(df frame.DataFrame, op string, args []string) (frame.DataFra
 			if !has {
 				val = nil
 			} else if allInt && s.DataType() == dtypes.Int64 {
-				val = int64(sum)
+				val = intSum
 				dt = dtypes.Int64
 			} else {
 				val = sum
@@ -827,12 +880,6 @@ func aggregateFrame(df frame.DataFrame, op string, args []string) (frame.DataFra
 				}
 			}
 		case "quantile":
-			q := 0.5
-			if len(args) > 0 {
-				if parsed, err := strconv.ParseFloat(args[0], 64); err == nil {
-					q = parsed
-				}
-			}
 			nums := numericValues(s)
 			if len(nums) == 0 {
 				val = nil

@@ -446,7 +446,11 @@ func (s seriesFacade) Quantile(q float64) float64 {
 	if len(vals) == 0 {
 		return 0
 	}
-	return quantileFloatSlice(vals, q).(float64)
+	f, ok := quantileFloatSlice(vals, q).(float64)
+	if !ok { // a NaN q has no quantile
+		return math.NaN()
+	}
+	return f
 }
 
 func (s seriesFacade) Product() float64 {
@@ -1247,6 +1251,18 @@ func (s seriesFacade) MapElements(fn func(any) any) (Series, error) {
 }
 
 func (s seriesFacade) Replace(old any, new any) Series {
+	out, _ := s.replace(old, new) // cannot fail: valuesSeries converts a mix to Float64 or String
+	return out
+}
+
+func (s seriesFacade) ReplaceStrict(old any, new any) (Series, error) {
+	if s.IndexOf(old) < 0 {
+		return nil, fmt.Errorf("value not found")
+	}
+	return s.replace(old, new)
+}
+
+func (s seriesFacade) replace(old any, new any) (Series, error) {
 	values := make([]any, s.Len())
 	for i := 0; i < s.Len(); i++ {
 		v := s.Value(i)
@@ -1256,16 +1272,11 @@ func (s seriesFacade) Replace(old any, new any) Series {
 		}
 		values[i] = v
 	}
-	dt := inferDataTypeFromValues(values, s.value.DataType())
-	out, _ := iseries.New(s.value.Name(), dt, values)
-	return seriesFacade{value: out}
-}
-
-func (s seriesFacade) ReplaceStrict(old any, new any) (Series, error) {
-	if s.IndexOf(old) < 0 {
-		return nil, fmt.Errorf("value not found")
+	out, err := valuesSeries(s.value.Name(), s.value.DataType(), values)
+	if err != nil {
+		return nil, err
 	}
-	return s.Replace(old, new), nil
+	return seriesFacade{value: out}, nil
 }
 
 func (s seriesFacade) Reshape(dims ...int) (Series, error) {
@@ -1422,8 +1433,7 @@ func (s seriesFacade) Explode() Series {
 		}
 		values = append(values, list...)
 	}
-	dt := inferDataTypeFromValues(values, dtypes.String)
-	out, _ := iseries.New(s.value.Name(), dt, values)
+	out, _ := valuesSeries(s.value.Name(), "", values) // cannot fail: a mix becomes Float64 or String
 	return seriesFacade{value: out}
 }
 
@@ -1445,8 +1455,7 @@ func (s seriesFacade) ExtendConstant(value any, n int) Series {
 	for range n {
 		values = append(values, value)
 	}
-	dt := inferDataTypeFromValues(values, s.DataType())
-	out, _ := iseries.New(s.value.Name(), dt, values)
+	out, _ := valuesSeries(s.value.Name(), s.DataType(), values) // cannot fail: a mix becomes Float64 or String
 	return seriesFacade{value: out}
 }
 
@@ -1658,9 +1667,12 @@ func (s seriesFacade) binaryNumeric(other Series, op string) (Series, error) {
 	if s.Len() != other.Len() {
 		return nil, fmt.Errorf("series length mismatch")
 	}
-	outType := dtypes.Float64
 	if s.DataType() == dtypes.Int64 && other.DataType() == dtypes.Int64 && op != "div" {
-		outType = dtypes.Int64
+		o, err := toInternalSeries(other)
+		if err != nil {
+			return nil, err
+		}
+		return fromInternalSeries(int64Arithmetic(s.value, o, op)), nil
 	}
 	values := make([]any, s.Len())
 	for i := 0; i < s.Len(); i++ {
@@ -1685,13 +1697,39 @@ func (s seriesFacade) binaryNumeric(other Series, op string) (Series, error) {
 		case "div":
 			f = l / r
 		}
-		if outType == dtypes.Int64 {
-			values[i] = int64(f)
-			continue
-		}
 		values[i] = f
 	}
-	return NewSeries(NewSeriesInput{Name: s.Name(), DType: outType, Values: values})
+	return NewSeries(NewSeriesInput{Name: s.Name(), DType: dtypes.Float64, Values: values})
+}
+
+// int64Arithmetic applies add, sub or mul row by row in int64, so results are
+// exact and wrap on overflow (two's complement) like Polars and the expression
+// engine. A row is null when either operand is.
+func int64Arithmetic(left, right iseries.Series, op string) iseries.Series {
+	lv, _ := left.Column().Int64s()
+	rv, _ := right.Column().Int64s()
+	var nulls []bool
+	if left.Column().NullCount() > 0 || right.Column().NullCount() > 0 {
+		nulls = left.Column().NullMask()
+		for i := range nulls {
+			nulls[i] = nulls[i] || right.IsNull(i)
+		}
+	}
+	values := make([]int64, len(lv))
+	for i, l := range lv {
+		if nulls != nil && nulls[i] {
+			continue
+		}
+		switch op {
+		case "add":
+			values[i] = l + rv[i]
+		case "sub":
+			values[i] = l - rv[i]
+		case "mul":
+			values[i] = l * rv[i]
+		}
+	}
+	return iseries.FromInt64(left.Name(), values, nulls)
 }
 
 func (s seriesFacade) binaryCompare(other Series, op string) (Series, error) {
@@ -2015,8 +2053,10 @@ func excessKurtosis(values []float64) float64 {
 	return m4/(m2*m2) - 3
 }
 
+// quantileFloatSlice returns the linearly interpolated q-quantile of values
+// with q clamped to [0, 1], or nil when there are no values or q is NaN.
 func quantileFloatSlice(values []float64, q float64) any {
-	if len(values) == 0 {
+	if len(values) == 0 || math.IsNaN(q) {
 		return nil
 	}
 	if q < 0 {
@@ -2041,6 +2081,7 @@ func quantileFloatSlice(values []float64, q float64) any {
 }
 
 func valueKey(v any) string {
+	v = chunk.CanonicalKey(v)
 	return fmt.Sprintf("%T:%v", v, v)
 }
 
@@ -2230,32 +2271,96 @@ func inferDataTypeFromValues(values []any, fallback dtypes.DataType) dtypes.Data
 		if v == nil {
 			continue
 		}
-		switch v.(type) {
-		case int64:
-			return dtypes.Int64
-		case float64:
-			return dtypes.Float64
-		case string:
-			return dtypes.String
-		case bool:
-			return dtypes.Boolean
-		case time.Time:
-			return dtypes.Datetime
-		case dtypes.DecimalValue:
-			return dtypes.Decimal
-		case []any:
-			return dtypes.List
-		case map[string]any:
-			return dtypes.Struct
-		case []byte:
-			return dtypes.Binary
-		case time.Duration:
-			return dtypes.Duration
-		default:
-			return fallback
+		if dt := valueDataType(v); dt != "" {
+			return dt
 		}
+		return fallback
 	}
 	return fallback
+}
+
+// valueDataType returns the dtype whose storage holds v as it is, or "" when
+// no dtype does.
+func valueDataType(v any) dtypes.DataType {
+	switch v.(type) {
+	case int64:
+		return dtypes.Int64
+	case float64:
+		return dtypes.Float64
+	case string:
+		return dtypes.String
+	case bool:
+		return dtypes.Boolean
+	case time.Time:
+		return dtypes.Datetime
+	case dtypes.DecimalValue:
+		return dtypes.Decimal
+	case []any:
+		return dtypes.List
+	case map[string]any:
+		return dtypes.Struct
+	case []byte:
+		return dtypes.Binary
+	case time.Duration:
+		return dtypes.Duration
+	default:
+		return ""
+	}
+}
+
+// valuesSeries builds the result of a value-replacing method with the dtype
+// that holds every value: dt when every non-null value fits it, Float64 for a
+// mix of Int64 and Float64, and String for any other mix. An empty dt takes
+// the first value's dtype, and String is used when nothing decides. Go integers
+// up to 32 bits and int are stored as Int64, float32 as Float64; values is
+// rewritten in place.
+func valuesSeries(name string, dt dtypes.DataType, values []any) (iseries.Series, error) {
+	for i, v := range values {
+		switch t := v.(type) {
+		case int:
+			v = int64(t)
+		case int8:
+			v = int64(t)
+		case int16:
+			v = int64(t)
+		case int32:
+			v = int64(t)
+		case uint8:
+			v = int64(t)
+		case uint16:
+			v = int64(t)
+		case uint32:
+			v = int64(t)
+		case float32:
+			v = float64(t)
+		case nil:
+			continue
+		}
+		values[i] = v
+		vt := valueDataType(v)
+		switch {
+		case vt == "":
+			dt = dtypes.String
+		case dt == "" || vt == dt:
+			dt = vt
+		case vt == dtypes.String && (dt == dtypes.Categorical || dt == dtypes.Enum):
+			// Strings are the storage of the categorical dtypes.
+		case (vt == dtypes.Int64 || vt == dtypes.Float64) && (dt == dtypes.Int64 || dt == dtypes.Float64):
+			dt = dtypes.Float64
+		default:
+			dt = dtypes.String
+		}
+	}
+	if dt == "" {
+		dt = dtypes.String
+	}
+	if dt == dtypes.Float64 || dt == dtypes.String {
+		var err error
+		if values, err = coerceValuesForDataType(values, dt); err != nil {
+			return iseries.Series{}, err
+		}
+	}
+	return iseries.New(name, dt, values)
 }
 
 func coerceValuesForDataType(values []any, dt dtypes.DataType) ([]any, error) {

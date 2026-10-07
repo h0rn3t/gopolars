@@ -152,7 +152,7 @@ func TestGroupIDsUnorderedIndependentOfWorkerCount(t *testing.T) {
 
 // TestGroupIDsUnorderedFallsBackForCompositeAndFloatKeys checks the dtypes and
 // arities the sharded path does not handle still return a correct result via the
-// sequential builder — including that float keys keep 0.0 and -0.0 distinct.
+// sequential builder — including that float keys merge 0.0 and -0.0 into one group.
 func TestGroupIDsUnorderedFallsBackForCompositeAndFloatKeys(t *testing.T) {
 	const n = 20000
 

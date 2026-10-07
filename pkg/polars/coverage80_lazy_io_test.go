@@ -436,8 +436,7 @@ func TestLazyJoinAsof(t *testing.T) {
 	}
 }
 
-// TestLazyUpdate covers Update (executes a sub-plan and merges). The other
-// frame must carry a non-empty plan, so we attach a Select.
+// TestLazyUpdate covers Update from another lazy frame with its own Select.
 func TestLazyUpdate(t *testing.T) {
 	a := newLFFrame(t)
 	other := a.Lazy().Select(Col("a"), Col("b"), Col("g"))

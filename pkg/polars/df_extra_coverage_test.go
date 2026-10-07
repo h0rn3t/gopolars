@@ -38,9 +38,9 @@ func TestDataFrameFoldInterpolateUpdate(t *testing.T) {
 		t.Fatalf("Interpolate height=%d err=%v", interp.Height(), err)
 	}
 
-	// Update == VStack: stacking the frame on itself doubles the rows.
+	// Update overwrites values by row position and never appends rows.
 	updated, err := d.Update(d)
-	if err != nil || updated.Height() != 6 {
+	if err != nil || updated.Height() != 3 {
 		t.Fatalf("Update height=%d err=%v", updated.Height(), err)
 	}
 

@@ -41,7 +41,7 @@ func (e Engine) ExecuteWithReport(ctx context.Context, source frame.DataFrame, n
 		SchemaVersion:    "v2",
 		Operators:        make([]string, 0, len(optimized)),
 		OptimizedNodes:   len(optimized),
-		StatefulPipeline: hasStatefulNode(optimized),
+		StatefulPipeline: !streamable(optimized),
 		DurationMS:       time.Since(start).Milliseconds(),
 		MemoryBytes:      memEnd.TotalAlloc - memStart.TotalAlloc,
 		TemporalOps:      temporal,

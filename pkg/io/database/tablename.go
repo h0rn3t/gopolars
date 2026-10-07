@@ -5,6 +5,14 @@ import (
 	"strings"
 )
 
+// QuoteIdentifier returns name as a double-quoted SQL identifier, with each
+// embedded double quote doubled. The result names exactly one object called
+// name: no input can end the identifier early, and a '.' in name is part of
+// the name, not a schema separator.
+func QuoteIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
 // parseTableName splits a (possibly schema-qualified) table name into its
 // catalog, schema and table parts. Parts are assigned from the right — matching
 // Python polars' table-name unpacking — so "tbl" -> table, "sch.tbl" ->

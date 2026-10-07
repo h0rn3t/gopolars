@@ -1,6 +1,7 @@
 package polars
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -263,5 +264,47 @@ func TestWindowSumMissingColumns(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatalf("WindowSum on missing column returned nil error, want non-nil")
+	}
+}
+
+// TestMeltAndPivotColumnOrder pins Polars' column order: Melt returns the id
+// columns, then the variable and value columns; Pivot returns the index column,
+// then one column per pivoted value in order of first appearance.
+func TestMeltAndPivotColumnOrder(t *testing.T) {
+	melted := func() (DataFrame, error) {
+		return Melt(newMeltFrame(t), MeltInput{IDVars: []string{"g"}, ValueVars: []string{"b", "a"}})
+	}
+	pivoted := func() (DataFrame, error) {
+		df, err := NewDataFrame(NewDataFrameInput{Columns: []frame.SeriesInput{
+			{Name: "k", Values: []any{"r1", "r1", "r2"}},
+			{Name: "c", Values: []any{"z", "a", "z"}},
+			{Name: "v", Values: []any{int64(1), int64(2), int64(3)}},
+		}})
+		if err != nil {
+			return nil, err
+		}
+		return Pivot(df, PivotInput{Index: "k", Columns: "c", Values: "v", Agg: "sum"})
+	}
+	tests := []struct {
+		name string
+		run  func() (DataFrame, error)
+		want []string
+	}{
+		{"melt", melted, []string{"g", "variable", "value"}},
+		{"pivot", pivoted, []string{"k", "z", "a"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Repeat so a map-ordered result cannot pass by chance.
+			for range 20 {
+				out, err := tt.run()
+				if err != nil {
+					t.Fatalf("%s error = %v", tt.name, err)
+				}
+				if got := out.Columns(); !slices.Equal(got, tt.want) {
+					t.Fatalf("%s columns = %v, want %v", tt.name, got, tt.want)
+				}
+			}
+		})
 	}
 }

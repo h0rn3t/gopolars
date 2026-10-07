@@ -168,22 +168,24 @@ func fillTrue(b []bool) {
 
 // MarkShared records that the column may be referenced by more than one frame.
 // A shared column is treated as immutable: any in-place mutator must clone it
-// first via CloneIfShared. MarkShared is idempotent.
+// first via CloneIfShared. MarkShared is idempotent and safe for concurrent use.
 func (c *Column) MarkShared() {
-	if c != nil {
-		c.shared = true
+	// Load first: an already-shared column (the common case for a frame derived
+	// many times) then takes no write to its cache line.
+	if c != nil && !c.shared.Load() {
+		c.shared.Store(true)
 	}
 }
 
 // IsShared reports whether the column has been marked as possibly shared.
-func (c *Column) IsShared() bool { return c != nil && c.shared }
+func (c *Column) IsShared() bool { return c != nil && c.shared.Load() }
 
 // CloneIfShared returns a private clone when the column is shared, otherwise the
 // receiver. In-place mutators MUST route writes through this so a mutation never
 // leaks across frames that share the buffer. (No in-place mutator exists today;
 // this is the copy-on-write entry point that any future one must use.)
 func (c *Column) CloneIfShared() *Column {
-	if c != nil && c.shared {
+	if c.IsShared() {
 		return c.Clone()
 	}
 	return c
@@ -351,12 +353,27 @@ func (c *Column) DropNaNFloat64() (*Column, bool) {
 const canonicalNaNBits = uint64(0x7ff8000000000000)
 
 // float64Key returns the bits of v for use as a group or join key, with every
-// NaN collapsed to canonicalNaNBits.
+// NaN collapsed to canonicalNaNBits and -0.0 to the bits of +0.0, so keys
+// compare by numeric value like Polars.
 func float64Key(v float64) uint64 {
 	if math.IsNaN(v) {
 		return canonicalNaNBits
 	}
+	if v == 0 {
+		return 0
+	}
 	return math.Float64bits(v)
+}
+
+// CanonicalKey returns v with a float64 -0.0 replaced by +0.0, so that a key
+// built by formatting a boxed value with %v treats both zeros as one key, as
+// typed keys do. NaN needs no change (%v renders every NaN as "NaN"), and any
+// other value is returned unchanged.
+func CanonicalKey(v any) any {
+	if f, ok := v.(float64); ok && f == 0 {
+		return 0.0
+	}
+	return v
 }
 
 // GroupIDs assigns each of the first n rows a dense group id derived from the

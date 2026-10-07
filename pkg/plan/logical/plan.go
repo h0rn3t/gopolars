@@ -57,7 +57,12 @@ type Node struct {
 	Join       *JoinSpec
 	Windows    []WindowSpec
 	Prefix     string
-	Plan       []Node
+	// Other is the right-hand frame of NodeUpdate and NodeSetOp, collected
+	// when the node was built.
+	Other *frame.DataFrame
+	// Err is the error collecting Other failed with; executing the node
+	// returns it.
+	Err error
 }
 
 type JoinSpec struct {

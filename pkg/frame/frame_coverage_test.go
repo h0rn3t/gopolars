@@ -3,6 +3,7 @@ package frame
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -146,9 +147,9 @@ func TestFrameCastFoldAndInsert(t *testing.T) {
 	if err != nil || withExtra.Columns()[0] != "extra" {
 		t.Fatalf("insert: err=%v cols=%v", err, withExtra.Columns())
 	}
-	replaced, err := withExtra.InsertColumn(1, extra)
-	if err != nil || len(replaced.Columns()) != 4 {
-		t.Fatalf("replace insert: err=%v w=%d", err, replaced.Width())
+	// An existing name is a duplicate-column error, as in Polars.
+	if _, err := withExtra.InsertColumn(1, extra); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("insert existing name: err=%v, want duplicate column error", err)
 	}
 
 	dropped, err := df.DropInPlace("b")

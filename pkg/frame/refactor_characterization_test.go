@@ -436,20 +436,30 @@ func TestInsertColumnCharacterization(t *testing.T) {
 		}
 		return out
 	}
+	// An index outside [0, width] and an existing name are errors (Polars
+	// semantics); they used to clamp the index and replace-and-move the column.
 	cases := []struct {
-		index int
-		col   series.Series
-		want  []string
+		index   int
+		col     series.Series
+		want    []string
+		wantErr string
 	}{
-		{-5, mk("n", dtypes.Boolean, true, false), []string{"n:bool", "a:int64", "b:string", "c:float64"}},
-		{99, mk("n", dtypes.Boolean, true, false), []string{"a:int64", "b:string", "c:float64", "n:bool"}},
-		{1, mk("n", dtypes.Boolean, true, false), []string{"a:int64", "n:bool", "b:string", "c:float64"}},
-		{0, mk("c", dtypes.String, "p", "q"), []string{"c:string", "a:int64", "b:string"}},
-		{2, mk("a", dtypes.Int64, int64(7), int64(8)), []string{"b:string", "c:float64", "a:int64"}},
-		{1, mk("b", dtypes.Boolean, true, true), []string{"a:int64", "b:bool", "c:float64"}},
+		{-5, mk("n", dtypes.Boolean, true, false), nil, "column n: index -5 is out of bounds for width 3"},
+		{99, mk("n", dtypes.Boolean, true, false), nil, "column n: index 99 is out of bounds for width 3"},
+		{3, mk("n", dtypes.Boolean, true, false), []string{"a:int64", "b:string", "c:float64", "n:bool"}, ""},
+		{1, mk("n", dtypes.Boolean, true, false), []string{"a:int64", "n:bool", "b:string", "c:float64"}, ""},
+		{0, mk("c", dtypes.String, "p", "q"), nil, "column c: duplicate column name"},
+		{2, mk("a", dtypes.Int64, int64(7), int64(8)), nil, "column a: duplicate column name"},
+		{1, mk("b", dtypes.Boolean, true, true), nil, "column b: duplicate column name"},
 	}
 	for _, tc := range cases {
 		out, err := df.InsertColumn(tc.index, tc.col)
+		if tc.wantErr != "" {
+			if err == nil || err.Error() != tc.wantErr {
+				t.Errorf("InsertColumn(%d, %s) error = %v, want %q", tc.index, tc.col.Name(), err, tc.wantErr)
+			}
+			continue
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -571,8 +581,8 @@ func TestEvalOverCharacterization(t *testing.T) {
 		{expr.Col("v"), "g", []any{int64(4), int64(3), nil, int64(1)}},
 		{expr.Col("v"), "  ", []any{int64(4), int64(3), nil, int64(1)}},
 		{expr.Col("v"), " , ", []any{int64(4), int64(3), nil, int64(1)}},
-		{expr.Col("v").CumSum(), " g , ,h ", []any{4.0, 7.0, 11.0, 8.0}},
-		{expr.Col("v").CumCount(), "g", []any{int64(1), int64(1), int64(2), int64(2)}},
+		{expr.Col("v").CumSum(), " g , ,h ", []any{4.0, 3.0, 4.0, 1.0}},
+		{expr.Col("v").CumCount(), "g", []any{int64(1), int64(1), int64(1), int64(2)}},
 		{expr.Col("v").Rank(), "g,h", []any{int64(1), int64(1), int64(2), int64(1)}},
 		{expr.Col("v").Reverse(), "g", []any{int64(1), nil, int64(3), int64(4)}},
 	}

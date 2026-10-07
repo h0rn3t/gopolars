@@ -18,17 +18,3 @@ func SimplifyLimits(nodes []logical.Node) []logical.Node {
 	}
 	return out
 }
-
-func NormalizeSortLimit(nodes []logical.Node) []logical.Node {
-	if len(nodes) < 2 {
-		return nodes
-	}
-	out := make([]logical.Node, len(nodes))
-	copy(out, nodes)
-	for i := 1; i < len(out); i++ {
-		if out[i-1].Type == logical.NodeLimit && out[i].Type == logical.NodeSort {
-			out[i-1], out[i] = out[i], out[i-1]
-		}
-	}
-	return out
-}

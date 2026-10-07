@@ -181,7 +181,7 @@ func TestExecuteNodeErrorsReturnEmptyFrame(t *testing.T) {
 
 	src := nodesSource(t)
 	missing := expr.Col("nope")
-	failingPlan := []logical.Node{{Type: logical.NodeSelect, Exprs: []expr.Expr{missing}}}
+	strs := mustFrame(t, frame.SeriesInput{Name: "val", Values: []any{"x", "y", "z", "w"}})
 	cases := []struct {
 		name string
 		node logical.Node
@@ -200,7 +200,16 @@ func TestExecuteNodeErrorsReturnEmptyFrame(t *testing.T) {
 		{"cast", logical.Node{Type: logical.NodeCast, Strings: []string{"nope", string(dtypes.Int64)}}},
 		{"interpolate", logical.Node{Type: logical.NodeInterpolate, Columns: []string{"nope"}}},
 		{"frame_agg_fused", logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"sum"}, Exprs: []expr.Expr{missing.Gt(expr.Lit(int64(1)))}}},
-		{"update_plan", logical.Node{Type: logical.NodeUpdate, Plan: failingPlan}},
+		{"fill_nan_missing_value", logical.Node{Type: logical.NodeFillNaN}},
+		{"fill_nan_unparsable", logical.Node{Type: logical.NodeFillNaN, Strings: []string{"x"}}},
+		{"quantile_missing", logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"quantile"}}},
+		{"quantile_unparsable", logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"quantile", "x"}}},
+		{"quantile_nan", logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"quantile", "NaN"}}},
+		{"quantile_above_one", logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"quantile", "1.5"}}},
+		{"quantile_below_zero", logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"quantile", "-0.5"}}},
+		{"quantile_inf", logical.Node{Type: logical.NodeFrameAgg, Strings: []string{"quantile", "+Inf"}}},
+		{"update_missing_other", logical.Node{Type: logical.NodeUpdate}},
+		{"update_dtype", logical.Node{Type: logical.NodeUpdate, Other: &strs}},
 		{"pivot", logical.Node{Type: logical.NodePivot, Columns: []string{"nope", "grp", "val"}}},
 		{"rolling", logical.Node{Type: logical.NodeRolling, Columns: []string{"nope", "val", "out"}, Strings: []string{"1000", "1"}}},
 		{"rolling_bad_rows", logical.Node{Type: logical.NodeRolling, Columns: []string{"id", "val", "out"}, Strings: []string{"1000", "x"}}},
@@ -210,8 +219,8 @@ func TestExecuteNodeErrorsReturnEmptyFrame(t *testing.T) {
 		{"aggregate", logical.Node{Type: logical.NodeAggregate, Columns: []string{"nope"}, Exprs: []expr.Expr{expr.Col("val").Sum()}}},
 		{"join_missing_payload", logical.Node{Type: logical.NodeJoin}},
 		{"join", logical.Node{Type: logical.NodeJoin, Join: &logical.JoinSpec{Other: src, LeftOn: []string{"nope"}, RightOn: []string{"id"}, How: frame.JoinTypeInner}}},
-		{"set_op_plan", logical.Node{Type: logical.NodeSetOp, Strings: []string{"union"}, Plan: failingPlan}},
-		{"set_op_kind", logical.Node{Type: logical.NodeSetOp, Strings: []string{"bogus"}}},
+		{"set_op_missing_other", logical.Node{Type: logical.NodeSetOp, Strings: []string{"union"}}},
+		{"set_op_kind", logical.Node{Type: logical.NodeSetOp, Strings: []string{"bogus"}, Other: &src}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

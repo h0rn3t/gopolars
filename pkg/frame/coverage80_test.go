@@ -730,12 +730,11 @@ func TestOverPartitioned(t *testing.T) {
 		t.Fatalf("over cum_sum: %v", err)
 	}
 	csCol, _ := cs.Series("cs")
-	// The Over target is itself a global cum_sum (base = [1,3,6,10]); evalOver then
-	// runs a per-partition running sum over that base. g=1 -> 1, 1+3=4; g=2 -> 6, 6+10=16.
-	if csCol.Value(0).(float64) != 1.0 || csCol.Value(1).(float64) != 4.0 {
+	// The running sum restarts in each partition: g=1 -> 1, 1+2=3; g=2 -> 3, 3+4=7.
+	if csCol.Value(0).(float64) != 1.0 || csCol.Value(1).(float64) != 3.0 {
 		t.Fatalf("over cum_sum g1: %v %v", csCol.Value(0), csCol.Value(1))
 	}
-	if csCol.Value(2).(float64) != 6.0 || csCol.Value(3).(float64) != 16.0 {
+	if csCol.Value(2).(float64) != 3.0 || csCol.Value(3).(float64) != 7.0 {
 		t.Fatalf("over cum_sum g2: %v %v", csCol.Value(2), csCol.Value(3))
 	}
 

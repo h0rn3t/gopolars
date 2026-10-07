@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	goarrow "github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	parrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
+	idatabase "github.com/h0rn3t/gopolars/pkg/io/database"
 )
 
 // execSQL runs a query against the given in-memory frames using an embedded
@@ -64,7 +66,7 @@ func execSQL(ctx context.Context, query string, tables map[string]frame.DataFram
 			if err := execStmt(ctx, ar, query); err != nil {
 				return err
 			}
-			runQuery = fmt.Sprintf(`SELECT * FROM "%s"`, target)
+			runQuery = "SELECT * FROM " + target
 		}
 		res, err := ar.QueryContext(ctx, runQuery)
 		if err != nil {
@@ -84,21 +86,65 @@ func execSQL(ctx context.Context, query string, tables map[string]frame.DataFram
 	return result, nil
 }
 
-// dmlReTarget extracts the target table of a leading DML statement
+// dmlPrefix matches a leading DML statement up to its target table
 // (DELETE FROM / UPDATE / INSERT INTO / TRUNCATE [TABLE]).
-var dmlReTarget = regexp.MustCompile(`(?is)^\s*(?:DELETE\s+FROM|UPDATE|INSERT\s+INTO|TRUNCATE(?:\s+TABLE)?)\s+"?([A-Za-z_][A-Za-z0-9_]*)"?`)
+var dmlPrefix = regexp.MustCompile(`(?is)^\s*(?:DELETE\s+FROM|UPDATE|INSERT\s+INTO|TRUNCATE(?:\s+TABLE)?)\s+`)
 
 // dmlTarget reports whether query is a (non-RETURNING) DML statement and, if so,
-// the table it mutates. RETURNING statements keep DuckDB's native result.
+// the table it mutates as a quoted, possibly schema-qualified identifier.
+// RETURNING statements keep DuckDB's native result.
 func dmlTarget(query string) (string, bool) {
 	if strings.Contains(strings.ToUpper(query), "RETURNING") {
 		return "", false
 	}
-	m := dmlReTarget.FindStringSubmatch(query)
-	if m == nil {
+	loc := dmlPrefix.FindStringIndex(query)
+	if loc == nil {
 		return "", false
 	}
-	return m[1], true
+	rest := query[loc[1]:]
+	var parts []string
+	for {
+		part, n := leadingIdentifier(rest)
+		if n == 0 {
+			return "", false
+		}
+		parts = append(parts, idatabase.QuoteIdentifier(part))
+		after, dotted := strings.CutPrefix(rest[n:], ".")
+		if !dotted {
+			return strings.Join(parts, "."), true
+		}
+		rest = after
+	}
+}
+
+// leadingIdentifier reads the identifier at the start of s and returns its
+// name and length in bytes, or a zero length when s does not start with one.
+// The identifier is bare, or double-quoted with "" for a literal quote.
+func leadingIdentifier(s string) (string, int) {
+	if !strings.HasPrefix(s, `"`) {
+		n := len(s)
+		for i, r := range s {
+			identChar := r == '_' || unicode.IsLetter(r) || i > 0 && (r == '$' || unicode.IsDigit(r))
+			if !identChar {
+				n = i
+				break
+			}
+		}
+		return s[:n], n
+	}
+	var name strings.Builder
+	for i := 1; i < len(s); i++ {
+		switch {
+		case s[i] != '"':
+			name.WriteByte(s[i])
+		case i+1 < len(s) && s[i+1] == '"':
+			name.WriteByte('"')
+			i++
+		default:
+			return name.String(), i + 1
+		}
+	}
+	return "", 0 // unterminated
 }
 
 // execStmt runs a statement that produces no rows and releases its reader.
@@ -130,7 +176,8 @@ func registerTable(ctx context.Context, ar *duckdb.Arrow, name string, f frame.D
 		return err
 	}
 	defer release()
-	return execStmt(ctx, ar, fmt.Sprintf(`CREATE TABLE "%s" AS SELECT * FROM "%s"`, name, view))
+	return execStmt(ctx, ar, fmt.Sprintf("CREATE TABLE %s AS SELECT * FROM %s",
+		idatabase.QuoteIdentifier(name), idatabase.QuoteIdentifier(view)))
 }
 
 // readResult drains an Arrow result reader into a single DataFrame.
@@ -172,37 +219,25 @@ func readResult(res array.RecordReader) (frame.DataFrame, error) {
 	}
 }
 
-// nativeArrow reports whether the gopolars Arrow converter already represents
-// the array's type directly.
-// List/Struct are passed through untouched: the gopolars Arrow bridge converts
-// them (and normalizes any narrow numeric leaves) into boxed List/Struct columns.
-func nativeArrow(a goarrow.Array) bool {
-	switch a.(type) {
-	case *array.Float64, *array.Int64, *array.Boolean, *array.String, *array.LargeString, *array.Timestamp:
-		return true
-	case *array.Date32, *array.Date64, *array.Time32, *array.Time64, *array.Binary, *array.LargeBinary:
-		return true
-	case *array.MonthDayNanoInterval:
-		return true
-	case *array.List, *array.LargeList, *array.FixedSizeList, *array.Struct:
-		return true
-	case *array.Decimal128:
-		// Preserve an explicit DECIMAL/NUMERIC cast as a gopolars Decimal column, but
-		// widen HUGEINT and integer aggregates (SUM/COUNT...) to int64/float64. DuckDB
-		// surfaces those as Decimal128(precision=38, scale=0), which is byte-identical
-		// to an explicit ::numeric(p,0) only when p==38; a user precision is < 38.
-		dt := a.DataType().(*goarrow.Decimal128Type)
-		return dt.Precision != 38 || dt.Scale != 0
+// isHugeint reports whether a is how DuckDB surfaces HUGEINT and integer
+// aggregates (SUM/COUNT...): Decimal128 with precision 38 and scale 0. An
+// explicit DECIMAL/NUMERIC cast keeps its own precision (< 38) and imports as a
+// gopolars Decimal column. Every other type is left to parrow.FromArrowRecord,
+// which widens narrow numbers and rejects values it cannot represent.
+func isHugeint(a goarrow.Array) bool {
+	dec, ok := a.(*array.Decimal128)
+	if !ok {
+		return false
 	}
-	return false
+	dt := dec.DataType().(*goarrow.Decimal128Type)
+	return dt.Precision == 38 && dt.Scale == 0
 }
 
-// normalizeRecord converts DuckDB result columns whose Arrow type gopolars cannot
-// represent natively (narrow ints, unsigned ints, float32, Decimal128/HUGEINT)
-// into Int64/Float64. Truly unsupported types (e.g. list/struct) return an error.
-// Returns a record the caller must Release.
+// normalizeRecord converts HUGEINT columns to Int64 (or Float64 when a value
+// does not fit) and passes every other column through. Returns a record the
+// caller must Release.
 func normalizeRecord(rec goarrow.RecordBatch) (goarrow.RecordBatch, error) {
-	needs := slices.ContainsFunc(rec.Columns(), func(a goarrow.Array) bool { return !nativeArrow(a) })
+	needs := slices.ContainsFunc(rec.Columns(), isHugeint)
 	if !needs {
 		rec.Retain()
 		return rec, nil
@@ -214,19 +249,11 @@ func normalizeRecord(rec goarrow.RecordBatch) (goarrow.RecordBatch, error) {
 	for i := range int(rec.NumCols()) {
 		field := schema.Field(i)
 		col := rec.Column(i)
-		if nativeArrow(col) {
+		if isHugeint(col) {
+			cols[i], field.Type = decimalToNumeric(mem, col.(*array.Decimal128), 0)
+		} else {
 			col.Retain()
 			cols[i] = col
-		} else {
-			arr, typ, err := convertArray(mem, col)
-			if err != nil {
-				for j := 0; j < i; j++ {
-					cols[j].Release()
-				}
-				return nil, fmt.Errorf("column %q: %w", field.Name, err)
-			}
-			cols[i] = arr
-			field.Type = typ
 		}
 		fields[i] = field
 	}
@@ -235,58 +262,6 @@ func normalizeRecord(rec goarrow.RecordBatch) (goarrow.RecordBatch, error) {
 		c.Release()
 	}
 	return out, nil
-}
-
-// convertArray widens a non-native numeric array to Int64 or Float64.
-func convertArray(mem memory.Allocator, a goarrow.Array) (goarrow.Array, goarrow.DataType, error) {
-	switch arr := a.(type) {
-	case *array.Int8:
-		return widenInt(mem, a.Len(), arr.IsNull, func(i int) int64 { return int64(arr.Value(i)) }), goarrow.PrimitiveTypes.Int64, nil
-	case *array.Int16:
-		return widenInt(mem, a.Len(), arr.IsNull, func(i int) int64 { return int64(arr.Value(i)) }), goarrow.PrimitiveTypes.Int64, nil
-	case *array.Int32:
-		return widenInt(mem, a.Len(), arr.IsNull, func(i int) int64 { return int64(arr.Value(i)) }), goarrow.PrimitiveTypes.Int64, nil
-	case *array.Uint8:
-		return widenInt(mem, a.Len(), arr.IsNull, func(i int) int64 { return int64(arr.Value(i)) }), goarrow.PrimitiveTypes.Int64, nil
-	case *array.Uint16:
-		return widenInt(mem, a.Len(), arr.IsNull, func(i int) int64 { return int64(arr.Value(i)) }), goarrow.PrimitiveTypes.Int64, nil
-	case *array.Uint32:
-		return widenInt(mem, a.Len(), arr.IsNull, func(i int) int64 { return int64(arr.Value(i)) }), goarrow.PrimitiveTypes.Int64, nil
-	case *array.Uint64:
-		return widenInt(mem, a.Len(), arr.IsNull, func(i int) int64 { return int64(arr.Value(i)) }), goarrow.PrimitiveTypes.Int64, nil
-	case *array.Float32:
-		fb := array.NewFloat64Builder(mem)
-		for i := 0; i < a.Len(); i++ {
-			if arr.IsNull(i) {
-				fb.AppendNull()
-			} else {
-				fb.Append(float64(arr.Value(i)))
-			}
-		}
-		out := fb.NewArray()
-		fb.Release()
-		return out, goarrow.PrimitiveTypes.Float64, nil
-	case *array.Decimal128:
-		dt := arr.DataType().(*goarrow.Decimal128Type)
-		out, typ := decimalToNumeric(mem, arr, dt.Scale)
-		return out, typ, nil
-	}
-	return nil, nil, fmt.Errorf("unsupported arrow type %s", a.DataType())
-}
-
-// widenInt builds an Int64 array from a narrower integer source.
-func widenInt(mem memory.Allocator, n int, isNull func(int) bool, val func(int) int64) goarrow.Array {
-	b := array.NewInt64Builder(mem)
-	for i := range n {
-		if isNull(i) {
-			b.AppendNull()
-		} else {
-			b.Append(val(i))
-		}
-	}
-	out := b.NewArray()
-	b.Release()
-	return out
 }
 
 // decimalToNumeric converts a Decimal128 array to Int64 (scale 0, all values fit)

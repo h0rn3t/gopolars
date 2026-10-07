@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 	"github.com/h0rn3t/gopolars/pkg/expr"
 	"github.com/h0rn3t/gopolars/pkg/frame"
@@ -163,6 +164,9 @@ func (d *df) IsDuplicated() Series {
 	counts := map[string]int{}
 	keys := make([]string, len(rows))
 	for i, r := range rows {
+		for c, v := range r {
+			r[c] = chunk.CanonicalKey(v)
+		}
 		k := fmt.Sprintf("%v", r)
 		keys[i] = k
 		counts[k]++
@@ -850,6 +854,10 @@ func (d *df) Quantile(q float64) map[string]float64 {
 		if len(vals) == 0 {
 			continue
 		}
+		if math.IsNaN(q) { // a NaN q has no rank
+			out[col] = math.NaN()
+			continue
+		}
 		slices.Sort(vals)
 		idx := int(math.Round(q * float64(len(vals)-1)))
 		out[col] = vals[idx]
@@ -1052,7 +1060,11 @@ func (d *df) Vstack(other DataFrame) (DataFrame, error) {
 }
 
 func (d *df) Update(other DataFrame) (DataFrame, error) {
-	return d.VStack(other)
+	otherDF, ok := other.(*df)
+	if !ok {
+		return nil, fmt.Errorf("unsupported dataframe implementation")
+	}
+	return fromFrame(d.value.Update(otherDF.value))
 }
 
 func (d *df) WithColumnsSeq(exprs ...Expr) (DataFrame, error) {
@@ -1232,7 +1244,7 @@ func (d *df) ToDummies(columns ...string) (DataFrame, error) {
 		}
 		uniq := map[string]struct{}{}
 		for _, v := range values {
-			uniq[fmt.Sprintf("%v", v)] = struct{}{}
+			uniq[fmt.Sprintf("%v", chunk.CanonicalKey(v))] = struct{}{}
 		}
 		keys := make([]string, 0, len(uniq))
 		for k := range uniq {
@@ -1242,7 +1254,7 @@ func (d *df) ToDummies(columns ...string) (DataFrame, error) {
 		for _, k := range keys {
 			dummyVals := make([]any, len(values))
 			for i, v := range values {
-				dummyVals[i] = fmt.Sprintf("%v", v) == k
+				dummyVals[i] = fmt.Sprintf("%v", chunk.CanonicalKey(v)) == k
 			}
 			colName := name + "_" + strings.ReplaceAll(k, " ", "_")
 			newCols = append(newCols, frame.SeriesInput{Name: colName, Values: dummyVals})

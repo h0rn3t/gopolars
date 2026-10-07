@@ -3,6 +3,9 @@ package json
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"slices"
 	"time"
@@ -25,19 +28,26 @@ type WriteInput struct {
 	Pretty bool
 }
 
+// Read reads a JSON array of objects, or with NDJSON one object per line, into
+// a DataFrame with one column per key found in any record, in the order keys
+// first appear. A record without a key is null in that column; Columns keeps
+// only the named keys without reordering them.
 func Read(input ReadInput) (frame.DataFrame, error) {
-	if input.NDJSON {
-		return readNDJSON(input)
-	}
-	data, err := os.ReadFile(input.Path)
+	f, err := os.Open(input.Path)
 	if err != nil {
 		return frame.DataFrame{}, err
 	}
-	var rows []map[string]any
-	if err := json.Unmarshal(data, &rows); err != nil {
+	defer func() { _ = f.Close() }()
+	rows, keys, err := readRecords(json.NewDecoder(f), input.NDJSON)
+	if errors.Is(err, io.EOF) {
+		// Between records the decoder stops at EOF without an error, so an EOF
+		// here means the input ended inside a record or the array.
+		err = io.ErrUnexpectedEOF
+	}
+	if err != nil {
 		return frame.DataFrame{}, err
 	}
-	return fromRows(rows, input.Schema, input.Columns)
+	return fromRows(rows, keys, input.Schema, input.Columns)
 }
 
 func Write(df frame.DataFrame, input WriteInput) (err error) {
@@ -79,52 +89,87 @@ func Write(df frame.DataFrame, input WriteInput) (err error) {
 	return err
 }
 
-func readNDJSON(input ReadInput) (frame.DataFrame, error) {
-	f, err := os.Open(input.Path)
-	if err != nil {
-		return frame.DataFrame{}, err
-	}
-	defer func() { _ = f.Close() }()
-	scanner := bufio.NewScanner(f)
-	rows := make([]map[string]any, 0)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		var row map[string]any
-		if err := json.Unmarshal(line, &row); err != nil {
-			return frame.DataFrame{}, err
+// readRecords decodes a JSON array of objects, or with ndjson a stream of
+// objects, and returns the records with their keys in order of first
+// appearance across all records. A null record has no keys.
+func readRecords(dec *json.Decoder, ndjson bool) ([]map[string]any, []string, error) {
+	var rows []map[string]any
+	var keys []string
+	seen := map[string]bool{}
+	if !ndjson {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, nil, err
 		}
+		if tok != json.Delim('[') {
+			return nil, nil, fmt.Errorf("json: document starts with %v, want an array of objects", tok)
+		}
+	}
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, nil, err
+		}
+		row := map[string]any{}
 		rows = append(rows, row)
+		if tok == nil {
+			continue
+		}
+		if tok != json.Delim('{') {
+			return nil, nil, fmt.Errorf("json: record %d is %v, want an object", len(rows)-1, tok)
+		}
+		for dec.More() {
+			tok, err := dec.Token()
+			if err != nil {
+				return nil, nil, err
+			}
+			key := tok.(string) // inside an object Token returns each key as a string
+			var value any
+			if err := dec.Decode(&value); err != nil {
+				return nil, nil, err
+			}
+			if !seen[key] {
+				seen[key] = true
+				keys = append(keys, key)
+			}
+			row[key] = value
+		}
+		if _, err := dec.Token(); err != nil { // the record's '}'
+			return nil, nil, err
+		}
 	}
-	if err := scanner.Err(); err != nil {
-		return frame.DataFrame{}, err
+	if !ndjson {
+		if _, err := dec.Token(); err != nil { // the array's ']'
+			return nil, nil, err
+		}
 	}
-	return fromRows(rows, input.Schema, input.Columns)
+	// Like json.Unmarshal of the whole input, nothing may follow the records.
+	tok, err := dec.Token()
+	if err == nil {
+		return nil, nil, fmt.Errorf("json: unexpected %v after the records", tok)
+	}
+	if !errors.Is(err, io.EOF) {
+		return nil, nil, err
+	}
+	return rows, keys, nil
 }
 
-func fromRows(rows []map[string]any, schema dtypes.Schema, columns []string) (frame.DataFrame, error) {
+// fromRows builds one column per key, in the order of keys; a record without
+// the key contributes a null.
+func fromRows(rows []map[string]any, keys []string, schema dtypes.Schema, columns []string) (frame.DataFrame, error) {
 	if len(rows) == 0 {
 		return frame.New(frame.NewInput{})
 	}
-	order := make([]string, 0, len(rows[0]))
-	for k := range rows[0] {
-		order = append(order, k)
-	}
 	if len(columns) > 0 {
-		order = slices.DeleteFunc(order, func(c string) bool { return !slices.Contains(columns, c) })
+		keys = slices.DeleteFunc(keys, func(c string) bool { return !slices.Contains(columns, c) })
 	}
-	valuesByCol := map[string][]any{}
-	for _, c := range order {
-		valuesByCol[c] = make([]any, 0, len(rows))
-	}
-	for _, row := range rows {
-		for _, c := range order {
-			valuesByCol[c] = append(valuesByCol[c], normalizeValue(row[c]))
+	out := make([]series.Series, 0, len(keys))
+	for _, c := range keys {
+		values := make([]any, len(rows))
+		for i, row := range rows {
+			values[i] = normalizeValue(row[c])
 		}
-	}
-	out := make([]series.Series, 0, len(order))
-	for _, c := range order {
-		dt := inferType(valuesByCol[c], schema, c)
-		s, err := series.New(c, dt, valuesByCol[c])
+		s, err := series.New(c, inferType(values, schema, c), values)
 		if err != nil {
 			return frame.DataFrame{}, err
 		}

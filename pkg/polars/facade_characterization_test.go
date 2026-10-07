@@ -26,46 +26,71 @@ func charFrame(t *testing.T, cols ...frame.SeriesInput) DataFrame {
 
 func TestProjectedColumnsCharacterization(t *testing.T) {
 	when := expr.When(expr.Col("c").Gt(expr.Lit(1)), expr.Col("d").Abs(), expr.Col("e"))
+	sel := func(exprs ...expr.Expr) logical.Node { return logical.Node{Type: logical.NodeSelect, Exprs: exprs} }
+	keep := func(acc, next any) (any, error) { return acc, nil }
 	tests := []struct {
 		name  string
 		nodes []logical.Node
 		want  []string
 	}{
 		{"no projection", []logical.Node{{Type: logical.NodeLimit, IntValue: 1}}, nil},
-		{"select", []logical.Node{{Type: logical.NodeSelect, Exprs: []expr.Expr{expr.Col("a"), expr.Lit(1), expr.Col("b").Alias("z")}}}, []string{"a", "b"}},
-		{"filter without expr", []logical.Node{{Type: logical.NodeFilter}}, nil},
-		{"filter expr tree", []logical.Node{{Type: logical.NodeFilter, Exprs: []expr.Expr{when}}}, []string{"c", "d", "e"}},
-		{"column lists", []logical.Node{
+		{"select", []logical.Node{sel(expr.Col("a"), expr.Lit(1), expr.Col("b").Alias("z"))}, []string{"a", "b"}},
+		{"literal-only select", []logical.Node{sel(expr.Lit(1))}, nil},
+		{"filter without barrier", []logical.Node{{Type: logical.NodeFilter, Exprs: []expr.Expr{when}}}, nil},
+		{"filter expr tree before select", []logical.Node{{Type: logical.NodeFilter, Exprs: []expr.Expr{when}}, sel(expr.Col("a"))}, []string{"a", "c", "d", "e"}},
+		{"computed select", []logical.Node{sel(expr.Col("a"), expr.Col("b").Add(expr.Col("c")).Alias("s"))}, []string{"a", "b", "c"}},
+		{"select over fold and struct", []logical.Node{sel(
+			expr.Col("v").CumSum().Over("p"),
+			expr.Fold(int64(0), keep, expr.Col("f1"), expr.Col("f2")),
+			expr.StructCols("x", "y"),
+		)}, []string{"f1", "f2", "p", "v", "x", "y"}},
+		{"aggregate keys and expressions", []logical.Node{{Type: logical.NodeAggregate, Columns: []string{"g"}, Exprs: []expr.Expr{expr.Sum(expr.Col("b")), expr.Col("c").Mean()}}}, []string{"b", "c", "g"}},
+		{"names defined before the barrier", []logical.Node{
+			{Type: logical.NodeWithCols, Exprs: []expr.Expr{expr.Col("a").Mul(expr.Lit(10)).Alias("x")}},
+			{Type: logical.NodeWithRowIdx, Strings: []string{"i", "0"}},
+			{Type: logical.NodeFilter, Exprs: []expr.Expr{expr.Col("x").Gt(expr.Col("i"))}},
+			sel(expr.Col("x"), expr.Col("i"), expr.Col("b")),
+		}, []string{"a", "b"}},
+		{"modeled prefix nodes", []logical.Node{
 			{Type: logical.NodeSort, Columns: []string{"s"}},
-			{Type: logical.NodeAggregate, Columns: []string{"g"}},
-			{Type: logical.NodeJoin, Columns: []string{"j"}},
-			{Type: logical.NodeUnique, Columns: []string{"u"}},
+			{Type: logical.NodeDrop, Columns: []string{"d"}},
+			{Type: logical.NodeCast, Strings: []string{"c", "float64"}},
+			{Type: logical.NodeLimit, IntValue: 1},
+			{Type: logical.NodeTail, IntValue: 1},
+			{Type: logical.NodeSlice, IntValue: 0, Strings: []string{"1"}},
+			{Type: logical.NodeReverse},
+			{Type: logical.NodeGatherEvery, Strings: []string{"1"}},
 			{Type: logical.NodeDropNulls, Columns: []string{"n"}},
+			{Type: logical.NodeDropNans, Columns: []string{"m"}},
+			{Type: logical.NodeUnique, Columns: []string{"u"}},
+			{Type: logical.NodeShift, IntValue: 1},
+			{Type: logical.NodeFillNull, Exprs: []expr.Expr{expr.Lit(0)}},
+			{Type: logical.NodeFillNaN, Strings: []string{"0"}},
+			{Type: logical.NodeSetSorted, Columns: []string{"o"}},
 			{Type: logical.NodeExplode, Columns: []string{"x"}},
-			{Type: logical.NodeFlatten, Columns: []string{"f"}},
-			{Type: logical.NodeMelt, Columns: []string{"m"}},
-			{Type: logical.NodePivot, Columns: []string{"p", "s"}},
-		}, []string{"f", "g", "j", "m", "n", "p", "s", "u", "x"}},
-		{"rolling", []logical.Node{
-			{Type: logical.NodeRolling, Columns: []string{"by", "", "out"}},
-			{Type: logical.NodeRolling, Columns: []string{"v"}},
-		}, []string{"by", "v"}},
-		{"dynamic", []logical.Node{
-			{Type: logical.NodeDynamic, Columns: []string{"", "w"}, Exprs: []expr.Expr{expr.Col("agg").Sum()}},
-			{Type: logical.NodeDynamic, Columns: []string{"t"}},
-		}, []string{"agg", "t"}},
-		{"window", []logical.Node{{Type: logical.NodeWindow, Windows: []logical.WindowSpec{
-			{Target: "*", PartitionBy: []string{"pb"}, OrderBy: []string{"ob"}},
-			{Target: ""},
-			{Target: "tg"},
-		}}}, []string{"ob", "pb", "tg"}},
+			sel(expr.Col("a")),
+		}, []string{"a", "c", "d", "m", "n", "o", "s", "u", "x"}},
+		{"nodes after the barrier", []logical.Node{
+			sel(expr.Col("a"), expr.Col("b").Alias("z")),
+			{Type: logical.NodeFilter, Exprs: []expr.Expr{expr.Col("z").Gt(expr.Lit(1))}},
+			{Type: logical.NodeJoin},
+		}, []string{"a", "b"}},
+		{"unmodeled node before the barrier", []logical.Node{{Type: logical.NodeRename, Strings: []string{"a", "b"}}, sel(expr.Col("b"))}, nil},
+		{"join before the barrier", []logical.Node{{Type: logical.NodeJoin}, sel(expr.Col("a"))}, nil},
+		{"window before the barrier", []logical.Node{{Type: logical.NodeWindow}, sel(expr.Col("a"))}, nil},
+		{"drop_nulls on every column", []logical.Node{{Type: logical.NodeDropNulls}, sel(expr.Col("a"))}, nil},
+		{"drop_nans on every column", []logical.Node{{Type: logical.NodeDropNans}, sel(expr.Col("a"))}, nil},
+		{"unique on every column", []logical.Node{{Type: logical.NodeUnique}, sel(expr.Col("a"))}, nil},
+		{"all selector", []logical.Node{sel(expr.All())}, nil},
+		{"exclude selector", []logical.Node{sel(expr.Exclude("a"))}, nil},
+		{"regex selector before the barrier", []logical.Node{{Type: logical.NodeWithCols, Exprs: []expr.Expr{expr.Col("^x.*$")}}, sel(expr.Col("a"))}, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := projectedColumns(tt.nodes)
 			slices.Sort(got)
 			if !slices.Equal(got, tt.want) || (got == nil) != (tt.want == nil) {
-				t.Errorf("projectedColumns() = %#v, want %#v", got, tt.want)
+				t.Errorf("projectedColumns(%s) = %#v, want %#v", tt.name, got, tt.want)
 			}
 		})
 	}

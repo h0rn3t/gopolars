@@ -133,7 +133,7 @@ func (g GroupBy) evalAgg(aggExpr expr.Expr, idxs []int) (any, error) {
 			if v == nil && aggExpr.Op() == "count_distinct" {
 				continue
 			}
-			seen[fmt.Sprintf("%v", v)] = struct{}{}
+			seen[fmt.Sprintf("%v", chunk.CanonicalKey(v))] = struct{}{}
 		}
 		return int64(len(seen)), nil
 	case "std", "var", "median":
