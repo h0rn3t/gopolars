@@ -137,7 +137,7 @@ func inferArrowType(values []any) (goarrow.DataType, error) {
 		case bool:
 			return goarrow.FixedWidthTypes.Boolean, nil
 		case time.Time:
-			return &goarrow.TimestampType{Unit: goarrow.Nanosecond}, nil
+			return &goarrow.TimestampType{Unit: goarrow.Microsecond}, nil
 		case []any:
 			child, err := inferArrowType(flattenLists(values))
 			if err != nil {
@@ -230,7 +230,11 @@ func appendArrowValue(b array.Builder, dt goarrow.DataType, v any) error {
 	case *array.BooleanBuilder:
 		bb.Append(v.(bool))
 	case *array.TimestampBuilder:
-		bb.Append(goarrow.Timestamp(v.(time.Time).UnixNano()))
+		ts, err := timeToTimestamp(v.(time.Time))
+		if err != nil {
+			return err
+		}
+		bb.Append(ts)
 	case *array.ListBuilder:
 		lst, ok := v.([]any)
 		if !ok {

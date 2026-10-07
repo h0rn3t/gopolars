@@ -124,9 +124,10 @@ func lowCardinality(col *chunk.Column) bool {
 		return sampledLowCardinality(vals, col.Nulls(), math.Float64bits)
 	}
 	if vals, ok := col.Times(); ok {
-		// Datetimes are written as UnixNano timestamps, so that is the
-		// value whose cardinality the dictionary sees.
-		return sampledLowCardinality(vals, col.Nulls(), time.Time.UnixNano)
+		// Datetimes are written as microsecond timestamps, so that is the
+		// value whose cardinality the dictionary sees. Write has already
+		// rejected instants outside the microsecond range.
+		return sampledLowCardinality(vals, col.Nulls(), time.Time.UnixMicro)
 	}
 	if vals, ok := col.Strings(); ok {
 		return sampledLowCardinality(vals, col.Nulls(), func(v string) string { return v })

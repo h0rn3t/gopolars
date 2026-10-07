@@ -94,13 +94,16 @@ type probeTable struct {
 
 // buildProbeTable constructs the right-side probe table and prepares the
 // left-side key material. The packed path applies when both sides are a single
-// key column of the same fixed-width dtype; everything else (string, composite,
-// or boxed keys, or a dtype mismatch) uses the byte-encoded fallback.
+// key column of the same dtype and the right one packs losslessly
+// (CanPackJoinKey); a left Datetime that does not pack gets a key no right row
+// has. Everything else (string, composite, or boxed keys, a dtype mismatch, or
+// a right Datetime outside the nanosecond range) uses the byte-encoded
+// fallback.
 func buildProbeTable(leftKeyCols, rightKeyCols []*chunk.Column, rightHeight, workers int) *probeTable {
 	pt := &probeTable{}
 	if len(rightKeyCols) == 1 && len(leftKeyCols) == 1 &&
-		chunk.CanPackJoinKey(rightKeyCols[0]) &&
-		rightKeyCols[0].DataType() == leftKeyCols[0].DataType() {
+		rightKeyCols[0].DataType() == leftKeyCols[0].DataType() &&
+		chunk.CanPackJoinKey(rightKeyCols[0]) {
 		pt.packed = true
 		rightKeyAt, _ := chunk.PackKeyFunc(rightKeyCols[0])
 		rightNulls := rightKeyCols[0].Nulls()

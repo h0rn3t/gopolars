@@ -158,3 +158,30 @@ func TestDuckDBIOScalar(t *testing.T) {
 		t.Fatalf("want 1x2, got %dx%d", out.Height(), out.Width())
 	}
 }
+
+// TestDuckDBDatetimeOutsideNanosecondRange checks that a frame registered
+// with DuckDB keeps dates outside 1677–2262 and that DuckDB sees the column as
+// a microsecond TIMESTAMP.
+func TestDuckDBDatetimeOutsideNanosecondRange(t *testing.T) {
+	far := time.Date(9999, 12, 31, 23, 59, 59, 999999000, time.UTC)
+	yearOne := time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)
+	d, err := NewDataFrame(NewDataFrameInput{Columns: []frame.SeriesInput{
+		{Name: "id", Values: []any{int64(1), int64(2)}},
+		{Name: "ts", Values: []any{far, yearOne}},
+	}})
+	if err != nil {
+		t.Fatalf("frame: %v", err)
+	}
+	lf, err := d.SQL(t.Context(), "SELECT id, ts, typeof(ts) AS kind FROM self ORDER BY id")
+	out := collect(t, lf, err)
+	ts, _ := out.GetColumn("ts")
+	for i, want := range []time.Time{far, yearOne} {
+		if got, ok := ts.Value(i).(time.Time); !ok || !got.Equal(want) {
+			t.Errorf("ts[%d] = %v, want %v", i, ts.Value(i), want)
+		}
+	}
+	kind, _ := out.GetColumn("kind")
+	if got := kind.Value(0); got != "TIMESTAMP" {
+		t.Errorf("typeof(ts) = %v, want TIMESTAMP", got)
+	}
+}

@@ -63,7 +63,10 @@ func FromArrowRecord(rec goarrow.RecordBatch) (frame.DataFrame, error) {
 }
 
 // ToArrowRecord exports a DataFrame to an Arrow record batch without
-// round-tripping through []any for primitive dtypes.
+// round-tripping through []any for primitive dtypes. Datetime values, nested
+// ones included, export as timestamp[us], truncating sub-microsecond digits;
+// an instant whose microsecond count does not fit in an int64 makes the export
+// fail with an error naming the column.
 func ToArrowRecord(df frame.DataFrame) (goarrow.RecordBatch, error) {
 	alloc := memory.NewGoAllocator()
 	fields := make([]goarrow.Field, 0, df.Width())
@@ -384,16 +387,21 @@ func columnToArrowArray(s series.Series, alloc memory.Allocator) (goarrow.Array,
 	}
 
 	if tims, ok := col.Times(); ok {
-		dt := &goarrow.TimestampType{Unit: goarrow.Nanosecond}
+		dt := &goarrow.TimestampType{Unit: goarrow.Microsecond}
 		b := array.NewTimestampBuilder(alloc, dt)
 		b.Reserve(n)
 		nulls := col.Nulls()
 		for i, v := range tims {
 			if nulls != nil && nulls[i] {
 				b.AppendNull()
-			} else {
-				b.Append(goarrow.Timestamp(v.UnixNano()))
+				continue
 			}
+			ts, err := timeToTimestamp(v)
+			if err != nil {
+				b.Release()
+				return nil, nil, err
+			}
+			b.Append(ts)
 		}
 		return b.NewArray(), dt, nil
 	}
@@ -475,6 +483,23 @@ func sliceStringBuffer[O int32 | int64](data []byte, offsets []O, nulls []bool) 
 		}
 	}
 	return vals
+}
+
+// minTimestamp and endTimestamp bound the instants a timestamp[us] holds:
+// minTimestamp is the first, endTimestamp the first one past the last.
+var (
+	minTimestamp = time.UnixMicro(math.MinInt64)
+	endTimestamp = time.UnixMicro(math.MaxInt64).Add(time.Microsecond)
+)
+
+// timeToTimestamp converts t to a microsecond Arrow timestamp, flooring
+// sub-microsecond digits. An instant outside the int64 microsecond range is an
+// error: UnixMicro would wrap it to a different instant.
+func timeToTimestamp(t time.Time) (goarrow.Timestamp, error) {
+	if t.Before(minTimestamp) || !t.Before(endTimestamp) {
+		return 0, fmt.Errorf("datetime %s is outside the microsecond timestamp range", t.Format(time.RFC3339Nano))
+	}
+	return goarrow.Timestamp(t.UnixMicro()), nil
 }
 
 func timestampToTime(v int64, unit goarrow.TimeUnit) time.Time {

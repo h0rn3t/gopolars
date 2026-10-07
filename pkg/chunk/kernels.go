@@ -1,11 +1,13 @@
 package chunk
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/h0rn3t/gopolars/pkg/dtypes"
 )
@@ -365,6 +367,36 @@ func float64Key(v float64) uint64 {
 	return math.Float64bits(v)
 }
 
+// timeKey is a group or join key for an instant: Unix seconds and the
+// nanosecond within the second. Unlike UnixNano, which wraps outside
+// 1677-09-21 … 2262-04-11, it is exact for every time.Time, and like UnixNano
+// it ignores the location, so one instant in two zones is one key.
+type timeKey struct {
+	sec  int64
+	nsec int32
+}
+
+func timeKeyOf(t time.Time) timeKey {
+	return timeKey{sec: t.Unix(), nsec: int32(t.Nanosecond())}
+}
+
+// Instants strictly between the Unix seconds minPackedSec and maxPackedSec
+// have an exact UnixNano. The two boundary seconds of the int64 nanosecond
+// range (1677-09-21 … 2262-04-11) are only partly representable and count as
+// outside it, which keeps unpackedTimeKey, the UnixNano of an instant in the
+// lower one, free for instants that do not pack.
+const (
+	minPackedSec    = math.MinInt64/1_000_000_000 - 1
+	maxPackedSec    = math.MaxInt64 / 1_000_000_000
+	unpackedTimeKey = uint64(1) << 63
+)
+
+// packsTime reports whether t's UnixNano is exact.
+func packsTime(t time.Time) bool {
+	s := t.Unix()
+	return s > minPackedSec && s < maxPackedSec
+}
+
 // CanonicalKey returns v with a float64 -0.0 replaced by +0.0, so that a key
 // built by formatting a boxed value with %v treats both zeros as one key, as
 // typed keys do. NaN needs no change (%v renders every NaN as "NaN"), and any
@@ -500,13 +532,13 @@ func firstRowsSingle(c *Column, n int) (firstRow []int, ok bool) {
 			}
 		}
 	case dtypes.Datetime:
-		m := make(map[int64]struct{})
+		m := make(map[timeKey]struct{})
 		for row := range n {
 			if nulls != nil && nulls[row] {
 				assignNull(row)
 				continue
 			}
-			v := c.tim[row].UnixNano()
+			v := timeKeyOf(c.tim[row])
 			if _, seen := m[v]; !seen {
 				m[v] = struct{}{}
 				firstRow = append(firstRow, row)
@@ -603,13 +635,13 @@ func groupIDsSingle(c *Column, n int) (ids []int, firstRow []int, ok bool) {
 			ids[row] = g
 		}
 	case dtypes.Datetime:
-		m := make(map[int64]int)
+		m := make(map[timeKey]int)
 		for row := range n {
 			if nulls != nil && nulls[row] {
 				ids[row] = assignNull(row)
 				continue
 			}
-			v := c.tim[row].UnixNano()
+			v := timeKeyOf(c.tim[row])
 			g, seen := m[v]
 			if !seen {
 				g = next
@@ -661,8 +693,9 @@ func appendRowKey(dst []byte, c *Column, row int) []byte {
 		}
 		return append(dst, 4, 0)
 	case dtypes.Datetime:
-		dst = append(dst, 5)
-		return appendUint64(dst, uint64(c.tim[row].UnixNano()))
+		k := timeKeyOf(c.tim[row])
+		dst = appendUint64(append(dst, 5), uint64(k.sec))
+		return binary.LittleEndian.AppendUint32(dst, uint32(k.nsec))
 	default:
 		// Boxed dtypes (Decimal/List/Struct) are rare keys; encode via %v.
 		dst = append(dst, 6)
@@ -676,17 +709,26 @@ func appendUint64(dst []byte, v uint64) []byte {
 		byte(v>>32), byte(v>>40), byte(v>>48), byte(v>>56))
 }
 
-// CanPackJoinKey reports whether c's dtype packs losslessly into a uint64, so an
+// CanPackJoinKey reports whether c's values pack losslessly into a uint64, so an
 // equi-join can key a map[uint64] directly instead of allocating a byte-encoded
-// Go string per row. Int64, Float64, Boolean, and Datetime each fit a 64-bit
-// slot bijectively (with NaN canonicalized); String/Categorical/Enum and boxed
-// dtypes do not and must use the AppendRowKey byte fallback.
+// Go string per row. Int64, Float64 and Boolean each fit a 64-bit slot
+// bijectively (with NaN canonicalized); Datetime does when every non-null value
+// lies within the int64 nanosecond range (1677-09-21 … 2262-04-11), so a
+// Datetime column is scanned. String/Categorical/Enum and boxed dtypes do not
+// pack and must use the AppendRowKey byte fallback.
 func CanPackJoinKey(c *Column) bool {
 	if c == nil {
 		return false
 	}
 	switch c.dtype {
-	case dtypes.Int64, dtypes.Float64, dtypes.Boolean, dtypes.Datetime:
+	case dtypes.Int64, dtypes.Float64, dtypes.Boolean:
+		return true
+	case dtypes.Datetime:
+		for i, v := range c.tim {
+			if (c.nulls == nil || !c.nulls[i]) && !packsTime(v) {
+				return false
+			}
+		}
 		return true
 	default:
 		return false
@@ -698,8 +740,11 @@ func CanPackJoinKey(c *Column) bool {
 // key — with the per-dtype switch hoisted out of the row loop (the closure
 // captures the typed backing slice). This avoids materializing a whole-column
 // []uint64 key buffer (O(rows) memory) just to pack keys the build/probe read
-// once. ok is false for dtypes that do not pack losslessly (see CanPackJoinKey),
-// in which case the caller uses the byte-encoded AppendRowKey fallback. Null rows
+// once. ok is false for dtypes that do not pack losslessly, in which case the
+// caller uses the byte-encoded AppendRowKey fallback. A Datetime outside the
+// nanosecond range packs to a reserved key that no packable instant has, so a
+// probe row holding one matches nothing in a table built from a column
+// CanPackJoinKey accepts, and only the build side needs that check. Null rows
 // are NOT distinguished here: callers detect nulls via c.Nulls() and key them
 // separately, exactly as the byte path's null tag keeps null keys apart from
 // every real value. NaN is canonicalized so all NaN payloads pack equal,
@@ -722,7 +767,12 @@ func PackKeyFunc(c *Column) (keyAt func(int) uint64, ok bool) {
 		}, true
 	case dtypes.Datetime:
 		v := c.tim
-		return func(i int) uint64 { return uint64(v[i].UnixNano()) }, true
+		return func(i int) uint64 {
+			if !packsTime(v[i]) {
+				return unpackedTimeKey
+			}
+			return uint64(v[i].UnixNano())
+		}, true
 	default:
 		return nil, false
 	}

@@ -4,7 +4,9 @@ import (
 	"math"
 	"sort"
 	"testing"
+	"time"
 
+	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/expr"
 	"github.com/h0rn3t/gopolars/pkg/series"
 )
@@ -210,6 +212,47 @@ func BenchmarkUnique(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		if _, err := df.Unique("g"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// buildDatetimeGroupBenchFrame is buildGroupBenchFrame with a Datetime key:
+// n rows over `groups` distinct days.
+func buildDatetimeGroupBenchFrame(b *testing.B, n, groups int) DataFrame {
+	b.Helper()
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	g := make([]time.Time, n)
+	v := make([]float64, n)
+	for i := range n {
+		g[i] = base.AddDate(0, 0, i%groups)
+		v[i] = float64(i)
+	}
+	df, err := New(NewInput{Series: []series.Series{
+		series.FromColumn("g", chunk.NewTime(g, nil)),
+		series.FromFloat64("v", v, nil),
+	}})
+	if err != nil {
+		b.Fatal(err)
+	}
+	return df
+}
+
+func BenchmarkGroupBySumDatetime(b *testing.B) {
+	df := buildDatetimeGroupBenchFrame(b, 1_000_000, 100)
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := df.GroupBy("g").Agg(expr.Sum(expr.Col("v"))); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkUniqueDatetime(b *testing.B) {
+	df := buildDatetimeGroupBenchFrame(b, 1_000_000, 100)
+	b.ReportAllocs()
+	for b.Loop() {
 		if _, err := df.Unique("g"); err != nil {
 			b.Fatal(err)
 		}

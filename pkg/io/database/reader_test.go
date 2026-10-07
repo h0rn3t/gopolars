@@ -2,8 +2,11 @@ package database
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/apache/arrow-go/v18/arrow"
 
 	"github.com/h0rn3t/gopolars/pkg/frame"
 	iarrow "github.com/h0rn3t/gopolars/pkg/io/arrow"
@@ -153,5 +156,53 @@ func TestWriteAndReadMissingConnection(t *testing.T) {
 	// (a load failure with CGO, or a clear CGO-required message without it).
 	if _, err := Read(context.Background(), ReadInput{Query: "SELECT 1", DriverName: "nonexistent-driver-xyz"}); err == nil {
 		t.Fatalf("Read open-by-unknown-driver should error")
+	}
+}
+
+// TestDFRecordReaderDatetimeRange checks that the write-path reader exports
+// Datetime as timestamp[us], keeps dates outside the int64 nanosecond range,
+// and reports an instant past the microsecond range as an error naming the
+// column instead of sending a different instant.
+func TestDFRecordReaderDatetimeRange(t *testing.T) {
+	far := time.Date(9999, 12, 31, 23, 59, 59, 999999000, time.UTC)
+	yearOne := time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)
+	df := mustFrame(t, frame.SeriesInput{Name: "ts", Values: []any{far, yearOne, nil}})
+
+	rr, err := newDFRecordReader(df, 2)
+	if err != nil {
+		t.Fatalf("newDFRecordReader: %v", err)
+	}
+	defer rr.Release()
+	if got := rr.Schema().Field(0).Type; !arrow.TypeEqual(got, &arrow.TimestampType{Unit: arrow.Microsecond}) {
+		t.Errorf("schema ts type = %v, want timestamp[us]", got)
+	}
+	var got []any
+	for rr.Next() {
+		b, err := iarrow.FromArrowRecord(rr.RecordBatch())
+		if err != nil {
+			t.Fatalf("FromArrowRecord: %v", err)
+		}
+		ts, _ := b.GetColumn("ts")
+		for i := range b.Height() {
+			got = append(got, ts.Value(i))
+		}
+	}
+	if err := rr.Err(); err != nil {
+		t.Fatalf("reader err: %v", err)
+	}
+	if len(got) != 3 || !got[0].(time.Time).Equal(far) || !got[1].(time.Time).Equal(yearOne) || got[2] != nil {
+		t.Errorf("exported ts = %v, want [%v %v <nil>]", got, far, yearOne)
+	}
+
+	bad, err := newDFRecordReader(mustFrame(t, frame.SeriesInput{Name: "ts", Values: []any{time.Date(300000, 1, 1, 0, 0, 0, 0, time.UTC)}}), 2)
+	if err != nil {
+		t.Fatalf("newDFRecordReader: %v", err)
+	}
+	defer bad.Release()
+	if bad.Next() {
+		t.Error("Next() over year 300000 = true, want false")
+	}
+	if err := bad.Err(); err == nil || !strings.Contains(err.Error(), `column "ts"`) {
+		t.Errorf("Err() over year 300000 = %v, want an error naming column \"ts\"", err)
 	}
 }

@@ -3,7 +3,9 @@ package frame
 import (
 	"sort"
 	"testing"
+	"time"
 
+	"github.com/h0rn3t/gopolars/pkg/chunk"
 	"github.com/h0rn3t/gopolars/pkg/series"
 )
 
@@ -194,6 +196,46 @@ func BenchmarkJoinColumnar(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		if _, err := left.Join(JoinInput{Other: right, LeftOn: []string{"k"}, RightOn: []string{"k"}, How: JoinTypeInner}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkJoinDatetime is BenchmarkJoinColumnar with a Datetime key, so it
+// measures the packed Datetime key path.
+func BenchmarkJoinDatetime(b *testing.B) {
+	n := 1_000_000
+	dim := 1000
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	k := make([]time.Time, n)
+	v := make([]float64, n)
+	for i := range k {
+		k[i] = base.Add(time.Duration(i%dim) * time.Hour)
+		v[i] = float64(i)
+	}
+	dk := make([]time.Time, dim)
+	dv := make([]float64, dim)
+	for i := range dk {
+		dk[i] = base.Add(time.Duration(i) * time.Hour)
+		dv[i] = float64(i) * 10
+	}
+	left, err := New(NewInput{Series: []series.Series{
+		series.FromColumn("k", chunk.NewTime(k, nil)),
+		series.FromFloat64("v", v, nil),
+	}})
+	if err != nil {
+		b.Fatal(err)
+	}
+	right, err := New(NewInput{Series: []series.Series{
+		series.FromColumn("k", chunk.NewTime(dk, nil)),
+		series.FromFloat64("dv", dv, nil),
+	}})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
 		if _, err := left.Join(JoinInput{Other: right, LeftOn: []string{"k"}, RightOn: []string{"k"}, How: JoinTypeInner}); err != nil {
 			b.Fatal(err)
 		}
