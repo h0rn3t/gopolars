@@ -128,11 +128,16 @@ func readJSON(t *testing.T, path string, v any) {
 // compareConditions reports, and never fails on, a difference between the
 // conditions a baseline was recorded under and the ones now in force. Failing
 // would turn every toolchain bump red at once and cost the gate its signal.
-func compareConditions(rep *parityReport, budgets parityBudgetFile, baseline parityBaselineFile) {
+// It returns whether the host core count differs from the budgeted one: a
+// ratio measured on a different core count is not a like-for-like comparison
+// (parallel ops scale with workers), so evaluateParity downgrades
+// ratio-dependent failures to advisories in that case. hostCores <= 0 means
+// unknown and never counts as a mismatch.
+func compareConditions(rep *parityReport, budgets parityBudgetFile, baseline parityBaselineFile, hostCores int) (hostMismatch bool) {
 	if !budgets.Conditions.known() || !baseline.Conditions.known() {
 		rep.notef("measurement conditions unknown (budgets: %s; baseline: %s); ratios compared as-is",
 			budgets.Conditions, baseline.Conditions)
-		return
+		return false
 	}
 	if budgets.Conditions.GoToolchain != baseline.Conditions.GoToolchain {
 		rep.notef("CONDITIONS DIFFER: Go toolchain %s (baseline) vs %s (budgets); a ratio change may be the toolchain, not the code",
@@ -146,10 +151,12 @@ func compareConditions(rep *parityReport, budgets parityBudgetFile, baseline par
 		rep.notef("CONDITIONS DIFFER: %d cores (baseline) vs %d cores (budgets)",
 			baseline.Conditions.Cores, budgets.Conditions.Cores)
 	}
-	if host := runtime.NumCPU(); budgets.Conditions.Cores != 0 && host != budgets.Conditions.Cores {
+	if host := hostCores; budgets.Conditions.Cores != 0 && host != 0 && host != budgets.Conditions.Cores {
 		rep.notef("CONDITIONS DIFFER: recorded on %d cores, this host has %d",
 			budgets.Conditions.Cores, host)
+		return true
 	}
+	return false
 }
 
 // attribute names the side a fallen ratio came from, by comparing the absolute
@@ -172,12 +179,18 @@ func attribute(key string, measured summaryEntry, base float64, baseline parityB
 		rec.PythonSecPerOp*1e3, measured.PythonSecPerOp*1e3)
 }
 
-// evaluateParity is the whole gate as a pure function of the three artifacts, so
-// the rules can be exercised on synthetic inputs without touching the committed
-// files.
-func evaluateParity(budgets parityBudgetFile, baseline parityBaselineFile, summary []summaryEntry) parityReport {
+// evaluateParity is the whole gate as a pure function of the three artifacts
+// plus the host core count, so the rules can be exercised on synthetic inputs
+// without touching the committed files. hostCores is runtime.NumCPU() in
+// production; pass an explicit value in tests. When it differs from the
+// budgeted core count the measured ratios are not like-for-like (e.g. 12-core
+// floors checked against a fresh 4-core nightly run), so ratio-dependent
+// breaches and regressions are reported as advisories instead of failing.
+// Structural violations (missing budget entries, unjustified sub-parity
+// floors, empty summaries) still fail on any host.
+func evaluateParity(budgets parityBudgetFile, baseline parityBaselineFile, summary []summaryEntry, hostCores int) parityReport {
 	var rep parityReport
-	compareConditions(&rep, budgets, baseline)
+	hostMismatch := compareConditions(&rep, budgets, baseline, hostCores)
 
 	// Best (fastest) ratio per workload at the reference scale, mirroring how
 	// comparison_table.md reports the min ns/op across calibration rounds.
@@ -226,7 +239,12 @@ func evaluateParity(budgets parityBudgetFile, baseline parityBaselineFile, summa
 		}
 
 		if measured.Ratio < b.RMin {
-			rep.failf("PARITY BREACH %s: measured ratio %.4f < budget r_min %.4f", key, measured.Ratio, b.RMin)
+			if hostMismatch {
+				rep.notef("CORE-MISMATCH ADVISORY %s: measured ratio %.4f < budget r_min %.4f, but recorded on %d cores vs this host %d; not gating — compare like-for-like or re-seed",
+					key, measured.Ratio, b.RMin, budgets.Conditions.Cores, hostCores)
+			} else {
+				rep.failf("PARITY BREACH %s: measured ratio %.4f < budget r_min %.4f", key, measured.Ratio, b.RMin)
+			}
 		}
 
 		base, ok := baseline.Ratios[key]
@@ -245,8 +263,13 @@ func evaluateParity(budgets parityBudgetFile, baseline parityBaselineFile, summa
 			continue
 		}
 		if floor := base * (1 - budgets.Tolerance); measured.Ratio < floor {
-			rep.failf("REGRESSION %s: measured ratio %.4f is below baseline %.4f by more than %.0f%% (floor %.4f)",
-				key, measured.Ratio, base, budgets.Tolerance*100, floor)
+			if hostMismatch {
+				rep.notef("CORE-MISMATCH ADVISORY %s: measured ratio %.4f is below baseline %.4f by more than %.0f%% (floor %.4f), but recorded on %d cores vs this host %d; not gating — compare like-for-like or re-seed",
+					key, measured.Ratio, base, budgets.Tolerance*100, floor, budgets.Conditions.Cores, hostCores)
+			} else {
+				rep.failf("REGRESSION %s: measured ratio %.4f is below baseline %.4f by more than %.0f%% (floor %.4f)",
+					key, measured.Ratio, base, budgets.Tolerance*100, floor)
+			}
 		}
 	}
 	return rep
@@ -274,7 +297,7 @@ func TestParityBudgets(t *testing.T) {
 	var summary []summaryEntry
 	readJSON(t, "top30_summary.json", &summary)
 
-	rep := evaluateParity(budgets, baseline, summary)
+	rep := evaluateParity(budgets, baseline, summary, runtime.NumCPU())
 	for _, n := range rep.notes {
 		t.Log(n)
 	}

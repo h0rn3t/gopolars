@@ -86,7 +86,7 @@ func TestParityConditionsBothFileForms(t *testing.T) {
 
 			// Either form must still evaluate, and a met budget must stay green.
 			summary := []summaryEntry{entry("Expr", "rank", 7_000_000, 0.0140)}
-			rep := evaluateParity(budgets, parityBaselineFile{ReferenceScale: "1M"}, summary)
+			rep := evaluateParity(budgets, parityBaselineFile{ReferenceScale: "1M"}, summary, 12)
 			if len(rep.failures) != 0 {
 				t.Errorf("legacy/new form must not fail on a met budget, got %v", rep.failures)
 			}
@@ -113,7 +113,10 @@ func TestParityConditionsMismatchReportsAndStillEnforcesFloor(t *testing.T) {
 	// Ratio 0.869: below both the baseline and the r_min floor.
 	summary := []summaryEntry{entry("Expr", "rolling_mean", 12_580_000, 0.01093)}
 
-	rep := evaluateParity(budgets, baseline, summary)
+	// Host matches the budgeted cores: a toolchain/Polars mismatch is reported
+	// but the absolute floor still gates. A *core* mismatch downgrades instead
+	// (see TestParityCoreMismatchDowngradesBreachToAdvisory).
+	rep := evaluateParity(budgets, baseline, summary, 12)
 
 	if !hasLine(rep.notes, "CONDITIONS DIFFER") {
 		t.Errorf("want a conditions note, got notes %v", rep.notes)
@@ -186,7 +189,7 @@ func TestParityAttributesFallenRatioToASide(t *testing.T) {
 				}
 			}
 
-			rep := evaluateParity(budgets, baseline, []summaryEntry{tt.measured})
+			rep := evaluateParity(budgets, baseline, []summaryEntry{tt.measured}, 12)
 
 			if !hasLine(rep.notes, tt.want) {
 				t.Errorf("want a note containing %q, got %v", tt.want, rep.notes)
@@ -211,7 +214,7 @@ func TestParityReportsUnmeasuredWorkloads(t *testing.T) {
 		func() summaryEntry { e := entry("Expr", "rolling_std", 7_000, 0.000014); e.Size = "1K"; return e }(),
 	}
 
-	rep := evaluateParity(budgets, parityBaselineFile{ReferenceScale: "1M"}, summary)
+	rep := evaluateParity(budgets, parityBaselineFile{ReferenceScale: "1M"}, summary, 12)
 
 	if !hasLine(rep.notes, "UNMEASURED Expr/rolling_std") {
 		t.Errorf("want an unmeasured note for Expr/rolling_std, got %v", rep.notes)
@@ -225,4 +228,68 @@ func TestParityReportsUnmeasuredWorkloads(t *testing.T) {
 	if len(rep.failures) != 0 {
 		t.Errorf("an unmeasured workload is reported, not failed, got %v", rep.failures)
 	}
+}
+
+// Requirement: a ratio measured on a different core count is not like-for-like
+// (parallel ops scale with workers), so breaches and regressions become
+// advisories instead of failures — while structural violations still gate.
+// This is the nightly case: 12-core floors checked against a fresh 4-core run
+// (see run 38139620201: drop_nulls 0.2855 < r_min 0.5202, filter 0.2953 <
+// 0.3557, join 0.4352 < 0.5579 on a 4-vCPU runner).
+func TestParityCoreMismatchDowngradesBreachToAdvisory(t *testing.T) {
+	t.Parallel()
+
+	budgets := budgetFile(
+		parityConditions{GoToolchain: "1.27.0", PolarsVersion: "1.27.1", Cores: 12},
+		map[string]parityBudgetEntry{
+			"DataFrame/filter": {RMin: 0.3557, Justification: "test"},
+		},
+	)
+	baseline := parityBaselineFile{
+		ReferenceScale: "1M",
+		Conditions:     parityConditions{GoToolchain: "1.27.0", PolarsVersion: "1.27.1", Cores: 12},
+		Ratios:         map[string]float64{"DataFrame/filter": 0.5472},
+	}
+	// The nightly's 4-core measurement: below both r_min and the 40% floor.
+	summary := []summaryEntry{entry("DataFrame", "filter", 24_000_000, 0.00709)}
+
+	rep := evaluateParity(budgets, baseline, summary, 4)
+
+	if !hasLine(rep.notes, "CONDITIONS DIFFER") {
+		t.Errorf("want a conditions note, got notes %v", rep.notes)
+	}
+	if !hasLine(rep.notes, "CORE-MISMATCH ADVISORY DataFrame/filter") {
+		t.Errorf("want a core-mismatch advisory for the breach, got notes %v", rep.notes)
+	}
+	if len(rep.failures) != 0 {
+		t.Errorf("core mismatch must not fail the gate, got %v", rep.failures)
+	}
+
+	// Same inputs on the recorded core count must still fail.
+	rep = evaluateParity(budgets, baseline, summary, 12)
+	if !hasLine(rep.failures, "PARITY BREACH DataFrame/filter") {
+		t.Errorf("like-for-like breach must still fail, got %v", rep.failures)
+	}
+}
+
+// Requirement: a core mismatch never excuses structural violations — a
+// workload without a budget entry still fails on any host.
+func TestParityCoreMismatchStillFailsStructuralViolations(t *testing.T) {
+	t.Parallel()
+
+	budgets := budgetFile(
+		parityConditions{GoToolchain: "1.27.0", PolarsVersion: "1.27.1", Cores: 12},
+		map[string]parityBudgetEntry{},
+	)
+	summary := []summaryEntry{entry("DataFrame", "filter", 7_000_000, 0.0140)}
+
+	rep := evaluateParity(budgets, baselineFileWithRatio(), summary, 4)
+
+	if !hasLine(rep.failures, "has no parity budget entry") {
+		t.Errorf("missing budget entry must fail even on core mismatch, got failures %v notes %v", rep.failures, rep.notes)
+	}
+}
+
+func baselineFileWithRatio() parityBaselineFile {
+	return parityBaselineFile{ReferenceScale: "1M"}
 }
